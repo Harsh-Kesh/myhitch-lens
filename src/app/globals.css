@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   MYHitch Lens - Design Tokens
+   The palette is a single light theme defined on `:root`. Every token is
+   re-exported to Tailwind through `@theme inline` so utilities such as
+   `bg-bg-primary` / `text-text-muted` resolve against the variable, which keeps
+   one place to edit a colour.
+   ========================================================================== */
+
+@theme inline {
+  /* Surfaces */
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-surface-card: var(--surface-card);
+  --color-surface-hover: var(--surface-hover);
+
+  /* Lines */
+  --color-line: var(--border-color);
+  --color-line-hover: var(--border-hover);
+
+  /* Text */
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
+
+  /* Brand + status */
+  --color-primary: var(--primary-color);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-glow: var(--primary-glow);
+  --color-accent: var(--accent-color);
+  --color-success: var(--success-color);
+  --color-warning: var(--warning-color);
+  --color-danger: var(--danger-color);
+
+  /* Typography */
+  --font-heading: var(--font-outfit), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+
+  /* Tailwind pairs each font-size step with an opinionated line-height. The
+     original design set font sizes alone and let leading inherit (1.6 from
+     <body>, 1.25 on headings), so the paired values are dropped here and any
+     element that needs a specific leading asks for one with `leading-*`. */
+  --text-xs--line-height: inherit;
+  --text-sm--line-height: inherit;
+  --text-base--line-height: inherit;
+  --text-lg--line-height: inherit;
+  --text-xl--line-height: inherit;
+  --text-2xl--line-height: inherit;
+  --text-3xl--line-height: inherit;
+  --text-4xl--line-height: inherit;
+  --text-5xl--line-height: inherit;
+  --text-6xl--line-height: inherit;
+
+  /* Elevation */
+  --shadow-card: var(--card-shadow);
+
+  /* Keyframe-backed animations ported from the original stylesheet */
+  --animate-fade-in: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --animate-bounce-right: bounceRight 1.5s infinite;
+  --animate-pulse-glow: pulseGlow 2s infinite alternate;
+}
+
+@layer base {
+  :root {
+    /* Palette */
+    --bg-primary: #ffffff;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f8fafc;
+    --surface-card: #ffffff;
+    --surface-hover: #f1f5f9;
+    --border-color: #e2e8f0;
+    --border-hover: #cbd5e1;
+
+    --text-main: #000000;
+    --text-muted: #475569;
+    --text-inverse: #ffffff;
+
+    --primary-color: #2da4df;
+    --primary-hover: #1e8fc6;
+    --primary-glow: rgba(45, 164, 223, 0.15);
+
+    --accent-color: #2da4df;
+    --success-color: #059669;
+    --warning-color: #d97706;
+    --danger-color: #dc2626;
+
+    --card-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+    --glass-blur: blur(8px);
+    --header-bg: rgba(255, 255, 255, 0.85);
+
+    /* The landing header collapses on smaller screens. Both the header itself
+       and everything that offsets against it (hero min-height, the mobile
+       drawer's top padding) read this single token so they stay in sync. */
+    --header-h: 115px;
+  }
+
+  /* Written to mirror how Tailwind v4 compiles `max-[1024px]:` and
+     `max-[640px]:` - those variants are *exclusive* of the breakpoint, so a
+     plain `(max-width: 1024px)` here would flip the header's height one pixel
+     before its padding and logo size follow. */
+  @media not all and (min-width: 1024px) {
+    :root {
+      --header-h: 88px;
+    }
+  }
+
+  @media not all and (min-width: 640px) {
+    :root {
+      --header-h: 72px;
+    }
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* The palette is light-only, so the UA is told as much: form controls,
+       scrollbars and the like keep their light rendering even when the OS is
+       set to dark. */
+    color-scheme: light;
+    /* Stops mobile Safari/Chrome from inflating body copy when a page is
+       rotated to landscape. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* The original stylesheet gave every heading the display face, a 700 weight
+     and a 1.25 leading. Tailwind Preflight strips heading styles back to
+     `inherit`, so the rule is restored here rather than repeated per element. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-outfit), sans-serif;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--text-main);
+  }
+
+  /* Preflight applies `font: inherit` to form controls, which would pull the
+     body's 15px/1.6 into every button and input. The original relied on the
+     browser defaults there, so they are reverted; components that set their own
+     face (`.btn`, `.form-control`, `.select-input`) override this via
+     utilities, which win over the base layer. */
+  button,
+  input,
+  select,
+  textarea,
+  optgroup {
+    font: revert;
+  }
+
+  /* Preflight makes SVGs `display: block`. The original laid its icons out as
+     inline content, so wrappers sized themselves from the line box. Reverting
+     keeps those wrapper heights identical; icons inside flex rows are
+     blockified by their container either way. */
+  svg {
+    display: inline;
+    vertical-align: baseline;
+  }
+
+  /* Document-wide base rules with no utility equivalent. */
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-main);
+    font-family: var(--font-inter), sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    overflow-x: hidden;
+    /* Unbroken strings - long URLs, `sarah@chenlabs.org`, hashes in the
+       simulator panels - would otherwise force a horizontal scrollbar on
+       narrow screens. */
+    overflow-wrap: break-word;
+  }
+
+  /* Grid and flex children default to `min-width: auto`, which lets long text
+     and wide tables push a track past its declared size. The design never
+     relies on that overflow, so every layout child is allowed to shrink. */
+  :where(main, aside, section, article, div, form, td, th) {
+    min-width: 0;
+  }
+
+  /* Scrollbar theming - pseudo-elements cannot be expressed as utilities. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+}
+
+/* Generated content has no utility equivalent, so the pricing list marker and
+   the switch knob keep a thin component layer. */
+@layer components {
+  .pricing-check::before {
+    content: "✓";
+    color: var(--primary-color);
+    font-weight: bold;
+  }
+  .pricing-check-accent::before {
+    color: var(--accent-color);
+  }
+
+  .switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 12px;
+    width: 12px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-muted);
+    transition: 0.4s;
+    border-radius: 50%;
+  }
+  input:checked + .switch-slider {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+  }
+  input:checked + .switch-slider::before {
+    transform: translateX(18px);
+    background-color: var(--text-inverse);
+  }
+}
+
+/* Keyframes referenced by the `--animate-*` theme entries above. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounceRight {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes pulseGlow {
+  from {
+    transform: scale(1);
+    filter: drop-shadow(0 0 2px #fff);
+  }
+  to {
+    transform: scale(1.15);
+    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+  }
+}

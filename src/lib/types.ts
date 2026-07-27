@@ -1,0 +1,69 @@
+/** Domain types for the MYHitch Lens platform. */
+
+export type UserRole = "reader" | "author" | "editor";
+
+export interface Comment {
+  name: string;
+  date: string;
+  text: string;
+}
+
+export interface Article {
+  id: string;
+  title: string;
+  category: string;
+  type: string;
+  readTime: string;
+  summary: string;
+  content: string;
+  author: string;
+  authorRank: string;
+  likes: number;
+  bookmarks: number;
+  comments: Comment[];
+  verified: boolean;
+  date: string;
+  /** Set once the reader likes the article; absent in the seed data. */
+  liked?: boolean;
+}
+
+export interface QueueItem {
+  id: string;
+  title: string;
+  author: string;
+  authorRank: string;
+  category: string;
+  type: string;
+  submittedDate: string;
+  aiScore: number;
+  plagiarism: string;
+  readability: string;
+  sentiment: string;
+  content: string;
+}
+
+export interface Integrations {
+  mart: boolean;
+  services: boolean;
+  travel: boolean;
+  events: boolean;
+  donations: boolean;
+  videos: boolean;
+}
+
+export type IntegrationKey = keyof Integrations;
+
+export interface Notification {
+  id: number;
+  type: "publish" | "system";
+  date: string;
+  text: string;
+}
+
+export interface Appeal {
+  docId: string;
+  reason: string;
+  justify: string;
+  date: string;
+  status: string;
+}

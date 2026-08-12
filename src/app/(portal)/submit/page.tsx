@@ -33,18 +33,11 @@ import {
   saveQueue,
 } from "@/lib/lensStore";
 import { cn } from "@/lib/cn";
+import { CATEGORY_NAMES } from "@/data/categories";
 import type { QueueItem } from "@/lib/types";
 
-const CATEGORIES = [
-  "AI",
-  "Business",
-  "Supply Chain",
-  "Technology",
-  "Healthcare",
-  "Finance",
-  "Research",
-  "Community",
-];
+/** All 11 canonical categories (single source of truth). */
+const CATEGORIES = CATEGORY_NAMES;
 
 const CONTENT_TYPES = [
   { value: "Blog", label: "Blog Post" },

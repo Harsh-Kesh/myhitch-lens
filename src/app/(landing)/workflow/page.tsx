@@ -28,7 +28,7 @@ const STEPS = [
   {
     number: "05",
     title: "Editorial Review",
-    text: "Assigned peer reviewers evaluate the submission. Feedback loops, suggested improvements, and approval checkmarks are tracked on the distributed ledger ledger system.",
+    text: "Assigned peer reviewers evaluate the submission. Feedback loops, suggested improvements, and approval checkmarks are tracked on a tamper-evident audit ledger.",
   },
   {
     number: "06",

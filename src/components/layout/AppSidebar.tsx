@@ -2,11 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { buttonClasses } from "@/components/ui/Button";
-import { selectInput } from "@/components/ui/Form";
 import {
   ArrowLeftIcon,
   BarChartIcon,
@@ -21,16 +20,8 @@ import {
   UsersIcon,
 } from "@/components/ui/icons";
 import { useLensValue } from "@/hooks/useLensValue";
-import {
-  getQueue,
-  getUserName,
-  getUserRole,
-  pushNotification,
-  ROLE_HOME,
-  ROLE_NAMES,
-  setUserName,
-  setUserRole,
-} from "@/lib/lensStore";
+import { getQueue, getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
+import { logoutUser } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
 import { defaultQueue } from "@/data/defaults";
 import type { UserRole } from "@/lib/types";
@@ -132,7 +123,6 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
  */
 export function AppSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const role = useLensValue(getUserRole, "author" as UserRole);
   const name = useLensValue(getUserName, ROLE_NAMES.author);
@@ -163,17 +153,6 @@ export function AppSidebar() {
       document.body.style.overflow = "";
     };
   }, [isDrawerOpen]);
-
-  function handleRoleChange(nextRole: UserRole) {
-    setUserRole(nextRole);
-    setUserName(ROLE_NAMES[nextRole]);
-
-    pushNotification(
-      `Vetted profile switched: Role active matches ${nextRole.toUpperCase()}.`,
-    );
-
-    router.push(ROLE_HOME[nextRole]);
-  }
 
   const presentation = ROLE_PRESENTATION[role];
   const visibleLinks = NAV_LINKS.filter(
@@ -264,25 +243,15 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {/* `.role-simulator` */}
-        <div className="mb-6 border-b border-line pb-4">
-          <label
-            htmlFor="roleSelector"
-            className="mb-2 block text-[11px] font-bold text-text-muted uppercase"
+        {/* Sign out of the current account. */}
+        <form action={logoutUser} className="mb-6 border-b border-line pb-4">
+          <button
+            type="submit"
+            className={buttonClasses("secondary", "md", "w-full")}
           >
-            Simulate User Role:
-          </label>
-          <select
-            id="roleSelector"
-            className={selectInput}
-            value={role}
-            onChange={(event) => handleRoleChange(event.target.value as UserRole)}
-          >
-            <option value="reader">Reader (Subscriber)</option>
-            <option value="author">Author (Premium)</option>
-            <option value="editor">Editor (Admin)</option>
-          </select>
-        </div>
+            <PowerIcon className="size-3.5 align-middle" /> Log Out
+          </button>
+        </form>
 
         {/* `.sidebar-nav` */}
         <nav className="flex flex-1 flex-col gap-1.5">

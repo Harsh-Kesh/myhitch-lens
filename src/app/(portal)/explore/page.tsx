@@ -9,20 +9,10 @@ import { useLensValue } from "@/hooks/useLensValue";
 import { getArticles } from "@/lib/lensStore";
 import { cn } from "@/lib/cn";
 import { defaultArticles } from "@/data/defaults";
+import { CATEGORY_FILTERS } from "@/data/categories";
 
-const CATEGORIES = [
-  "All",
-  "AI",
-  "Business",
-  "Supply Chain",
-  "Technology",
-  "Healthcare",
-  "Education",
-  "Travel",
-  "Finance",
-  "Research",
-  "Community",
-];
+/** "All" + the 11 canonical categories (single source of truth). */
+const CATEGORIES = CATEGORY_FILTERS;
 
 const CATEGORY_LABELS: Record<string, string> = { All: "All Categories" };
 

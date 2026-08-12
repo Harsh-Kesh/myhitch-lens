@@ -1,0 +1,617 @@
+// MYHitch Lens — data model v1
+// See docs/MYHitch_Lens_Project_Plan.md §6 for the entity overview.
+// Provider is PostgreSQL (production-correct). Local dev DB via docker-compose.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  reader
+  author
+  editor
+  corporate
+  admin
+}
+
+enum VerificationState {
+  pending
+  approved
+  rejected
+}
+
+enum ContributorTier {
+  bronze
+  silver
+  gold
+}
+
+enum SubscriptionTier {
+  reader
+  author
+  corporate
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  incomplete
+}
+
+enum ArticleStatus {
+  draft
+  in_review
+  changes_requested
+  approved
+  scheduled
+  published
+  rejected
+  archived
+}
+
+enum PublishLane {
+  public
+  panel
+  hybrid
+}
+
+enum MediaType {
+  image
+  video
+  audio
+  document
+  infographic
+}
+
+enum LedgerEntryType {
+  subscription
+  ad_share
+  read_payout
+  sponsorship
+  boost
+  donation
+  report_sale
+  affiliate
+  payout
+  fee
+  refund
+}
+
+enum AuctionType {
+  sponsorship // brand -> article
+  placement   // author -> placement slot
+}
+
+enum AuctionStatus {
+  open
+  closed
+  settled
+  canceled
+}
+
+enum BidStatus {
+  active
+  outbid
+  won
+  lost
+  withdrawn
+}
+
+enum PlacementStatus {
+  pending_acceptance
+  accepted
+  live
+  completed
+  rejected
+  refunded
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  resolved
+  rejected
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  passwordHash  String?
+  role          UserRole  @default(reader)
+  displayName   String
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profile        Profile?
+  verification   AuthorVerification?
+  rank           ContributorRank?
+  subscription   Subscription?
+  wallet         Wallet?
+  articles       Article[]           @relation("ArticleAuthor")
+  revisions      Revision[]
+  comments       Comment[]
+  likes          Like[]
+  bookmarks      Bookmark[]
+  following      Follow[]            @relation("Follower")
+  followers      Follow[]            @relation("Following")
+  notifications  Notification[]
+  assignments    EditorialAssignment[] @relation("EditorAssignee")
+  reviews        Review[]            @relation("Reviewer")
+  ledgerEntries  RevenueLedger[]
+  payouts        Payout[]
+  bids           Bid[]
+  appeals        DisputeTicket[]
+  memberships    OrgMembership[]
+  platformIdentity PlatformIdentity?
+  entitlements   Entitlement[]
+  analyticsEvents AnalyticsEvent[]
+
+  @@index([role])
+}
+
+model Profile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio       String?
+  expertise String[] // domains, e.g. ["Supply Chain", "AI Logistics"]
+  portfolio String?  // portfolio URL or markdown
+  website   String?
+  socials   Json?    // { linkedin, x, orcid, ... } — social profile integration
+  avatarUrl String?
+  updatedAt DateTime @updatedAt
+}
+
+model AuthorVerification {
+  id            String            @id @default(cuid())
+  userId        String            @unique
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  state         VerificationState @default(pending)
+  credentials   Json?             // submitted evidence references
+  domainMatch   Boolean           @default(false)
+  reviewerNote  String?
+  reviewedAt    DateTime?
+  createdAt     DateTime          @default(now())
+}
+
+model ContributorRank {
+  id        String          @id @default(cuid())
+  userId    String          @unique
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points    Int             @default(0)
+  tier      ContributorTier @default(bronze)
+  updatedAt DateTime        @updatedAt
+}
+
+model Organization {
+  id        String          @id @default(cuid())
+  name      String
+  seats     Int             @default(10)
+  createdAt DateTime        @default(now())
+  members   OrgMembership[]
+}
+
+model OrgMembership {
+  id      String       @id @default(cuid())
+  orgId   String
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAdmin Boolean      @default(false)
+
+  @@unique([orgId, userId])
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @unique
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 SubscriptionTier
+  status               SubscriptionStatus @default(incomplete)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  currentPeriodEnd     DateTime?
+  updatedAt            DateTime           @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Content
+// ---------------------------------------------------------------------------
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  slug     String    @unique
+  desc     String
+  articles Article[]
+}
+
+model Tag {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  articles ArticleTag[]
+}
+
+model Article {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  title       String
+  summary     String
+  content     String
+  contentType String // Blog | News | Report | Research Paper
+  status      ArticleStatus @default(draft)
+  lane        PublishLane   @default(public)
+  isPremium   Boolean       @default(false)
+  verified    Boolean       @default(false)
+
+  authorId    String
+  author      User          @relation("ArticleAuthor", fields: [authorId], references: [id])
+  categoryId  String
+  category    Category      @relation(fields: [categoryId], references: [id])
+
+  likesCount  Int           @default(0)
+  viewsCount  Int           @default(0)
+
+  aiScores    Json?         // plagiarism, readability, seo, sentiment
+  publishedAt DateTime?
+  scheduledAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  tags        ArticleTag[]
+  media       MediaAsset[]
+  revisions   Revision[]
+  comments    Comment[]
+  likes       Like[]
+  bookmarks   Bookmark[]
+  assignment  EditorialAssignment?
+  reviews     Review[]
+  listings    Listing[]
+  placements  BrandingPlacement[]
+  provenance  ProvenanceRecord?
+  embeds      EmbedInstance[]
+  analytics   AnalyticsEvent[]
+
+  @@index([status, lane])
+  @@index([categoryId])
+  @@index([authorId])
+}
+
+model ArticleTag {
+  articleId String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tagId     String
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+model MediaAsset {
+  id        String    @id @default(cuid())
+  articleId String
+  article   Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  type      MediaType
+  storageKey String
+  meta      Json?
+  createdAt DateTime  @default(now())
+}
+
+model Revision {
+  id        String   @id @default(cuid())
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editorId  String?
+  editor    User?    @relation(fields: [editorId], references: [id])
+  note      String?
+  snapshot  Json?    // content at this revision
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Editorial
+// ---------------------------------------------------------------------------
+
+model EditorialAssignment {
+  id         String    @id @default(cuid())
+  articleId  String    @unique
+  article    Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  editorId   String
+  editor     User      @relation("EditorAssignee", fields: [editorId], references: [id])
+  scheduledAt DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  articleId  String
+  article    Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  reviewerId String
+  reviewer   User     @relation("Reviewer", fields: [reviewerId], references: [id])
+  // Double-blind: reviewer/author identities are hidden in the UI during the
+  // review stage only; enforced at the query/permission layer, not here.
+  verdict    String   // approve | revise | reject
+  notes      String?
+  createdAt  DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Engagement
+// ---------------------------------------------------------------------------
+
+model Comment {
+  id        String   @id @default(cuid())
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+}
+
+model Like {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, articleId])
+}
+
+model Bookmark {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, articleId])
+}
+
+model Follow {
+  followerId  String
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@id([followerId, followingId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // publish | system | bid | payout | moderation
+  text      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+// ---------------------------------------------------------------------------
+// Analytics & revenue
+// ---------------------------------------------------------------------------
+
+model AnalyticsEvent {
+  id        String   @id @default(cuid())
+  articleId String?
+  article   Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  kind      String   // view | read_time_ping | click
+  value     Float?   // e.g. seconds for read_time_ping
+  createdAt DateTime @default(now())
+
+  @@index([articleId, kind])
+  @@index([createdAt])
+}
+
+model RevenueLedger {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id])
+  articleId  String?
+  type       LedgerEntryType
+  gross      Decimal         @db.Decimal(12, 2)
+  feeApplied Decimal         @db.Decimal(12, 2) @default(0)
+  net        Decimal         @db.Decimal(12, 2)
+  currency   String          @default("AUD")
+  meta       Json?
+  createdAt  DateTime        @default(now())
+
+  @@index([userId, type])
+}
+
+model PlatformFeeConfig {
+  id           String   @id @default(cuid())
+  revenueType  String   @unique // sponsorship | reportSale | donation | placementBoost | adShare
+  platformRate Decimal  @db.Decimal(5, 4) // 0.2000 = 20%
+  updatedAt    DateTime @updatedAt
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Decimal  @db.Decimal(12, 2) @default(0)
+  escrowHeld Decimal @db.Decimal(12, 2) @default(0)
+  currency  String   @default("AUD")
+  stripeConnectId String?
+  updatedAt DateTime @updatedAt
+}
+
+model Payout {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Decimal  @db.Decimal(12, 2)
+  currency  String   @default("AUD")
+  status    String   // pending | paid | failed
+  stripeTransferId String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace (two-sided)
+// ---------------------------------------------------------------------------
+
+model Listing {
+  id           String    @id @default(cuid())
+  articleId    String
+  article      Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  slots        Int       @default(1)
+  floorPrice   Decimal   @db.Decimal(12, 2)
+  reservePrice Decimal?  @db.Decimal(12, 2)
+  allowedCategories String[] // brand-safety: categories permitted to bid
+  createdAt    DateTime  @default(now())
+  auctions     Auction[]
+}
+
+model Auction {
+  id        String        @id @default(cuid())
+  listingId String?
+  listing   Listing?      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  type      AuctionType
+  status    AuctionStatus @default(open)
+  reserve   Decimal?      @db.Decimal(12, 2)
+  endsAt    DateTime
+  createdAt DateTime      @default(now())
+  bids      Bid[]
+  placement BrandingPlacement?
+
+  @@index([status, endsAt])
+}
+
+model Bid {
+  id            String    @id @default(cuid())
+  auctionId     String
+  auction       Auction   @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  bidderId      String
+  bidder        User      @relation(fields: [bidderId], references: [id])
+  amount        Decimal   @db.Decimal(12, 2)
+  autoBidCeiling Decimal? @db.Decimal(12, 2)
+  status        BidStatus @default(active)
+  createdAt     DateTime  @default(now())
+
+  @@index([auctionId, status])
+}
+
+model Campaign {
+  id         String              @id @default(cuid())
+  brandId    String
+  name       String
+  budget     Decimal             @db.Decimal(12, 2)
+  createdAt  DateTime            @default(now())
+  placements BrandingPlacement[]
+}
+
+model BrandingPlacement {
+  id         String          @id @default(cuid())
+  articleId  String
+  article    Article         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  auctionId  String          @unique
+  auction    Auction         @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  campaignId String?
+  campaign   Campaign?       @relation(fields: [campaignId], references: [id])
+  brandId    String
+  creativeAsset Json?        // logo, banner copy, product refs
+  status     PlacementStatus @default(pending_acceptance)
+  liveFrom   DateTime?
+  liveUntil  DateTime?
+  createdAt  DateTime        @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Governance & provenance
+// ---------------------------------------------------------------------------
+
+model DisputeTicket {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  subject   String        // article id / title
+  reason    String
+  justify   String
+  status    DisputeStatus @default(open)
+  createdAt DateTime      @default(now())
+}
+
+model ModerationFlag {
+  id         String   @id @default(cuid())
+  targetType String   // article | comment
+  targetId   String
+  reason     String
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model ProvenanceRecord {
+  id            String   @id @default(cuid())
+  articleId     String   @unique
+  article       Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  c2paManifest  Json?    // signed content-credentials manifest
+  timestampToken String? // RFC-3161 token
+  watermarkId   String?
+  createdAt     DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Ecosystem (hub-and-spoke; wired when sibling apps come online)
+// ---------------------------------------------------------------------------
+
+model PlatformIdentity {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  myhitchId  String   @unique // canonical id from the central IdP
+  createdAt  DateTime @default(now())
+}
+
+model Entitlement {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String   // e.g. "mart.brand", "jetnrest.partner"
+  sourceApp String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, key])
+}
+
+model AttributionEvent {
+  id         String   @id @default(cuid())
+  sourceApp  String   // mart | jetnrest | pass | nexus
+  articleId  String?
+  authorId   String?
+  action     String   // click | purchase | booking
+  value      Decimal? @db.Decimal(12, 2)
+  commission Decimal? @db.Decimal(12, 2)
+  createdAt  DateTime @default(now())
+}
+
+model EmbedInstance {
+  id        String   @id @default(cuid())
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  embedType String   // mart | jetnrest | pass | nexus | consulting | donations
+  config    Json?
+  createdAt DateTime @default(now())
+}

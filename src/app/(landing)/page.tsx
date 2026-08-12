@@ -68,7 +68,7 @@ const CAPABILITIES: { icon: ReactNode; title: string; desc: string }[] = [
   {
     icon: <FolderIcon className={iconClass} />,
     title: "11 Curated Categories",
-    desc: "Publications cataloged under Business, Supply Chain, Tech, AI, Healthcare, Education, Travel, Finance, and Research.",
+    desc: "Publications cataloged under Business, Supply Chain, Technology, AI, Healthcare, Education, Travel, Finance, Lifestyle, Research, and Community.",
   },
   {
     icon: <ActivityIcon className={iconClass} />,

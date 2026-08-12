@@ -1,0 +1,18 @@
+# Local development database for MYHitch Lens.
+# Usage:  docker compose up -d   then   npx prisma migrate dev
+services:
+  db:
+    image: postgres:16
+    container_name: myhitch-lens-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lens
+      POSTGRES_PASSWORD: lens
+      POSTGRES_DB: myhitch_lens
+    ports:
+      - "5432:5432"
+    volumes:
+      - lens_pgdata:/var/lib/postgresql/data
+
+volumes:
+  lens_pgdata:

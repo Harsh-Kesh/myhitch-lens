@@ -82,12 +82,12 @@ function AuthCard() {
       <div className="border-b border-line p-5 max-[480px]:p-4">
         <Link href="/" className="inline-flex w-full cursor-pointer items-center justify-center">
           <Image
-            src="/images/logo.jpeg"
+            src="/images/logo.png"
             alt="MYHitch Lens"
-            width={100}
-            height={100}
+            width={260}
+            height={147}
             priority
-            className="h-25 max-h-25 w-auto rounded object-contain align-middle max-[480px]:h-18 max-[480px]:max-h-18"
+            className="h-16 w-auto object-contain align-middle max-[480px]:h-14"
           />
         </Link>
       </div>

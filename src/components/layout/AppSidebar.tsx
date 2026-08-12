@@ -166,11 +166,12 @@ export function AppSidebar() {
       <div className="sticky top-0 z-40 hidden items-center justify-between gap-3 border-b border-line bg-bg-secondary px-4 py-3 max-[768px]:flex">
         <Link href="/explore" className="inline-flex items-center">
           <Image
-            src="/images/logo.jpeg"
-            alt="MYHitch Lens Logo"
-            width={40}
-            height={40}
-            className="h-9 max-h-9 w-auto rounded object-contain align-middle"
+            src="/images/logo.png"
+            alt="MYHitch Lens"
+            width={180}
+            height={102}
+            priority
+            className="h-9 w-auto object-contain align-middle"
           />
         </Link>
         <div className="flex min-w-0 items-center gap-3">
@@ -214,14 +215,15 @@ export function AppSidebar() {
       >
         <Link
           href="/explore"
-          className="mb-6 flex cursor-pointer items-center gap-3 border-b border-line px-5 py-[15px]"
+          className="mb-5 flex cursor-pointer items-center justify-center border-b border-line px-4 pb-4"
         >
           <Image
-            src="/images/logo.jpeg"
-            alt="MYHitch Lens Logo"
-            width={40}
-            height={40}
-            className="h-10 max-h-10 w-auto rounded object-contain align-middle"
+            src="/images/logo.png"
+            alt="MYHitch Lens"
+            width={200}
+            height={113}
+            priority
+            className="h-12 w-auto object-contain align-middle"
           />
         </Link>
 
@@ -243,18 +245,8 @@ export function AppSidebar() {
           </div>
         </div>
 
-        {/* Sign out of the current account. */}
-        <form action={logoutUser} className="mb-6 border-b border-line pb-4">
-          <button
-            type="submit"
-            className={buttonClasses("secondary", "md", "w-full")}
-          >
-            <PowerIcon className="size-3.5 align-middle" /> Log Out
-          </button>
-        </form>
-
         {/* `.sidebar-nav` */}
-        <nav className="flex flex-1 flex-col gap-1.5">
+        <nav className="flex flex-1 flex-col gap-1">
           {visibleLinks.map((link) => {
             const isActive = pathname === link.href;
             return (
@@ -262,27 +254,38 @@ export function AppSidebar() {
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  "flex items-center justify-between gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium transition-all duration-200",
                   isActive
-                    ? "border-l-[3px] border-primary bg-primary-glow text-text-main"
+                    ? "border-l-[3px] border-primary bg-primary-glow font-semibold text-text-main"
                     : "text-text-muted hover:bg-surface-hover hover:text-text-main",
                 )}
               >
                 {link.icon}
+                <span>{link.label}</span>
                 {link.showQueueCount && queueCount > 0 && (
-                  <span className="rounded-[10px] bg-accent px-1.5 py-0.5 text-[11px] font-bold text-white">
+                  <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-bold text-white">
                     {queueCount}
                   </span>
                 )}
-                <span>{link.label}</span>
               </Link>
             );
           })}
         </nav>
 
-        {/* `.sidebar-footer` */}
-        <div className="mt-auto border-t border-line pt-4">
-          <Link href="/" className={buttonClasses("secondary", "md", "w-full")}>
+        {/* `.sidebar-footer` — account + navigation actions grouped at the bottom */}
+        <div className="mt-auto flex flex-col gap-2 border-t border-line pt-4">
+          <form action={logoutUser}>
+            <button
+              type="submit"
+              className={buttonClasses("secondary", "md", "w-full")}
+            >
+              <PowerIcon className="size-3.5 align-middle" /> Log Out
+            </button>
+          </form>
+          <Link
+            href="/"
+            className="flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium text-text-muted transition-colors hover:text-text-main"
+          >
             <ArrowLeftIcon className="size-3.5 align-middle" /> Back to Landing
           </Link>
         </div>

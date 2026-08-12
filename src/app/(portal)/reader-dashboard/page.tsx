@@ -84,12 +84,11 @@ export default function ReaderDashboardPage() {
   }
 
   const saved = articles.filter((article) => bookmarks.includes(article.id));
-  const firstName = name.split(" ")[0];
 
   return (
     <>
       <ViewHeader
-        title={`Welcome back, ${firstName}`}
+        title={`Welcome back, ${name}`}
         subtitle="Your personalized feed, bookmarks, and notifications."
       />
 

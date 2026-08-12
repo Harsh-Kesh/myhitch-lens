@@ -42,8 +42,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
-      <body>
+    // suppressHydrationWarning: some browser extensions (e.g. Bitdefender)
+    // inject attributes onto <html>/<body> before React hydrates. This keeps
+    // those extension-only diffs from surfacing as dev warnings.
+    <html
+      lang="en"
+      className={`${inter.variable} ${outfit.variable}`}
+      suppressHydrationWarning
+    >
+      <body suppressHydrationWarning>
         <StoreProvider>{children}</StoreProvider>
         <DevelopmentNotice />
       </body>

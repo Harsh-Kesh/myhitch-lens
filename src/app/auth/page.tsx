@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState, useTransition, type FormEvent } from "react";
 
 import { Button } from "@/components/ui/Button";
-import { formControlSm, formLabel } from "@/components/ui/Form";
+import { formControl, formLabel } from "@/components/ui/Form";
 import { loginUser, registerUser } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
 import type { UserRole } from "@/lib/types";
@@ -26,10 +26,11 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
 ];
 
 const presetButton =
-  "flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-bg-primary px-3.5 py-2.5 text-left font-body text-[12.5px] font-[550] text-text-main transition-all duration-200 hover:translate-x-1 hover:border-primary hover:bg-surface-hover";
+  "flex cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-bg-primary px-3.5 py-2.5 text-left font-body text-[13px] font-medium text-text-main transition-all duration-200 hover:border-primary hover:bg-surface-hover disabled:opacity-50";
 
+/** Segmented-control tab. */
 const tabButton =
-  "cursor-pointer rounded border-none bg-transparent px-4 py-1.5 text-[13px] transition-all duration-200";
+  "flex-1 cursor-pointer rounded-md border-none px-4 py-2 text-[13.5px] font-semibold transition-all duration-200";
 
 function parseRole(value: string | null): UserRole | null {
   return value === "reader" || value === "author" || value === "editor" ? value : null;
@@ -91,19 +92,32 @@ function AuthCard() {
         </Link>
       </div>
 
-      <div className="p-6 max-[480px]:p-4">
-        <div className="mb-5 flex justify-around border-b border-line pb-2.5">
+      <div className="p-7 max-[480px]:p-5">
+        {/* Heading */}
+        <div className="mb-5 text-center">
+          <h1 className="font-heading text-[22px] font-bold text-text-main">
+            {tab === "signin" ? "Welcome back" : "Create your account"}
+          </h1>
+          <p className="mt-1 text-[13px] text-text-muted">
+            {tab === "signin"
+              ? "Sign in to your vetted MYHitch Lens account."
+              : "Join as a reader, author, or editor."}
+          </p>
+        </div>
+
+        {/* Segmented tab control */}
+        <div className="mb-6 flex gap-1 rounded-lg border border-line bg-bg-tertiary p-1">
           <button
             type="button"
             onClick={() => { setPickedTab("signin"); setError(null); }}
-            className={cn(tabButton, tab === "signin" ? "border-b-2 border-primary font-bold text-primary" : "font-medium text-text-muted hover:bg-surface-hover hover:text-text-main")}
+            className={cn(tabButton, tab === "signin" ? "bg-primary text-text-inverse shadow-sm" : "bg-transparent text-text-muted hover:text-text-main")}
           >
             Sign In
           </button>
           <button
             type="button"
             onClick={() => { setPickedTab("signup"); setError(null); }}
-            className={cn(tabButton, tab === "signup" ? "border-b-2 border-primary font-bold text-primary" : "font-medium text-text-muted hover:bg-surface-hover hover:text-text-main")}
+            className={cn(tabButton, tab === "signup" ? "bg-primary text-text-inverse shadow-sm" : "bg-transparent text-text-muted hover:text-text-main")}
           >
             Sign Up
           </button>
@@ -111,8 +125,8 @@ function AuthCard() {
 
         {tab === "signin" && (
           <div>
-            <p className="mb-2 text-[11px] font-bold text-text-muted uppercase">
-              Fast Vetting Simulators:
+            <p className="mb-2.5 text-[11px] font-bold tracking-wide text-text-muted uppercase">
+              Quick demo sign-in
             </p>
             <div className="mb-5 flex flex-col gap-2">
               {PRESETS.map((preset) => (
@@ -124,35 +138,35 @@ function AuthCard() {
                 </button>
               ))}
             </div>
-            <div className="relative mb-4 text-center text-xs text-text-muted">
-              <span className="relative z-1 bg-bg-primary px-2">or enter credentials</span>
+            <div className="relative mb-5 text-center text-xs text-text-muted">
+              <span className="relative z-1 bg-bg-primary px-3">or enter your credentials</span>
               <div className="absolute top-1/2 right-0 left-0 z-0 h-px bg-line" />
             </div>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div>
-            <label htmlFor="authUsername" className={formLabel}>Username / ID</label>
-            <input id="authUsername" type="text" className={formControlSm} placeholder="Enter username..." value={username} onChange={(e) => setUsername(e.target.value)} required />
+            <label htmlFor="authUsername" className={formLabel}>Username</label>
+            <input id="authUsername" type="text" autoComplete="username" className={formControl} placeholder="e.g. sarah_chen" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </div>
 
           {tab === "signup" && (
             <div>
-              <label htmlFor="authEmail" className={formLabel}>Email Address</label>
-              <input id="authEmail" type="email" className={formControlSm} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <label htmlFor="authEmail" className={formLabel}>Email address</label>
+              <input id="authEmail" type="email" autoComplete="email" className={formControl} placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
           )}
 
           <div>
             <label htmlFor="authPassword" className={formLabel}>Password</label>
-            <input id="authPassword" type="password" className={formControlSm} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <input id="authPassword" type="password" autoComplete={tab === "signup" ? "new-password" : "current-password"} className={formControl} placeholder={tab === "signup" ? "At least 8 characters" : "••••••••"} value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
 
           {tab === "signup" && (
             <div>
-              <label htmlFor="authRole" className={formLabel}>Select Role Profile</label>
-              <select id="authRole" className={formControlSm} value={role} onChange={(e) => setPickedRole(e.target.value as UserRole)}>
+              <label htmlFor="authRole" className={formLabel}>I am joining as a</label>
+              <select id="authRole" className={formControl} value={role} onChange={(e) => setPickedRole(e.target.value as UserRole)}>
                 {ROLE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
@@ -161,25 +175,27 @@ function AuthCard() {
           )}
 
           {error && (
-            <p className="rounded-md border border-[#ef4444]/40 bg-[rgba(239,68,68,0.08)] px-3 py-2 text-xs text-[#ef4444]">
+            <p className="rounded-md border border-danger/40 bg-danger/8 px-3 py-2 text-xs font-medium text-danger">
               {error}
             </p>
           )}
 
-          <Button type="submit" className="mt-2 w-full" disabled={isPending}>
-            {isPending ? "Please wait…" : tab === "signin" ? "Sign In Vetted Profile" : "Create Vetted Account"}
+          <Button type="submit" className="mt-1 w-full" disabled={isPending}>
+            {isPending ? "Please wait…" : tab === "signin" ? "Sign In" : "Create Account"}
           </Button>
         </form>
 
-        <div className="mt-5 text-center text-xs">
-          <button
-            type="button"
-            className="cursor-pointer bg-transparent px-2 py-1.5 text-primary"
-            onClick={() => alert("Password reset link sent to registered email! (Simulated)")}
-          >
-            Forgot Password?
-          </button>
-        </div>
+        {tab === "signin" && (
+          <div className="mt-5 text-center text-xs">
+            <button
+              type="button"
+              className="cursor-pointer bg-transparent px-2 py-1.5 text-primary hover:underline"
+              onClick={() => alert("Password reset link sent to registered email! (Simulated)")}
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

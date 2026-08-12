@@ -4,11 +4,11 @@ import { cn } from "@/lib/cn";
 
 /** `.form-control` - inputs, selects and textareas share one skin. */
 export const formControl =
-  "w-full rounded-lg border border-line bg-bg-primary px-4 py-2.5 font-body text-sm leading-[normal] text-text-main outline-none focus:border-primary";
+  "w-full rounded-lg border border-line bg-bg-primary px-4 py-2.5 font-body text-sm leading-[normal] text-text-main outline-none transition-all duration-200 placeholder:text-text-muted/60 focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /** `.form-control-sm` */
 export const formControlSm =
-  "w-full rounded-md border border-line bg-bg-primary px-3 py-1.5 text-xs leading-[normal] text-text-main outline-none focus:border-primary";
+  "w-full rounded-md border border-line bg-bg-primary px-3 py-1.5 text-xs leading-[normal] text-text-main outline-none transition-all duration-200 placeholder:text-text-muted/60 focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /** `.select-input` - the compact select used in the sidebar role simulator. */
 export const selectInput =

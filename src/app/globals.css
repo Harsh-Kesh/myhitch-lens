@@ -73,8 +73,10 @@
     --border-color: #e2e8f0;
     --border-hover: #cbd5e1;
 
-    --text-main: #000000;
-    --text-muted: #475569;
+    /* Softened from pure #000 to a warm near-black — easier on the eyes and
+       reads as more considered while keeping strong contrast (AAA on white). */
+    --text-main: #0f172a;
+    --text-muted: #52617a;
     --text-inverse: #ffffff;
 
     --primary-color: #2da4df;
@@ -135,7 +137,11 @@
   h6 {
     font-family: var(--font-outfit), sans-serif;
     font-weight: 700;
-    line-height: 1.25;
+    line-height: 1.2;
+    /* A touch of negative tracking makes the Outfit display face feel tighter
+       and more intentional at larger sizes; balance avoids awkward line breaks. */
+    letter-spacing: -0.015em;
+    text-wrap: balance;
     color: var(--text-main);
   }
 
@@ -167,7 +173,11 @@
     color: var(--text-main);
     font-family: var(--font-inter), sans-serif;
     font-size: 15px;
-    line-height: 1.6;
+    line-height: 1.65;
+    /* Crisper text rendering across platforms. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     overflow-x: hidden;
     /* Unbroken strings - long URLs, `sarah@chenlabs.org`, hashes in the
        simulator panels - would otherwise force a horizontal scrollbar on

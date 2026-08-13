@@ -18,8 +18,13 @@ const slugify = (text: string) =>
 
 const usernameFrom = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
-/** Ensure a user row exists for an article author, return its id. */
+/** Ensure a user row exists for an article author, return its id.
+ *  Reuses an existing account with the same display name (e.g. the demo
+ *  `sarah_chen`) so we never create duplicate author identities. */
 async function ensureAuthor(displayName: string): Promise<string> {
+  const byName = await prisma.user.findFirst({ where: { displayName } });
+  if (byName) return byName.id;
+
   const username = usernameFrom(displayName);
   const user = await prisma.user.upsert({
     where: { username },
@@ -148,6 +153,39 @@ async function main() {
     });
   }
   console.log(`Seeded ${defaultQueue.length} review-queue submissions.`);
+
+  // --- Reader demo data: bookmarks, follows, notifications for markus_green ---
+  const markus = await prisma.user.findUnique({ where: { username: "markus_green" } });
+  const sarah = await prisma.user.findUnique({ where: { username: "sarah_chen" } });
+  const elena = await prisma.user.findUnique({ where: { username: "dr_elena_rostova" } });
+
+  if (markus) {
+    for (const articleId of ["art-1", "art-2"]) {
+      await prisma.bookmark.upsert({
+        where: { userId_articleId: { userId: markus.id, articleId } },
+        update: {},
+        create: { userId: markus.id, articleId },
+      });
+    }
+    for (const author of [sarah, elena]) {
+      if (!author) continue;
+      await prisma.follow.upsert({
+        where: { followerId_followingId: { followerId: markus.id, followingId: author.id } },
+        update: {},
+        create: { followerId: markus.id, followingId: author.id },
+      });
+    }
+    if ((await prisma.notification.count({ where: { userId: markus.id } })) === 0) {
+      await prisma.notification.createMany({
+        data: [
+          { userId: markus.id, type: "publish", text: "Dr. Sarah Chen published a new research paper in 'AI'." },
+          { userId: markus.id, type: "system", text: "Vetting Board: Contributor rank recalculation complete." },
+          { userId: markus.id, type: "system", text: "Welcome to MYHitch Lens! Connect your Mart profile to sync link references." },
+        ],
+      });
+    }
+    console.log("Seeded reader demo data (bookmarks, follows, notifications).");
+  }
 }
 
 main()

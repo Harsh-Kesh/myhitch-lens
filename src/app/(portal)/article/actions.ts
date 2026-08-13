@@ -1,0 +1,64 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
+
+/** Toggle the current user's like on an article and keep the counter in sync. */
+export async function toggleLike(articleId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const userId = session.user.id;
+
+  const existing = await prisma.like.findUnique({
+    where: { userId_articleId: { userId, articleId } },
+  });
+
+  if (existing) {
+    await prisma.$transaction([
+      prisma.like.delete({ where: { userId_articleId: { userId, articleId } } }),
+      prisma.article.update({ where: { id: articleId }, data: { likesCount: { decrement: 1 } } }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      prisma.like.create({ data: { userId, articleId } }),
+      prisma.article.update({ where: { id: articleId }, data: { likesCount: { increment: 1 } } }),
+    ]);
+  }
+
+  revalidatePath("/article");
+  revalidatePath("/explore");
+}
+
+/** Toggle the current user's bookmark on an article. */
+export async function toggleBookmark(articleId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const userId = session.user.id;
+
+  const existing = await prisma.bookmark.findUnique({
+    where: { userId_articleId: { userId, articleId } },
+  });
+  if (existing) {
+    await prisma.bookmark.delete({ where: { userId_articleId: { userId, articleId } } });
+  } else {
+    await prisma.bookmark.create({ data: { userId, articleId } });
+  }
+
+  revalidatePath("/article");
+  revalidatePath("/reader-dashboard");
+}
+
+/** Post a comment as the current user. */
+export async function postComment(articleId: string, text: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const body = text.trim();
+  if (!body) return;
+
+  await prisma.comment.create({
+    data: { articleId, userId: session.user.id, text: body },
+  });
+  revalidatePath("/article");
+}

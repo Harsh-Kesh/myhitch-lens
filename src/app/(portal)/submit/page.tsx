@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ChangeEvent, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
 import {
@@ -25,16 +24,9 @@ import {
   UploadIcon,
 } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
-import {
-  getQueue,
-  getUserName,
-  getUserRole,
-  pushNotification,
-  saveQueue,
-} from "@/lib/lensStore";
 import { cn } from "@/lib/cn";
 import { CATEGORY_NAMES } from "@/data/categories";
-import type { QueueItem } from "@/lib/types";
+import { submitArticle } from "./actions";
 
 /** All 11 canonical categories (single source of truth). */
 const CATEGORIES = CATEGORY_NAMES;
@@ -85,8 +77,8 @@ function countWords(text: string): number {
 }
 
 export default function SubmitPage() {
-  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, startSubmit] = useTransition();
 
   const [title, setTitle] = useState(DEFAULT_TITLE);
   const [category, setCategory] = useState("Supply Chain");
@@ -256,36 +248,16 @@ export default function SubmitPage() {
       alert("Please fill in the headline and article body.");
       return;
     }
-
-    const submission: QueueItem = {
-      id: `rev-${Date.now()}`,
-      title,
-      author: getUserName(),
-      authorRank:
-        getUserRole() === "author" ? "Silver Contributor" : "Contributor",
-      category,
-      type: contentType,
-      submittedDate: `2026-07-20 ${new Date()
-        .toTimeString()
-        .split(" ")[0]
-        .substring(0, 5)}`,
-      aiScore: Math.floor(Math.random() * 10) + 89,
-      plagiarism: "0.4% detected",
-      readability: "Good (Flesch: 65)",
-      sentiment: "Highly Analytical",
-      content: body,
-    };
-
-    const queue = getQueue();
-    queue.push(submission);
-    saveQueue(queue);
-
-    pushNotification(`Submitted "${title}" for editorial vetting.`);
-
-    alert(
-      `"${title}" successfully submitted to the review queue!\nRedirecting to portfolio...`,
-    );
-    router.push("/author-dashboard");
+    startSubmit(async () => {
+      const result = await submitArticle({
+        title,
+        category,
+        contentType,
+        content: body,
+      });
+      // Success redirects to the author dashboard server-side; only errors return.
+      if (result?.error) alert(result.error);
+    });
   }
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -498,7 +470,9 @@ export default function SubmitPage() {
             <Button variant="secondary" onClick={saveDraft}>
               Save Draft
             </Button>
-            <Button onClick={submitToWorkflow}>Submit for Editorial Review</Button>
+            <Button onClick={submitToWorkflow} disabled={isSubmitting}>
+              {isSubmitting ? "Submitting…" : "Submit for Editorial Review"}
+            </Button>
           </div>
         </div>
 

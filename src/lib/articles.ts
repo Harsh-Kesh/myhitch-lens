@@ -54,6 +54,55 @@ const TIER_LABEL: Record<string, string> = {
   gold: "Gold Contributor",
 };
 
+export interface ReviewQueueItem {
+  id: string;
+  title: string;
+  author: string;
+  authorRank: string;
+  category: string;
+  type: string;
+  submittedDate: string;
+  aiScore: number;
+  plagiarism: string;
+  readability: string;
+  sentiment: string;
+  content: string;
+}
+
+function scoreField(aiScores: unknown, key: string, fallback: string | number) {
+  if (aiScores && typeof aiScores === "object" && key in aiScores) {
+    return (aiScores as Record<string, unknown>)[key] as string | number;
+  }
+  return fallback;
+}
+
+/** Articles awaiting editorial review (status = in_review), newest first. */
+export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
+  const rows = await prisma.article.findMany({
+    where: { status: "in_review" },
+    orderBy: { createdAt: "asc" },
+    include: {
+      category: { select: { name: true } },
+      author: { select: { displayName: true, rank: { select: { tier: true } } } },
+    },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    author: row.author.displayName,
+    authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
+    category: row.category.name,
+    type: row.contentType,
+    submittedDate: row.createdAt.toISOString().slice(0, 16).replace("T", " "),
+    aiScore: Number(scoreField(row.aiScores, "aiScore", 90)),
+    plagiarism: String(scoreField(row.aiScores, "plagiarism", "0.4% detected")),
+    readability: String(scoreField(row.aiScores, "readability", "Good (Flesch: 65)")),
+    sentiment: String(scoreField(row.aiScores, "sentiment", "Analytical")),
+    content: row.content,
+  }));
+}
+
 export interface ArticleComment {
   id: string;
   author: string;

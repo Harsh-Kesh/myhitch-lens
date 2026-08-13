@@ -5,7 +5,7 @@
 import { PrismaClient, type UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { CATEGORIES } from "../src/data/categories";
-import { defaultArticles } from "../src/data/defaults";
+import { defaultArticles, defaultQueue } from "../src/data/defaults";
 
 const prisma = new PrismaClient();
 
@@ -116,6 +116,38 @@ async function main() {
     });
   }
   console.log(`Seeded ${defaultArticles.length} articles.`);
+
+  // --- Editorial queue submissions (status = in_review, same rev-N ids) ---
+  const fallbackCategoryId = categoryBySlug.get("research")!;
+  for (const item of defaultQueue) {
+    const authorId = await ensureAuthor(item.author);
+    const categoryId = categoryBySlug.get(slugify(item.category)) ?? fallbackCategoryId;
+    const words = item.content.trim().split(/\s+/).length;
+    await prisma.article.upsert({
+      where: { id: item.id },
+      update: {},
+      create: {
+        id: item.id,
+        slug: slugify(item.title),
+        title: item.title,
+        summary: `${item.content.slice(0, 140)}…`,
+        content: item.content,
+        contentType: item.type,
+        status: "in_review",
+        lane: "public",
+        authorId,
+        categoryId,
+        aiScores: {
+          readTimeMin: Math.max(1, Math.ceil(words / 150)),
+          aiScore: item.aiScore,
+          plagiarism: item.plagiarism,
+          readability: item.readability,
+          sentiment: item.sentiment,
+        },
+      },
+    });
+  }
+  console.log(`Seeded ${defaultQueue.length} review-queue submissions.`);
 }
 
 main()

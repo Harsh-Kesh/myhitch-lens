@@ -4,9 +4,12 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { formControl, formControlSm, formLabel } from "@/components/ui/Form";
+import { dashCard, dashHeading, StatChip } from "@/components/ui/DashboardKit";
 import {
+  BarChartIcon,
   CalendarIcon,
   CheckIcon,
+  ColumnsIcon,
   CpuIcon,
   FolderIcon,
   UsersIcon,
@@ -48,6 +51,11 @@ export default function EditorialPage() {
   const [scheduleDate, setScheduleDate] = useState(DEFAULT_SCHEDULE);
 
   const selected = queue.find((item) => item.id === selectedId) ?? null;
+
+  const avgScore = queue.length
+    ? Math.round(queue.reduce((sum, item) => sum + item.aiScore, 0) / queue.length)
+    : 0;
+  const highQuality = queue.filter((item) => item.aiScore > 90).length;
 
   /** Drops an item from the queue and resets the detail panel. */
   function removeFromQueue(id: string): QueueItem | null {
@@ -119,16 +127,23 @@ export default function EditorialPage() {
   return (
     <>
       <ViewHeader
-        title="Editorial Workflow & Moderation"
+        title="Editorial Workflow"
         subtitle="Review, assign, and schedule articles submitted by authors."
       />
 
+      {/* Quick stats */}
+      <div className="mb-6 grid grid-cols-3 gap-4 max-[560px]:grid-cols-1">
+        <StatChip icon={<ColumnsIcon className="size-4" />} value={queue.length} label="Pending" />
+        <StatChip icon={<BarChartIcon className="size-4" />} value={avgScore || "—"} label="Avg AI score" />
+        <StatChip icon={<CheckIcon className="size-4" strokeWidth={3} />} value={highQuality} label="High quality" accent />
+      </div>
+
       {/* `.workflow-layout` */}
-      <div className="grid grid-cols-[0.8fr_1.2fr] gap-[30px] max-[992px]:grid-cols-1">
+      <div className="grid grid-cols-[0.8fr_1.2fr] gap-7 max-[992px]:grid-cols-1">
         {/* Queue list left */}
-        <div>
-          <h3 className="mb-4 font-heading text-base leading-[1.25] font-bold text-text-main">
-            Submitted Pending Reviews
+        <div className={dashCard}>
+          <h3 className={dashHeading}>
+            <ColumnsIcon className="size-[18px] text-primary" /> Pending Reviews
           </h3>
           <div className="flex flex-col gap-3">
             {queue.length === 0 ? (

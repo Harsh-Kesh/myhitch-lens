@@ -50,6 +50,28 @@ export async function toggleBookmark(articleId: string): Promise<void> {
   revalidatePath("/reader-dashboard");
 }
 
+/** Follow / unfollow an author from the article page. */
+export async function toggleFollow(authorId: string): Promise<void> {
+  const session = await auth();
+  if (!session?.user) return;
+  const followerId = session.user.id;
+  if (followerId === authorId) return; // can't follow yourself
+
+  const existing = await prisma.follow.findUnique({
+    where: { followerId_followingId: { followerId, followingId: authorId } },
+  });
+  if (existing) {
+    await prisma.follow.delete({
+      where: { followerId_followingId: { followerId, followingId: authorId } },
+    });
+  } else {
+    await prisma.follow.create({ data: { followerId, followingId: authorId } });
+  }
+
+  revalidatePath("/article");
+  revalidatePath("/reader-dashboard");
+}
+
 /** Post a comment as the current user. */
 export async function postComment(articleId: string, text: string): Promise<void> {
   const session = await auth();

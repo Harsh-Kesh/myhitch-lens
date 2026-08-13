@@ -19,10 +19,26 @@ export async function approveAndPublish(articleId: string, scheduleISO?: string)
   const when = scheduleISO ? new Date(scheduleISO) : new Date();
   const publishAt = Number.isNaN(when.getTime()) ? new Date() : when;
 
-  await prisma.article.update({
+  const article = await prisma.article.update({
     where: { id: articleId },
     data: { status: "published", verified: true, publishedAt: publishAt },
+    select: { title: true, authorId: true, author: { select: { displayName: true } } },
   });
+
+  // Notify everyone who follows the author.
+  const followers = await prisma.follow.findMany({
+    where: { followingId: article.authorId },
+    select: { followerId: true },
+  });
+  if (followers.length > 0) {
+    await prisma.notification.createMany({
+      data: followers.map((f) => ({
+        userId: f.followerId,
+        type: "publish",
+        text: `${article.author.displayName} published a new article: “${article.title}”.`,
+      })),
+    });
+  }
 
   revalidatePath("/editorial");
   revalidatePath("/explore");

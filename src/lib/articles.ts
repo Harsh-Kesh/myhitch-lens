@@ -118,7 +118,10 @@ export interface ArticleDetail {
   category: string;
   content: string;
   author: string;
+  authorId: string;
   authorRank: string;
+  isOwnArticle: boolean;
+  followingAuthor: boolean;
   likes: number;
   liked: boolean;
   bookmarked: boolean;
@@ -134,7 +137,7 @@ export async function getArticle(
     where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
     include: {
       category: { select: { name: true } },
-      author: { select: { displayName: true, rank: { select: { tier: true } } } },
+      author: { select: { id: true, displayName: true, rank: { select: { tier: true } } } },
       comments: {
         orderBy: { createdAt: "desc" },
         include: { user: { select: { displayName: true, role: true } } },
@@ -145,6 +148,13 @@ export async function getArticle(
   });
   if (!row) return null;
 
+  const followingAuthor =
+    userId && userId !== row.author.id
+      ? (await prisma.follow.count({
+          where: { followerId: userId, followingId: row.author.id },
+        })) > 0
+      : false;
+
   return {
     id: row.id,
     slug: row.slug,
@@ -152,7 +162,10 @@ export async function getArticle(
     category: row.category.name,
     content: row.content,
     author: row.author.displayName,
+    authorId: row.author.id,
     authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
+    isOwnArticle: userId === row.author.id,
+    followingAuthor,
     likes: row.likesCount,
     liked: Array.isArray(row.likes) && row.likes.length > 0,
     bookmarked: Array.isArray(row.bookmarks) && row.bookmarks.length > 0,

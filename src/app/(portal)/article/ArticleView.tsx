@@ -17,7 +17,7 @@ import { getIntegrations } from "@/lib/lensStore";
 import { defaultIntegrations } from "@/data/defaults";
 import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
-import { postComment, toggleBookmark, toggleLike } from "./actions";
+import { postComment, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -99,6 +99,12 @@ export function ArticleView({ article }: { article: ArticleDetail }) {
       router.refresh();
     });
   }
+  function runFollow() {
+    startTransition(async () => {
+      await toggleFollow(article.authorId);
+      router.refresh();
+    });
+  }
   function runPostComment() {
     const text = draftComment.trim();
     if (!text) return;
@@ -154,7 +160,22 @@ export function ArticleView({ article }: { article: ArticleDetail }) {
             <span className="text-[13.5px] font-semibold">{article.author}</span>
             <span className="text-[11px] text-text-muted">{article.authorRank}</span>
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {!article.isOwnArticle && (
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={runFollow}
+                className={cn(
+                  "cursor-pointer rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60",
+                  article.followingAuthor
+                    ? "border-line bg-bg-secondary text-text-muted hover:border-line-hover hover:text-text-main"
+                    : "border-primary bg-primary text-text-inverse hover:bg-primary-hover",
+                )}
+              >
+                {article.followingAuthor ? "Following" : "+ Follow"}
+              </button>
+            )}
             <button type="button" aria-label="Toggle bookmark" aria-pressed={article.bookmarked} disabled={isPending} onClick={runBookmark} className={cn(actionButton, article.bookmarked ? "border-primary bg-primary-glow text-primary [&_svg]:fill-primary" : "border-line bg-bg-secondary text-text-muted hover:border-line-hover hover:text-text-main")}>
               <BookmarkIcon className="size-3.5" />
             </button>

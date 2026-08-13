@@ -27,6 +27,20 @@ export interface Article {
   liked?: boolean;
 }
 
+/** Lightweight article shape for feed/list rendering (from the database). */
+export interface FeedArticle {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  category: string;
+  type: string;
+  author: string;
+  verified: boolean;
+  likes: number;
+  readTime: string;
+}
+
 export interface QueueItem {
   id: string;
   title: string;

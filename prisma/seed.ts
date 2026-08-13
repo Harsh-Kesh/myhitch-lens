@@ -5,8 +5,37 @@
 import { PrismaClient, type UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { CATEGORIES } from "../src/data/categories";
+import { defaultArticles } from "../src/data/defaults";
 
 const prisma = new PrismaClient();
+
+const slugify = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+const usernameFrom = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+
+/** Ensure a user row exists for an article author, return its id. */
+async function ensureAuthor(displayName: string): Promise<string> {
+  const username = usernameFrom(displayName);
+  const user = await prisma.user.upsert({
+    where: { username },
+    update: {},
+    create: {
+      username,
+      email: `${username}@lens.demo`,
+      role: "author",
+      displayName,
+      profile: { create: {} },
+      wallet: { create: {} },
+      rank: { create: {} },
+    },
+  });
+  return user.id;
+}
 
 /** Demo accounts so the platform is usable immediately (real, hashed passwords). */
 const DEMO_USERS: {
@@ -49,6 +78,44 @@ async function main() {
     });
   }
   console.log(`Seeded ${DEMO_USERS.length} demo users.`);
+
+  // --- Articles (same art-N ids as the localStorage defaults) ---
+  const categoryBySlug = new Map(
+    (await prisma.category.findMany()).map((c) => [c.slug, c.id]),
+  );
+
+  for (const article of defaultArticles) {
+    const authorId = await ensureAuthor(article.author);
+    const categoryId = categoryBySlug.get(slugify(article.category));
+    if (!categoryId) {
+      console.warn(`  skipped ${article.id}: unknown category ${article.category}`);
+      continue;
+    }
+    const words = article.content.trim().split(/\s+/).length;
+    const readTimeMin = parseInt(article.readTime, 10) || Math.max(1, Math.ceil(words / 150));
+    await prisma.article.upsert({
+      where: { id: article.id },
+      update: { aiScores: { readTimeMin } },
+      create: {
+        id: article.id,
+        slug: slugify(article.title),
+        title: article.title,
+        summary: article.summary,
+        content: article.content,
+        contentType: article.type,
+        status: "published",
+        lane: "public",
+        verified: article.verified,
+        authorId,
+        categoryId,
+        likesCount: article.likes,
+        viewsCount: article.likes * 12,
+        aiScores: { readTimeMin },
+        publishedAt: new Date(`${article.date}T09:00:00Z`),
+      },
+    });
+  }
+  console.log(`Seeded ${defaultArticles.length} articles.`);
 }
 
 main()

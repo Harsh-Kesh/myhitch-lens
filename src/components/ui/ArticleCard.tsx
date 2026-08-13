@@ -3,10 +3,10 @@
 import { useRouter } from "next/navigation";
 
 import { CheckIcon, ClockIcon, HeartIcon } from "@/components/ui/icons";
-import type { Article } from "@/lib/types";
+import type { FeedArticle } from "@/lib/types";
 
 /** `.article-card` - the feed tile rendered by `renderFeed()` in the old build. */
-export function ArticleCard({ article }: { article: Article }) {
+export function ArticleCard({ article }: { article: FeedArticle }) {
   const router = useRouter();
 
   return (

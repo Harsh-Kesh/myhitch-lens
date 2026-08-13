@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { formControl, formControlSm, formLabel } from "@/components/ui/Form";
@@ -29,6 +29,19 @@ const checkItem = "flex flex-wrap justify-between gap-x-3 gap-y-0.5 text-xs";
 export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  // Format timestamps in the viewer's local timezone, but only after mount so
+  // the server (UTC) and first client render match — no hydration mismatch.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const localDateTime = (iso: string) =>
+    mounted
+      ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+      : iso.slice(0, 16).replace("T", " ");
+  const localTime = (iso: string) =>
+    mounted
+      ? new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+      : iso.slice(11, 16);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
@@ -122,7 +135,7 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                 >
                   <div className="mb-2 flex justify-between text-[10.5px] text-text-muted">
                     <span>{item.category} • {item.type}</span>
-                    <span>{item.submittedDate.split(" ")[1] ?? ""}</span>
+                    <span>{localTime(item.submittedAt)}</span>
                   </div>
                   <div className="mb-2 text-[14.5px] font-semibold">{item.title}</div>
                   <div className="flex items-center justify-between text-[11.5px]">
@@ -165,7 +178,7 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                   <UsersIcon className="size-3 align-middle" /> <strong>Author:</strong> {selected.author} ({selected.authorRank})
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <CalendarIcon className="size-3 align-middle" /> <strong>Submitted:</strong> {selected.submittedDate}
+                  <CalendarIcon className="size-3 align-middle" /> <strong>Submitted:</strong> {localDateTime(selected.submittedAt)}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <FolderIcon className="size-3 align-middle" /> <strong>Category:</strong> {selected.category}

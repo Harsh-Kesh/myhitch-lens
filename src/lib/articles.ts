@@ -61,7 +61,8 @@ export interface ReviewQueueItem {
   authorRank: string;
   category: string;
   type: string;
-  submittedDate: string;
+  /** ISO timestamp (UTC); formatted to the viewer's local time in the client. */
+  submittedAt: string;
   aiScore: number;
   plagiarism: string;
   readability: string;
@@ -94,7 +95,7 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
     category: row.category.name,
     type: row.contentType,
-    submittedDate: row.createdAt.toISOString().slice(0, 16).replace("T", " "),
+    submittedAt: row.createdAt.toISOString(),
     aiScore: Number(scoreField(row.aiScores, "aiScore", 90)),
     plagiarism: String(scoreField(row.aiScores, "plagiarism", "0.4% detected")),
     readability: String(scoreField(row.aiScores, "readability", "Good (Flesch: 65)")),

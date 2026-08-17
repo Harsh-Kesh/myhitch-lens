@@ -186,6 +186,37 @@ async function main() {
     }
     console.log("Seeded reader demo data (bookmarks, follows, notifications).");
   }
+
+  // --- Revenue / wallet demo data for sarah_chen ---
+  if (sarah) {
+    const existingLedger = await prisma.revenueLedger.count({ where: { userId: sarah.id } });
+    if (existingLedger === 0) {
+      await prisma.revenueLedger.createMany({
+        data: [
+          { userId: sarah.id, articleId: "art-1", type: "subscription", gross: "620.00", feeApplied: "0.00", net: "620.00" },
+          { userId: sarah.id, articleId: "art-2", type: "subscription", gross: "1222.10", feeApplied: "0.00", net: "1222.10" },
+          { userId: sarah.id, articleId: "art-1", type: "ad_share", gross: "142.40", feeApplied: "57.00", net: "85.40" },
+          { userId: sarah.id, articleId: "art-2", type: "ad_share", gross: "162.00", feeApplied: "65.00", net: "97.00" },
+          { userId: sarah.id, articleId: "art-1", type: "donation", gross: "46.00", feeApplied: "2.30", net: "43.70" },
+          { userId: sarah.id, articleId: "art-2", type: "donation", gross: "76.00", feeApplied: "3.80", net: "72.20" },
+        ],
+      });
+      console.log("Seeded 6 RevenueLedger entries for sarah_chen.");
+    }
+
+    await prisma.wallet.upsert({
+      where: { userId: sarah.id },
+      update: { balance: "2140.40" },
+      create: { userId: sarah.id, balance: "2140.40" },
+    });
+
+    await prisma.contributorRank.upsert({
+      where: { userId: sarah.id },
+      update: { tier: "gold", points: 4200 },
+      create: { userId: sarah.id, tier: "gold", points: 4200 },
+    });
+    console.log("Seeded wallet + rank for sarah_chen.");
+  }
 }
 
 main()

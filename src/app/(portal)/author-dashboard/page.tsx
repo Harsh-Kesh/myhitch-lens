@@ -7,17 +7,22 @@ import { BarChartIcon, BookIcon, CheckIcon, DollarSignIcon, HeartIcon } from "@/
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { cn } from "@/lib/cn";
+import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 
-const EARNINGS_ROWS = [
-  { label: "Subscription payouts", value: "+$1,842.10" },
-  { label: "Programmatic ad share", value: "+$182.40" },
-  { label: "Micro-donation payouts", value: "+$116.00" },
-];
+function formatAUD(n: number): string {
+  return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function tierLabel(tier: string | null): string {
+  if (!tier) return "Unranked";
+  return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
 
 export default async function AuthorDashboardPage() {
   const session = await auth();
   const name = session?.user?.name ?? "Author";
-  const { articles, totalViews, totalLikes, published } = await getAuthorSpace(session!.user.id);
+  const space = await getAuthorSpace(session!.user.id);
+  const { articles, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
     <>
@@ -35,11 +40,17 @@ export default async function AuthorDashboardPage() {
               </span>
             </h3>
             <p className="mt-0.5 text-xs text-text-muted">
-              Rank <span className="font-semibold text-text-main">#42 · Gold tier</span> · Expertise: Supply Chain Operations, AI Logistics
+              {rankPosition != null ? (
+                <>Rank <span className="font-semibold text-text-main">#{rankPosition} · {tierLabel(rankTier)} tier</span> · {rankPoints.toLocaleString()} pts</>
+              ) : (
+                <span className="text-text-muted">No rank yet — publish to earn points</span>
+              )}
             </p>
           </div>
         </div>
-        <span className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-white">Premium Contributor</span>
+        {rankTier === "gold" && (
+          <span className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-white">Premium Contributor</span>
+        )}
       </div>
 
       {/* Quick stats */}
@@ -47,7 +58,7 @@ export default async function AuthorDashboardPage() {
         <StatChip icon={<BookIcon className="size-4" />} value={published} label="Published" />
         <StatChip icon={<BarChartIcon className="size-4" />} value={totalViews.toLocaleString()} label="Total views" />
         <StatChip icon={<HeartIcon className="size-4" />} value={totalLikes.toLocaleString()} label="Total likes" />
-        <StatChip icon={<DollarSignIcon className="size-4" />} value="$2,140.50" label="Earnings" accent />
+        <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
       </div>
 
       <div className="grid grid-cols-[1.35fr_0.65fr] gap-7 max-[992px]:grid-cols-1">
@@ -75,7 +86,9 @@ export default async function AuthorDashboardPage() {
                   <p className="mb-4 line-clamp-2 flex-1 text-[12.5px] text-text-muted">{article.summary}</p>
                   <div className="flex items-center justify-between border-t border-line pt-3 text-[11.5px] text-text-muted">
                     <span>{article.views.toLocaleString()} views</span>
-                    <span className="font-semibold text-success">+${(article.likes * 2.5).toFixed(2)}</span>
+                    {article.earnings > 0 && (
+                      <span className="font-semibold text-success">+{formatAUD(article.earnings)}</span>
+                    )}
                   </div>
                 </Link>
               ))
@@ -89,19 +102,31 @@ export default async function AuthorDashboardPage() {
             <DollarSignIcon className="size-[18px] text-primary" /> Monetization
           </h3>
           <div className="rounded-lg border border-line bg-bg-primary p-4">
-            <span className="text-[11px] font-medium text-text-muted uppercase">Accumulated earnings</span>
-            <span className="mt-1 block font-heading text-2xl font-extrabold text-success">$2,140.50</span>
+            <span className="text-[11px] font-medium text-text-muted uppercase">Available balance</span>
+            <span className="mt-1 block font-heading text-2xl font-extrabold text-success">{formatAUD(walletBalance)}</span>
           </div>
-          <div className="mt-4 flex flex-col gap-3">
-            {EARNINGS_ROWS.map((row) => (
-              <div key={row.label} className="flex justify-between text-[13px]">
-                <span className="text-text-muted">{row.label}</span>
-                <span className="font-medium text-success">{row.value}</span>
+          {earningsBreakdown.length > 0 ? (
+            <div className="mt-4 flex flex-col gap-3">
+              {earningsBreakdown.map((row) => (
+                <div key={row.label} className="flex justify-between text-[13px]">
+                  <span className="text-text-muted">{row.label}</span>
+                  <span className="font-medium text-success">+{formatAUD(row.value)}</span>
+                </div>
+              ))}
+              <div className="flex justify-between border-t border-line pt-3 text-[13px] font-semibold">
+                <span className="text-text-main">Total earned</span>
+                <span className="text-success">{formatAUD(totalEarnings)}</span>
               </div>
-            ))}
-          </div>
-          <Button size="sm" className="mt-5 w-full" disabled>Withdraw Funds</Button>
-          <p className="mt-2 text-center text-[10.5px] text-text-muted">Minimum payout A$50 · paid via Stripe · live in Phase 5</p>
+            </div>
+          ) : (
+            <p className="mt-4 text-center text-[12px] text-text-muted">No earnings yet — revenue appears as readers engage with your content.</p>
+          )}
+          <Button size="sm" className="mt-5 w-full" disabled={walletBalance < MARKETPLACE_DEFAULTS.payoutMinimum}>
+            Withdraw Funds
+          </Button>
+          <p className="mt-2 text-center text-[10.5px] text-text-muted">
+            Minimum payout A${MARKETPLACE_DEFAULTS.payoutMinimum} · paid via Stripe
+          </p>
         </div>
       </div>
     </>

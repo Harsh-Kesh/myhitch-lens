@@ -15,7 +15,7 @@ import {
   FolderIcon,
   UsersIcon,
 } from "@/components/ui/icons";
-import { RichContentRenderer } from "@/components/ui/RichEditor";
+import { RichContentRenderer, ArticlePreviewModal } from "@/components/ui/RichEditor";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import type { ReviewQueueItem } from "@/lib/articles";
@@ -31,8 +31,6 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Format timestamps in the viewer's local timezone, but only after mount so
-  // the server (UTC) and first client render match — no hydration mismatch.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const localDateTime = (iso: string) =>
@@ -48,6 +46,7 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
   const [feedback, setFeedback] = useState("");
   const [assignee, setAssignee] = useState(EDITORS[0]);
   const [scheduleDate, setScheduleDate] = useState(DEFAULT_SCHEDULE);
+  const [showPreview, setShowPreview] = useState(false);
 
   const selected = queue.find((item) => item.id === selectedId) ?? null;
   const avgScore = queue.length
@@ -79,7 +78,7 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
       await requestRevisions(id, text, assignee);
       reset();
       router.refresh();
-      alert("Revision request registered.");
+      alert("Revision request sent to the author.");
     });
   }
 
@@ -92,6 +91,171 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
     });
   }
 
+  // Full-screen review view when an article is selected
+  if (selected) {
+    return (
+      <>
+        <div className="mb-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={reset}
+            className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line bg-bg-secondary px-3 py-1.5 text-xs font-semibold text-text-muted hover:border-line-hover hover:text-text-main"
+          >
+            ← Back to Queue
+          </button>
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "rounded px-2 py-0.5 text-xs font-bold",
+                selected.aiScore > 90
+                  ? "bg-[rgba(5,150,105,0.1)] text-success"
+                  : "bg-primary-glow text-primary",
+              )}
+            >
+              AI Score: {selected.aiScore}/100
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowPreview(true)}
+            >
+              Preview as Published
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[1fr_340px] gap-6 max-[992px]:grid-cols-1">
+          {/* Main article content area */}
+          <div className="min-w-0">
+            {/* Article header */}
+            <div className="mb-6 rounded-xl border border-line bg-bg-secondary p-6">
+              <h1 className="mb-4 font-heading text-2xl leading-[1.25] font-bold text-text-main max-[640px]:text-xl">
+                {selected.title}
+              </h1>
+
+              <div className="mb-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <UsersIcon className="size-3 align-middle" /> <strong>Author:</strong> {selected.author} ({selected.authorRank})
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <CalendarIcon className="size-3 align-middle" /> <strong>Submitted:</strong> {localDateTime(selected.submittedAt)}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <FolderIcon className="size-3 align-middle" /> <strong>Category:</strong> {selected.category}
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <strong>Type:</strong> {selected.type}
+                </span>
+              </div>
+            </div>
+
+            {/* Article body — full-width reading area */}
+            <div className="mb-6 rounded-xl border border-line bg-bg-secondary p-8 text-[15px] leading-[1.75] max-[640px]:p-5">
+              {isRichContent(selected.content) ? (
+                <RichContentRenderer content={selected.content} />
+              ) : (
+                <div className="whitespace-pre-wrap">{selected.content}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Right sidebar: AI report + actions */}
+          <div className="flex flex-col gap-5 max-[992px]:order-first">
+            {/* AI review report */}
+            <div className="rounded-xl border border-line bg-bg-secondary p-5">
+              <h4 className="mb-3 flex items-center gap-1.5 font-heading text-[13.5px] font-bold text-primary">
+                <CpuIcon className="size-4 align-middle text-primary" /> AI Automated Review
+              </h4>
+              <div className="flex flex-col gap-3">
+                <div className={checkItem}>
+                  <span className="text-text-muted">Grammar &amp; Plagiarism:</span>
+                  <span className="inline-flex items-center gap-1 text-success">
+                    <CheckIcon className="size-3 align-middle" strokeWidth={3} /> Passed ({selected.plagiarism})
+                  </span>
+                </div>
+                <div className={checkItem}>
+                  <span className="text-text-muted">Readability:</span>
+                  <span>{selected.readability}</span>
+                </div>
+                <div className={checkItem}>
+                  <span className="text-text-muted">Sentiment:</span>
+                  <span>{selected.sentiment}</span>
+                </div>
+                <div className={checkItem}>
+                  <span className="text-text-muted">Quality Score:</span>
+                  <span className="font-bold text-success">{selected.aiScore}/100</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Editor actions */}
+            <div className="rounded-xl border border-line bg-bg-secondary p-5">
+              <h4 className="mb-3 font-heading text-[13.5px] font-bold text-text-main">
+                Editor Actions
+              </h4>
+
+              <div className="mb-4">
+                <label htmlFor="reviewFeedbackText" className={formLabel}>
+                  Feedback / Revision Notes
+                </label>
+                <textarea
+                  id="reviewFeedbackText"
+                  rows={4}
+                  className={cn(formControl, "w-full")}
+                  placeholder="Write comments or required revisions for the author..."
+                  value={feedback}
+                  onChange={(event) => setFeedback(event.target.value)}
+                />
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="editorAssignee" className={formLabel}>Assign Editor</label>
+                <select id="editorAssignee" className={formControlSm} value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                  {EDITORS.map((editor) => <option key={editor}>{editor}</option>)}
+                </select>
+              </div>
+
+              <div className="mb-5">
+                <label htmlFor="pubScheduleDate" className={formLabel}>Schedule Publication</label>
+                <input id="pubScheduleDate" type="datetime-local" className={formControlSm} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button disabled={isPending} onClick={() => doApprove(selected.id)} className="w-full">
+                  Approve &amp; Publish
+                </Button>
+                <Button variant="secondary" disabled={isPending} onClick={() => doRevise(selected.id)} className="w-full">
+                  Request Revisions
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={isPending}
+                  className="w-full border-[rgba(239,68,68,0.2)] text-danger"
+                  onClick={() => doReject(selected.id)}
+                >
+                  Reject
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Preview modal */}
+        {showPreview && (
+          <ArticlePreviewModal
+            title={selected.title}
+            content={selected.content}
+            author={selected.author}
+            category={selected.category}
+            contentType={selected.type}
+            onClose={() => setShowPreview(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  // Queue list view (no article selected)
   return (
     <>
       <ViewHeader
@@ -105,158 +269,55 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
         <StatChip icon={<CheckIcon className="size-4" strokeWidth={3} />} value={highQuality} label="High quality" accent />
       </div>
 
-      <div className="grid grid-cols-[0.8fr_1.2fr] gap-7 max-[992px]:grid-cols-1">
-        {/* Queue */}
-        <div className={dashCard}>
-          <h3 className={dashHeading}>
-            <ColumnsIcon className="size-[18px] text-primary" /> Pending Reviews
-          </h3>
-          <div className="flex flex-col gap-3">
-            {queue.length === 0 ? (
-              <p className="p-8 text-center text-[13px] text-text-muted">No articles pending vetting.</p>
-            ) : (
-              queue.map((item) => (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedId(item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedId(item.id);
-                    }
-                  }}
-                  className={cn(
-                    queueItem,
-                    selectedId === item.id
-                      ? "border-primary bg-primary-glow"
-                      : "border-line bg-bg-primary hover:border-line-hover",
-                  )}
-                >
-                  <div className="mb-2 flex justify-between text-[10.5px] text-text-muted">
-                    <span>{item.category} • {item.type}</span>
-                    <span>{localTime(item.submittedAt)}</span>
-                  </div>
-                  <div className="mb-2 text-[14.5px] font-semibold">{item.title}</div>
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span>By {item.author}</span>
-                    <span
-                      className={cn(
-                        "rounded px-2 py-0.5 font-bold",
-                        item.aiScore > 90
-                          ? "bg-[rgba(5,150,105,0.1)] text-success"
-                          : "bg-primary-glow text-primary",
-                      )}
-                    >
-                      AI Score: {item.aiScore}
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Review panel */}
-        <div className={cn(dashCard, "min-h-[400px] max-[640px]:min-h-0")}>
-          {!selected ? (
-            <div className="pt-[150px] text-center text-text-muted max-[992px]:pt-16 max-[640px]:pt-8">
-              <p>
-                {queue.length === 0
-                  ? "All clear! There are no submissions pending moderation."
-                  : "Select an article from the review queue to moderate."}
-              </p>
-            </div>
-          ) : (
-            <div>
-              <h3 className="mb-4 font-heading text-2xl leading-[1.25] font-bold text-text-main max-[640px]:text-xl">
-                {selected.title}
-              </h3>
-
-              <div className="mb-5 flex flex-wrap gap-x-5 gap-y-2 border-b border-line pb-4 text-[13px] text-text-muted">
-                <span className="inline-flex items-center gap-1">
-                  <UsersIcon className="size-3 align-middle" /> <strong>Author:</strong> {selected.author} ({selected.authorRank})
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <CalendarIcon className="size-3 align-middle" /> <strong>Submitted:</strong> {localDateTime(selected.submittedAt)}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <FolderIcon className="size-3 align-middle" /> <strong>Category:</strong> {selected.category}
-                </span>
-              </div>
-
-              <div className="mb-6 max-h-[300px] overflow-y-auto rounded-lg border border-line bg-bg-primary p-5 text-[13.5px]">
-                {isRichContent(selected.content) ? (
-                  <RichContentRenderer content={selected.content} />
-                ) : (
-                  <div className="whitespace-pre-wrap">{selected.content}</div>
+      <div className={dashCard}>
+        <h3 className={dashHeading}>
+          <ColumnsIcon className="size-[18px] text-primary" /> Pending Reviews
+        </h3>
+        {queue.length === 0 ? (
+          <p className="p-8 text-center text-[13px] text-text-muted">
+            All clear! There are no submissions pending moderation.
+          </p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(360px,100%),1fr))] gap-4">
+            {queue.map((item) => (
+              <div
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedId(item.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setSelectedId(item.id);
+                  }
+                }}
+                className={cn(
+                  queueItem,
+                  "border-line bg-bg-primary hover:border-primary hover:shadow-card",
                 )}
-              </div>
-
-              <div className="mb-6 rounded-lg border border-line bg-bg-primary p-5 max-[480px]:p-4">
-                <h4 className="mb-3 flex items-center gap-1.5 font-heading text-[13.5px] font-bold text-primary">
-                  <CpuIcon className="size-4 align-middle text-primary" /> AI Automated Review Report
-                </h4>
-                <div className="grid grid-cols-2 gap-3 max-[1200px]:grid-cols-1 max-[992px]:grid-cols-2 max-[640px]:grid-cols-1">
-                  <div className={checkItem}>
-                    <span className="text-text-muted">Grammar &amp; Plagiarism validation:</span>
-                    <span className="inline-flex items-center gap-1 text-success">
-                      <CheckIcon className="size-3 align-middle" strokeWidth={3} /> Passed ({selected.plagiarism})
-                    </span>
-                  </div>
-                  <div className={checkItem}>
-                    <span className="text-text-muted">Readability Rating:</span>
-                    <span>{selected.readability}</span>
-                  </div>
-                  <div className={checkItem}>
-                    <span className="text-text-muted">Sentiment Profile:</span>
-                    <span>{selected.sentiment}</span>
-                  </div>
-                  <div className={checkItem}>
-                    <span className="text-text-muted">Dynamic AI Quality Score:</span>
-                    <span className="font-bold text-success">{selected.aiScore}/100</span>
-                  </div>
+              >
+                <div className="mb-2 flex justify-between text-[10.5px] text-text-muted">
+                  <span>{item.category} · {item.type}</span>
+                  <span>{localTime(item.submittedAt)}</span>
+                </div>
+                <div className="mb-2 text-[14.5px] font-semibold">{item.title}</div>
+                <div className="flex items-center justify-between text-[11.5px]">
+                  <span>By {item.author}</span>
+                  <span
+                    className={cn(
+                      "rounded px-2 py-0.5 font-bold",
+                      item.aiScore > 90
+                        ? "bg-[rgba(5,150,105,0.1)] text-success"
+                        : "bg-primary-glow text-primary",
+                    )}
+                  >
+                    AI Score: {item.aiScore}
+                  </span>
                 </div>
               </div>
-
-              <div className="border-t border-line pt-6">
-                <div className="mb-5">
-                  <label htmlFor="reviewFeedbackText" className={formLabel}>
-                    Moderator Comments / Revision Feedback
-                  </label>
-                  <textarea
-                    id="reviewFeedbackText"
-                    rows={2}
-                    className={cn(formControl, "mb-4 w-full")}
-                    placeholder="Provide guidelines or required revisions for the author..."
-                    value={feedback}
-                    onChange={(event) => setFeedback(event.target.value)}
-                  />
-                </div>
-
-                <div className="mb-5 flex flex-wrap gap-4">
-                  <div className="flex-[0_0_calc(50%-8px)] max-[560px]:flex-[1_1_100%]">
-                    <label htmlFor="editorAssignee" className={formLabel}>Assign Editor</label>
-                    <select id="editorAssignee" className={formControlSm} value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-                      {EDITORS.map((editor) => <option key={editor}>{editor}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex-[0_0_calc(50%-8px)] max-[560px]:flex-[1_1_100%]">
-                    <label htmlFor="pubScheduleDate" className={formLabel}>Schedule Publication Date</label>
-                    <input id="pubScheduleDate" type="datetime-local" className={formControlSm} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
-                  </div>
-                </div>
-
-                <div className="mb-4 flex flex-wrap gap-3">
-                  <Button disabled={isPending} onClick={() => doApprove(selected.id)}>Approve &amp; Publish</Button>
-                  <Button variant="secondary" disabled={isPending} onClick={() => doRevise(selected.id)}>Request Revisions</Button>
-                  <Button variant="secondary" disabled={isPending} className="border-[rgba(239,68,68,0.2)] text-danger" onClick={() => doReject(selected.id)}>Reject</Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );

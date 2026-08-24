@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
-import { RichEditor } from "@/components/ui/RichEditor";
+import { RichEditor, ArticlePreviewModal } from "@/components/ui/RichEditor";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 
@@ -33,6 +33,11 @@ export default function SubmitPage() {
   const [contentType, setContentType] = useState("Blog");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [draftLoading, setDraftLoading] = useState(!!editId);
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Revision feedback state
+  const [revisionNotes, setRevisionNotes] = useState<string[]>([]);
+  const [draftStatus, setDraftStatus] = useState<string>("draft");
 
   // Tag picker state
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -59,6 +64,10 @@ export default function SubmitPage() {
         setContent(draft.content);
         setContentType(draft.contentType);
         setSelectedTags(draft.tags);
+        setDraftStatus(draft.status);
+        if (draft.revisionNotes && draft.revisionNotes.length > 0) {
+          setRevisionNotes(draft.revisionNotes);
+        }
       }
       setDraftLoading(false);
     });
@@ -181,16 +190,42 @@ export default function SubmitPage() {
             <Button
               variant="secondary"
               size="sm"
+              onClick={() => setShowPreview(true)}
+              disabled={!title.trim() && wordCount === 0}
+            >
+              Preview
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => router.push("/author-dashboard")}
             >
               Back to Dashboard
             </Button>
             <Button size="sm" onClick={() => setShowSubmitPanel(true)}>
-              Submit for Review
+              {draftStatus === "changes_requested" ? "Resubmit for Review" : "Submit for Review"}
             </Button>
           </div>
         }
       />
+
+      {/* Revision feedback banner */}
+      {draftStatus === "changes_requested" && revisionNotes.length > 0 && (
+        <div className="mb-4 rounded-lg border border-warning/40 bg-warning/5 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <svg className="size-4 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span className="text-sm font-bold text-warning">Revision Requested by Editor</span>
+          </div>
+          {revisionNotes.map((note, i) => (
+            <div key={i} className="mt-2 rounded border border-line bg-bg-primary p-3 text-[13px] text-text-main">
+              {note}
+            </div>
+          ))}
+          <p className="mt-2 text-[11px] text-text-muted">
+            Make the requested changes above, then click &quot;Resubmit for Review&quot; when ready.
+          </p>
+        </div>
+      )}
 
       {/* Title input */}
       <input
@@ -221,6 +256,19 @@ export default function SubmitPage() {
         <span>{readingTime} min read</span>
       </div>
 
+      {/* Preview modal */}
+      {showPreview && (
+        <ArticlePreviewModal
+          title={title}
+          content={content}
+          author="Dr. Sarah Chen"
+          category={contentType}
+          contentType={contentType}
+          tags={selectedTags}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+
       {/* Submit panel (overlay) */}
       {showSubmitPanel && (
         <>
@@ -230,7 +278,7 @@ export default function SubmitPage() {
           />
           <div className="fixed inset-y-0 right-0 z-50 flex w-[min(420px,90vw)] flex-col overflow-y-auto border-l border-line bg-bg-secondary p-6 shadow-card">
             <h3 className="mb-6 font-heading text-lg font-bold text-text-main">
-              Submit for Editorial Review
+              {draftStatus === "changes_requested" ? "Resubmit for Editorial Review" : "Submit for Editorial Review"}
             </h3>
 
             {/* Content type */}
@@ -350,7 +398,7 @@ export default function SubmitPage() {
                 onClick={handleSubmit}
                 disabled={isSubmitting || !title.trim() || selectedTags.length === 0}
               >
-                {isSubmitting ? "Submitting..." : "Submit"}
+                {isSubmitting ? "Submitting..." : draftStatus === "changes_requested" ? "Resubmit" : "Submit"}
               </Button>
             </div>
           </div>

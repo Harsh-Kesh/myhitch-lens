@@ -65,6 +65,90 @@ const AudioNode = Node.create({
   },
 });
 
+// Custom Figure node for images with captions and source references
+const FigureNode = Node.create({
+  name: "figure",
+  group: "block",
+  content: "inline*",
+  draggable: true,
+  addAttributes() {
+    return {
+      src: { default: null },
+      alt: { default: "" },
+      caption: { default: "" },
+      sourceUrl: { default: "" },
+      sourceLabel: { default: "" },
+      showSource: { default: true },
+    };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "figure[data-figure]",
+        getAttrs(node) {
+          const el = node as HTMLElement;
+          const img = el.querySelector("img");
+          return {
+            src: img?.getAttribute("src") || "",
+            alt: img?.getAttribute("alt") || "",
+            caption: el.getAttribute("data-caption") || "",
+            sourceUrl: el.getAttribute("data-source-url") || "",
+            sourceLabel: el.getAttribute("data-source-label") || "",
+            showSource: el.getAttribute("data-show-source") !== "false",
+          };
+        },
+      },
+    ];
+  },
+  renderHTML({ HTMLAttributes }) {
+    const { src, alt, caption, sourceUrl, sourceLabel, showSource, ...rest } =
+      HTMLAttributes;
+
+    const figAttrs = mergeAttributes(rest, {
+      "data-figure": "",
+      "data-caption": caption || "",
+      "data-source-url": sourceUrl || "",
+      "data-source-label": sourceLabel || "",
+      "data-show-source": String(showSource !== false),
+      style: "margin:1em 0;text-align:center",
+    });
+
+    const imgEl: [string, Record<string, string>] = [
+      "img",
+      {
+        src: src || "",
+        alt: alt || "",
+        style: "max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto",
+      },
+    ];
+
+    if (!caption && !(showSource !== false && sourceUrl)) {
+      return ["figure", figAttrs, imgEl] as const;
+    }
+
+    if (caption && !(showSource !== false && sourceUrl)) {
+      return [
+        "figure",
+        figAttrs,
+        imgEl,
+        ["figcaption", { style: "font-size:0.85em;color:var(--text-muted);margin-top:6px;font-style:italic" }, caption],
+      ] as const;
+    }
+
+    return [
+      "figure",
+      figAttrs,
+      imgEl,
+      ...(caption
+        ? [["figcaption", { style: "font-size:0.85em;color:var(--text-muted);margin-top:6px;font-style:italic" }, caption] as const]
+        : []),
+      ...(showSource !== false && sourceUrl
+        ? [["div", { style: "font-size:0.75em;color:var(--text-muted);margin-top:2px" }, `Source: ${sourceLabel || sourceUrl}`] as const]
+        : []),
+    ] as const;
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Toolbar
 // ---------------------------------------------------------------------------
@@ -103,6 +187,86 @@ function ToolbarButton({
 
 function Separator() {
   return <div className="mx-0.5 h-5 w-px bg-line" />;
+}
+
+// ---------------------------------------------------------------------------
+// Inline link dialog (replaces window.prompt)
+// ---------------------------------------------------------------------------
+
+function LinkDialog({
+  initialUrl,
+  onSubmit,
+  onRemove,
+  onClose,
+}: {
+  initialUrl: string;
+  onSubmit: (url: string) => void;
+  onRemove?: () => void;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState(initialUrl);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <div className="absolute top-full left-0 z-50 mt-1 flex items-center gap-2 rounded-lg border border-line bg-bg-secondary p-2 shadow-card">
+      <input
+        ref={inputRef}
+        type="url"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            const trimmed = url.trim();
+            if (trimmed) onSubmit(trimmed);
+            else onClose();
+          }
+          if (e.key === "Escape") onClose();
+        }}
+        placeholder="https://example.com"
+        className="w-56 rounded border border-line bg-bg-primary px-2 py-1 text-xs text-text-main outline-none focus:border-primary"
+      />
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          const trimmed = url.trim();
+          if (trimmed) onSubmit(trimmed);
+          else onClose();
+        }}
+        className="rounded bg-primary px-2 py-1 text-xs font-semibold text-white hover:bg-primary-hover"
+      >
+        Apply
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onRemove();
+          }}
+          className="rounded border border-line px-2 py-1 text-xs font-semibold text-danger hover:bg-danger/10"
+        >
+          Remove
+        </button>
+      )}
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
+        className="text-xs text-text-muted hover:text-text-main"
+      >
+        &times;
+      </button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -165,6 +329,92 @@ function BrandingWarningModal({
 }
 
 // ---------------------------------------------------------------------------
+// Image reference dialog (shown after image upload)
+// ---------------------------------------------------------------------------
+
+function ImageReferenceDialog({
+  onSubmit,
+  onSkip,
+}: {
+  onSubmit: (data: { caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean }) => void;
+  onSkip: () => void;
+}) {
+  const [caption, setCaption] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceLabel, setSourceLabel] = useState("");
+  const [showSource, setShowSource] = useState(true);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/40" onClick={onSkip} />
+      <div className="fixed top-1/2 left-1/2 z-50 w-[min(440px,90vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-bg-secondary p-6 shadow-card">
+        <h3 className="mb-4 font-heading text-base font-bold text-text-main">
+          Image Details
+        </h3>
+        <div className="mb-3">
+          <label className="mb-1 block text-xs font-semibold text-text-muted">Caption (optional)</label>
+          <input
+            type="text"
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Describe the image..."
+            className="w-full rounded border border-line bg-bg-primary px-3 py-2 text-sm text-text-main outline-none focus:border-primary"
+          />
+        </div>
+        <div className="mb-3">
+          <label className="mb-1 block text-xs font-semibold text-text-muted">Source URL (optional)</label>
+          <input
+            type="url"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            placeholder="https://source-website.com/image"
+            className="w-full rounded border border-line bg-bg-primary px-3 py-2 text-sm text-text-main outline-none focus:border-primary"
+          />
+        </div>
+        <div className="mb-3">
+          <label className="mb-1 block text-xs font-semibold text-text-muted">Source Label (optional)</label>
+          <input
+            type="text"
+            value={sourceLabel}
+            onChange={(e) => setSourceLabel(e.target.value)}
+            placeholder="e.g. Unsplash, Reuters, Company Name"
+            className="w-full rounded border border-line bg-bg-primary px-3 py-2 text-sm text-text-main outline-none focus:border-primary"
+          />
+        </div>
+        <div className="mb-5 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="showSourceCheck"
+            checked={showSource}
+            onChange={(e) => setShowSource(e.target.checked)}
+            className="size-4 accent-primary"
+          />
+          <label htmlFor="showSourceCheck" className="text-xs text-text-muted">
+            Show source reference on published article
+          </label>
+        </div>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="flex-1 cursor-pointer rounded-lg border border-line bg-bg-primary px-4 py-2 text-sm font-semibold text-text-main hover:bg-surface-hover"
+          >
+            Skip
+          </button>
+          <button
+            type="button"
+            onClick={() => onSubmit({ caption, sourceUrl: sourceUrl.trim(), sourceLabel: sourceLabel.trim(), showSource })}
+            className="flex-1 cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover"
+          >
+            Add to Image
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Media upload helpers
 // ---------------------------------------------------------------------------
 
@@ -189,18 +439,41 @@ async function uploadFile(file: File): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Toolbar with media
+// Toolbar with media + inline link dialog
 // ---------------------------------------------------------------------------
 
 function Toolbar({ editor, onUploadMedia }: { editor: Editor; onUploadMedia: (type: string) => void }) {
-  const addLink = useCallback(() => {
-    const url = window.prompt("URL");
-    if (!url) return;
-    editor.chain().focus().setLink({ href: url }).run();
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+
+  const toggleLink = useCallback(() => {
+    if (editor.isActive("link")) {
+      setShowLinkDialog(true);
+    } else {
+      setShowLinkDialog(true);
+    }
   }, [editor]);
 
+  const applyLink = useCallback(
+    (url: string) => {
+      let href = url;
+      if (!/^https?:\/\//i.test(href)) href = `https://${href}`;
+      editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+      setShowLinkDialog(false);
+    },
+    [editor],
+  );
+
+  const removeLink = useCallback(() => {
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    setShowLinkDialog(false);
+  }, [editor]);
+
+  const currentLinkUrl = editor.isActive("link")
+    ? (editor.getAttributes("link").href as string) || ""
+    : "";
+
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b border-line bg-bg-tertiary px-3 py-1.5">
+    <div className="relative flex flex-wrap items-center gap-0.5 border-b border-line bg-bg-tertiary px-3 py-1.5">
       {/* Text style */}
       <ToolbarButton
         editor={editor}
@@ -294,14 +567,24 @@ function Toolbar({ editor, onUploadMedia }: { editor: Editor; onUploadMedia: (ty
       <Separator />
 
       {/* Link */}
-      <ToolbarButton
-        editor={editor}
-        action={addLink}
-        isActive={editor.isActive("link")}
-        title="Insert link"
-      >
-        <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-      </ToolbarButton>
+      <div className="relative">
+        <ToolbarButton
+          editor={editor}
+          action={toggleLink}
+          isActive={editor.isActive("link")}
+          title="Insert link"
+        >
+          <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        </ToolbarButton>
+        {showLinkDialog && (
+          <LinkDialog
+            initialUrl={currentLinkUrl}
+            onSubmit={applyLink}
+            onRemove={editor.isActive("link") ? removeLink : undefined}
+            onClose={() => setShowLinkDialog(false)}
+          />
+        )}
+      </div>
 
       {/* Horizontal rule */}
       <ToolbarButton
@@ -436,6 +719,9 @@ export function RichEditor({
   const [pendingMediaType, setPendingMediaType] = useState<string | null>(null);
   const [showBrandingWarning, setShowBrandingWarning] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
+  const [pendingImageAlt, setPendingImageAlt] = useState("");
+  const [showImageRefDialog, setShowImageRefDialog] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -451,6 +737,7 @@ export function RichEditor({
       Subscript,
       VideoNode,
       AudioNode,
+      FigureNode,
     ],
     content: content ? JSON.parse(content) : undefined,
     editable,
@@ -509,7 +796,9 @@ export function RichEditor({
       try {
         const url = await uploadFile(file);
         if (pendingMediaType === "image") {
-          editor.chain().focus().setImage({ src: url, alt: file.name }).run();
+          setPendingImageUrl(url);
+          setPendingImageAlt(file.name);
+          setShowImageRefDialog(true);
         } else if (pendingMediaType === "video") {
           editor
             .chain()
@@ -527,12 +816,47 @@ export function RichEditor({
         alert(err instanceof Error ? err.message : "Upload failed");
       } finally {
         setUploading(false);
-        setPendingMediaType(null);
+        if (pendingMediaType !== "image") setPendingMediaType(null);
         e.target.value = "";
       }
     },
     [editor, pendingMediaType],
   );
+
+  const handleImageRefSubmit = useCallback(
+    (data: { caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean }) => {
+      if (!editor || !pendingImageUrl) return;
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "figure",
+          attrs: {
+            src: pendingImageUrl,
+            alt: pendingImageAlt,
+            caption: data.caption,
+            sourceUrl: data.sourceUrl,
+            sourceLabel: data.sourceLabel,
+            showSource: data.showSource,
+          },
+        })
+        .run();
+      setPendingImageUrl(null);
+      setPendingImageAlt("");
+      setShowImageRefDialog(false);
+      setPendingMediaType(null);
+    },
+    [editor, pendingImageUrl, pendingImageAlt],
+  );
+
+  const handleImageRefSkip = useCallback(() => {
+    if (!editor || !pendingImageUrl) return;
+    editor.chain().focus().setImage({ src: pendingImageUrl, alt: pendingImageAlt }).run();
+    setPendingImageUrl(null);
+    setPendingImageAlt("");
+    setShowImageRefDialog(false);
+    setPendingMediaType(null);
+  }, [editor, pendingImageUrl, pendingImageAlt]);
 
   if (!editor) return null;
 
@@ -567,6 +891,12 @@ export function RichEditor({
           onCancel={handleBrandingCancel}
         />
       )}
+      {showImageRefDialog && (
+        <ImageReferenceDialog
+          onSubmit={handleImageRefSubmit}
+          onSkip={handleImageRefSkip}
+        />
+      )}
     </div>
   );
 }
@@ -589,4 +919,96 @@ export function RichContentRenderer({
       className={cn("border-0", className)}
     />
   );
+}
+
+// ---------------------------------------------------------------------------
+// Article preview component (shows how article looks in published feed view)
+// ---------------------------------------------------------------------------
+
+export function ArticlePreviewModal({
+  title,
+  content,
+  author,
+  category,
+  contentType,
+  tags,
+  onClose,
+}: {
+  title: string;
+  content: string;
+  author: string;
+  category?: string;
+  contentType?: string;
+  tags?: string[];
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-bg-primary shadow-card md:inset-y-6 md:inset-x-[8%] lg:inset-x-[12%]">
+        <div className="flex items-center justify-between border-b border-line bg-bg-tertiary px-6 py-3">
+          <div className="flex items-center gap-2">
+            <svg className="size-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span className="text-sm font-semibold text-text-main">Article Preview</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-8 cursor-pointer items-center justify-center rounded-full text-text-muted hover:bg-surface-hover hover:text-text-main"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-8 max-[640px]:p-5">
+          <div className="mx-auto max-w-[720px]">
+            {category && (
+              <span className="mb-3 inline-block text-[11px] font-bold tracking-[0.5px] text-primary uppercase">
+                {category}
+              </span>
+            )}
+            <h1 className="mb-4 font-heading text-[28px] leading-[1.3] font-bold text-text-main max-[640px]:text-[23px]">
+              {title || "Untitled Article"}
+            </h1>
+            <div className="mb-6 flex flex-wrap items-center gap-3 text-[13px] text-text-muted">
+              <div className="flex items-center gap-2">
+                <div className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
+                  {author.charAt(0)}
+                </div>
+                <span className="font-semibold text-text-main">{author}</span>
+              </div>
+              {contentType && <span>· {contentType}</span>}
+              {tags && tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full bg-primary-glow px-2 py-0.5 text-[10px] font-semibold text-primary"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="text-[15.5px] leading-[1.8] text-text-main">
+              {isRichContent(content) ? (
+                <RichContentRenderer content={content} />
+              ) : (
+                <div className="whitespace-pre-wrap">{content}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function isRichContent(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && parsed.type === "doc";
+  } catch {
+    return false;
+  }
 }

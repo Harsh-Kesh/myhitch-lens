@@ -74,13 +74,22 @@ export default async function AuthorDashboardPage() {
               <Link
                 key={draft.id}
                 href={`/submit?draft=${draft.id}`}
-                className="flex items-center gap-3 rounded-lg border border-line bg-bg-secondary px-4 py-3 transition-all hover:border-primary hover:shadow-card"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg border px-4 py-3 transition-all hover:shadow-card",
+                  draft.status === "changes_requested"
+                    ? "border-warning/40 bg-warning/5 hover:border-warning"
+                    : "border-line bg-bg-secondary hover:border-primary",
+                )}
               >
-                <PencilIcon className="size-4 text-text-muted" />
+                {draft.status === "changes_requested" ? (
+                  <svg className="size-4 shrink-0 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                ) : (
+                  <PencilIcon className="size-4 shrink-0 text-text-muted" />
+                )}
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-text-main">{draft.title}</p>
-                  <p className="text-[11px] text-text-muted">
-                    {draft.status === "changes_requested" ? "Changes requested" : "Draft"} · {new Date(draft.updatedAt).toLocaleDateString()}
+                  <p className={cn("text-[11px]", draft.status === "changes_requested" ? "font-semibold text-warning" : "text-text-muted")}>
+                    {draft.status === "changes_requested" ? "Revision requested — click to edit" : "Draft"} · {new Date(draft.updatedAt).toLocaleDateString()}
                   </p>
                 </div>
               </Link>

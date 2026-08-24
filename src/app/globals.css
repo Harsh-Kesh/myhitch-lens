@@ -320,6 +320,19 @@
     border-radius: 8px;
     margin: 1em 0;
   }
+  .tiptap figure[data-figure] {
+    margin: 1.5em 0;
+    text-align: center;
+  }
+  .tiptap figure[data-figure] img {
+    margin: 0 auto;
+  }
+  .tiptap figure[data-figure] figcaption {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-top: 6px;
+    font-style: italic;
+  }
   .tiptap video {
     max-width: 100%;
     border-radius: 8px;

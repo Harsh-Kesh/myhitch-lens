@@ -50,14 +50,28 @@ export async function requestRevisions(articleId: string, note: string, editorNa
   const text = note.trim();
   if (!text) throw new Error("Revision note required");
 
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, authorId: true },
+  });
+  if (!article) throw new Error("Article not found");
+
   await prisma.$transaction([
     prisma.article.update({ where: { id: articleId }, data: { status: "changes_requested" } }),
     prisma.revision.create({
       data: { articleId, editorId: editor.id, note: `[${editorName}] ${text}` },
     }),
+    prisma.notification.create({
+      data: {
+        userId: article.authorId,
+        type: "revision",
+        text: `Your article "${article.title}" requires revisions: ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`,
+      },
+    }),
   ]);
 
   revalidatePath("/editorial");
+  revalidatePath("/author-dashboard");
 }
 
 /** Reject a submission outright. */

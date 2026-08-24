@@ -169,6 +169,10 @@ export async function loadDraft(articleId: string) {
       status: true,
       authorId: true,
       tags: { include: { tag: true } },
+      revisions: {
+        orderBy: { createdAt: "desc" },
+        select: { note: true, createdAt: true },
+      },
     },
   });
   if (!article) return null;
@@ -181,6 +185,9 @@ export async function loadDraft(articleId: string) {
     contentType: article.contentType,
     status: article.status,
     tags: article.tags.map((t) => t.tag.name),
+    revisionNotes: article.revisions
+      .filter((r) => r.note)
+      .map((r) => r.note as string),
   };
 }
 

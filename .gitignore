@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# user-uploaded media (created at runtime; use object storage in production)
+/public/uploads/*
+!/public/uploads/.gitkeep
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

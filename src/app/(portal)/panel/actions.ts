@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
-import { feeFor, round2, settlementPrice } from "@/lib/marketplace";
+import { feeFor, round2 } from "@/lib/marketplace";
 
 export type ActionResult = { error: string } | { ok: true };
 
@@ -15,7 +15,7 @@ async function requireUser() {
   return session.user;
 }
 
-/** Author opens a sponsorship listing (auction) on one of their published articles. */
+/** Author lists one of their published, still-owned articles for ownership sale. */
 export async function createListing(input: {
   articleId: string;
   floorPrice: number;
@@ -28,11 +28,12 @@ export async function createListing(input: {
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
-    select: { authorId: true, status: true, lane: true },
+    select: { authorId: true, status: true, ownerId: true },
   });
   if (!article) return { error: "Article not found." };
   if (article.authorId !== user.id) return { error: "Not your article." };
   if (article.status !== "published") return { error: "Only published articles can be listed." };
+  if (article.ownerId) return { error: "This article's ownership has already been sold." };
 
   const floor = round2(Number(input.floorPrice));
   if (!Number.isFinite(floor) || floor < MARKETPLACE_DEFAULTS.minBid) {
@@ -46,33 +47,31 @@ export async function createListing(input: {
   const durationDays = input.durationDays ?? MARKETPLACE_DEFAULTS.auctionDurationDays;
   const endsAt = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
 
-  await prisma.$transaction([
-    prisma.listing.create({
-      data: {
-        articleId: input.articleId,
-        slots: input.slots ?? 1,
-        floorPrice: floor,
-        reservePrice: reserve,
-        allowedCategories: input.allowedCategories,
-        auctions: {
-          create: { type: "sponsorship", status: "open", reserve, endsAt },
-        },
+  await prisma.listing.create({
+    data: {
+      articleId: input.articleId,
+      slots: input.slots ?? 1,
+      floorPrice: floor,
+      reservePrice: reserve,
+      allowedCategories: input.allowedCategories,
+      auctions: {
+        create: { type: "sponsorship", status: "open", reserve, endsAt },
       },
-    }),
-    // Route the article into the panel lane (hybrid = public feed + panel sponsor).
-    prisma.article.update({ where: { id: input.articleId }, data: { lane: "hybrid" } }),
-  ]);
+    },
+  });
 
   revalidatePath("/panel");
   revalidatePath("/author-dashboard");
   return { ok: true };
 }
 
-/** A member places a sponsorship bid on an open auction. */
+/** A member bids to acquire an article, optionally attaching a change request. */
 export async function placeBid(input: {
   auctionId: string;
   amount: number;
   brandCategory: string;
+  brandName?: string;
+  changeRequest?: string;
   autoBidCeiling?: number | null;
 }): Promise<ActionResult> {
   const user = await requireUser();
@@ -107,7 +106,6 @@ export async function placeBid(input: {
   }
 
   await prisma.$transaction([
-    // Existing active bids become "outbid".
     prisma.bid.updateMany({
       where: { auctionId: auction.id, status: "active" },
       data: { status: "outbid" },
@@ -117,16 +115,17 @@ export async function placeBid(input: {
         auctionId: auction.id,
         bidderId: user.id,
         amount,
+        brandName: input.brandName?.trim() || null,
+        changeRequest: input.changeRequest?.trim() || null,
         autoBidCeiling: input.autoBidCeiling != null ? round2(Number(input.autoBidCeiling)) : null,
         status: "active",
       },
     }),
-    // Notify the author that a new offer arrived.
     prisma.notification.create({
       data: {
         userId: article.authorId,
         type: "bid",
-        text: `New sponsorship bid of A$${amount.toFixed(2)} on your listed article.`,
+        text: `New offer of A$${amount.toFixed(2)} to acquire your listed article.`,
       },
     }),
   ]);
@@ -135,11 +134,11 @@ export async function placeBid(input: {
   return { ok: true };
 }
 
-/** Author accepts a bid → labeled placement goes live, funds settle to the wallet. */
-export async function acceptBid(input: {
-  bidId: string;
-  tagline?: string;
-}): Promise<ActionResult> {
+/**
+ * Author accepts an offer → ownership transfers to the buyer (author keeps their
+ * verified credit), first-price funds settle, agreed change request is recorded.
+ */
+export async function acceptBid(input: { bidId: string }): Promise<ActionResult> {
   const user = await requireUser();
 
   const bid = await prisma.bid.findUnique({
@@ -153,33 +152,26 @@ export async function acceptBid(input: {
               article: { select: { id: true, authorId: true, title: true, category: { select: { name: true } } } },
             },
           },
-          bids: { where: { status: { in: ["active", "outbid", "won"] } } },
           placement: true,
         },
       },
     },
   });
-  if (!bid) return { error: "Bid not found." };
+  if (!bid) return { error: "Offer not found." };
   const auction = bid.auction;
   const article = auction.listing?.article;
   if (!article) return { error: "Listing not found." };
-  if (article.authorId !== user.id) return { error: "Only the author can accept a bid." };
+  if (article.authorId !== user.id) return { error: "Only the author can accept an offer." };
   if (auction.status !== "open") return { error: "This auction is already settled." };
-  if (auction.placement) return { error: "A sponsor is already placed on this article." };
+  if (auction.placement) return { error: "This article has already been sold." };
 
-  // Second-price settlement, capped at the accepted bid, floored at the reserve/floor.
+  // First-price: the buyer pays exactly what they bid (floor-guaranteed at bid time).
   const floor = Number(auction.listing!.floorPrice);
-  const activeAmounts = auction.bids.map((b) => Number(b.amount)).sort((a, b) => b - a);
-  const acceptedAmount = Number(bid.amount);
-  const price = Math.max(floor, Math.min(acceptedAmount, settlementPrice(activeAmounts, floor)));
-  const fee = feeFor("sponsorship", price);
+  const price = Math.max(floor, Number(bid.amount));
+  const fee = feeFor("sponsorship", price); // 20% marketplace fee
   const net = round2(price - fee);
+  const brandName = bid.brandName ?? bid.bidder.displayName;
 
-  const now = new Date();
-  const liveUntil = new Date(now.getTime() + MARKETPLACE_DEFAULTS.placementWindowDays * 24 * 60 * 60 * 1000);
-
-  // Batched (non-interactive) transaction: one round-trip, no 5s interactive
-  // timeout — these writes don't depend on each other's return values.
   await prisma.$transaction([
     // Winner + losers.
     prisma.bid.update({ where: { id: bid.id }, data: { status: "won" } }),
@@ -187,39 +179,48 @@ export async function acceptBid(input: {
       where: { auctionId: auction.id, id: { not: bid.id }, status: { in: ["active", "outbid"] } },
       data: { status: "lost" },
     }),
-    // Labeled placement goes live.
+    // Ownership transfers to the buyer; author credit (authorId) is untouched.
+    prisma.article.update({
+      where: { id: article.id },
+      data: { ownerId: bid.bidder.id, lane: "hybrid" },
+    }),
+    // Record the sale + agreed change request as a labeled placement.
     prisma.brandingPlacement.create({
       data: {
         articleId: article.id,
         auctionId: auction.id,
         brandId: bid.bidder.id,
         status: "live",
-        liveFrom: now,
-        liveUntil,
+        liveFrom: new Date(),
         creativeAsset: {
-          brandName: bid.bidder.displayName,
-          tagline: input.tagline?.trim() || null,
+          brandName,
+          changeRequest: bid.changeRequest ?? null,
           category: article.category.name,
           amount: price,
         },
       },
     }),
     prisma.auction.update({ where: { id: auction.id }, data: { status: "settled" } }),
-    // Settle funds to the author (simulated escrow release): wallet + ledger.
+    // Money conservation: buyer pays, author receives net of fee.
     prisma.wallet.upsert({
       where: { userId: article.authorId },
       update: { balance: { increment: net } },
       create: { userId: article.authorId, balance: net },
     }),
+    prisma.wallet.upsert({
+      where: { userId: bid.bidder.id },
+      update: { balance: { decrement: price } },
+      create: { userId: bid.bidder.id, balance: -price },
+    }),
     prisma.revenueLedger.create({
       data: {
         userId: article.authorId,
         articleId: article.id,
-        type: "sponsorship",
+        type: "report_sale",
         gross: price,
         feeApplied: fee,
         net,
-        meta: { brand: bid.bidder.displayName, auctionId: auction.id },
+        meta: { kind: "ownership_sale", buyer: brandName, auctionId: auction.id },
       },
     }),
     // Notify both sides.
@@ -228,12 +229,12 @@ export async function acceptBid(input: {
         {
           userId: bid.bidder.id,
           type: "bid_won",
-          text: `Your sponsorship bid on "${article.title}" was accepted. Placement is now live.`,
+          text: `Your offer on "${article.title}" was accepted — you now own this article.`,
         },
         {
           userId: article.authorId,
-          type: "sponsorship",
-          text: `Sponsorship settled: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
+          type: "sale",
+          text: `Ownership of "${article.title}" sold: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
         },
       ],
     }),

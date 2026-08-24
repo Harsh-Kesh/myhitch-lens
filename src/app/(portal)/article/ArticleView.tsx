@@ -18,7 +18,7 @@ import { getIntegrations } from "@/lib/lensStore";
 import { defaultIntegrations } from "@/data/defaults";
 import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
-import type { ActivePlacement } from "@/lib/marketplace";
+import type { OwnershipInfo } from "@/lib/marketplace";
 import { postComment, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
@@ -55,10 +55,10 @@ function IntegrationWidget({ icon, title, desc, action }: { icon: ReactNode; tit
 
 export function ArticleView({
   article,
-  placement,
+  ownership,
 }: {
   article: ArticleDetail;
-  placement?: ActivePlacement | null;
+  ownership?: OwnershipInfo | null;
 }) {
   const router = useRouter();
   const integrations = useLensValue(getIntegrations, defaultIntegrations);
@@ -156,14 +156,15 @@ export function ArticleView({
           <span className="text-[11px] font-bold tracking-[0.5px] text-primary uppercase">{article.category}</span>
         </div>
 
-        {placement && (
+        {ownership && (
           <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-bg-tertiary px-4 py-3">
             <span className="rounded bg-text-muted/10 px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide text-text-muted uppercase">
-              Sponsored
+              Owned by
             </span>
             <span className="text-[12.5px] text-text-muted">
-              Brought to you by <strong className="text-text-main">{placement.brandName}</strong>
-              {placement.tagline && <span> — “{placement.tagline}”</span>}
+              <strong className="text-text-main">{ownership.brandName}</strong>
+              {ownership.tagline && <span> — “{ownership.tagline}”</span>}
+              <span> · Written by {article.author} (Verified)</span>
             </span>
           </div>
         )}

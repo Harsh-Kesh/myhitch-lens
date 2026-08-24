@@ -4,29 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { MARKETPLACE_DEFAULTS, PLATFORM_FEES, type PlatformFeeType } from "@/lib/platformConfig";
 
 // ---------------------------------------------------------------------------
-// Money / auction helpers
+// Money helpers
 // ---------------------------------------------------------------------------
 
 /** Platform fee (AUD) for a gross amount of a given revenue type. */
 export function feeFor(type: PlatformFeeType, gross: number): number {
   return round2(gross * PLATFORM_FEES[type]);
-}
-
-/**
- * Second-price (Vickrey) settlement: the winner pays one increment above the
- * runner-up, capped at their own bid; a lone bidder pays the floor. Returns the
- * price the winner actually pays.
- */
-export function settlementPrice(
-  bidAmountsDesc: number[],
-  floorPrice: number,
-  increment: number = MARKETPLACE_DEFAULTS.bidIncrement,
-): number {
-  if (bidAmountsDesc.length === 0) return 0;
-  const top = bidAmountsDesc[0];
-  if (bidAmountsDesc.length === 1) return round2(Math.max(floorPrice, floorPrice));
-  const second = bidAmountsDesc[1];
-  return round2(Math.min(top, second + increment));
 }
 
 export function round2(n: number): number {
@@ -60,7 +43,7 @@ export interface PanelListing {
   myBid: number | null;
 }
 
-/** Open sponsorship auctions available to bid on, newest first. */
+/** Open ownership auctions available to bid on, newest first. */
 export async function listOpenPanelListings(viewerId?: string): Promise<PanelListing[]> {
   const auctions = await prisma.auction.findMany({
     where: { type: "sponsorship", status: "open" },
@@ -124,26 +107,25 @@ export interface ListingBid {
   bidId: string;
   bidder: string;
   bidderId: string;
+  brandName: string;
   amount: number;
+  changeRequest: string | null;
   status: string;
   createdAt: string;
 }
 
 export interface AuthorListing extends PanelListing {
   bids: ListingBid[];
-  settlementPreview: number;
-  placement: {
-    id: string;
+  sale: {
+    ownerName: string;
     brandName: string;
-    tagline: string | null;
-    status: string;
-    liveFrom: string | null;
-    liveUntil: string | null;
+    changeRequest: string | null;
     amount: number | null;
+    status: string;
   } | null;
 }
 
-/** All of an author's sponsorship auctions (any status) with their bids + placement. */
+/** All of an author's ownership auctions (any status) with bids + resulting sale. */
 export async function listAuthorListings(authorId: string): Promise<AuthorListing[]> {
   const auctions = await prisma.auction.findMany({
     where: { type: "sponsorship", listing: { article: { authorId } } },
@@ -158,6 +140,7 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
               summary: true,
               category: { select: { name: true } },
               author: { select: { id: true, displayName: true } },
+              owner: { select: { displayName: true } },
             },
           },
         },
@@ -181,7 +164,11 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
         .sort((x, y) => y - x);
       const topBid = activeAmounts.length ? activeAmounts[0] : 0;
       const floor = Number(listing.floorPrice);
-      const creative = (a.placement?.creativeAsset ?? {}) as { brandName?: string; tagline?: string };
+      const creative = (a.placement?.creativeAsset ?? {}) as {
+        brandName?: string;
+        changeRequest?: string;
+        amount?: number;
+      };
       return {
         listingId: listing.id,
         auctionId: a.id,
@@ -205,63 +192,112 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
           bidId: b.id,
           bidder: b.bidder.displayName,
           bidderId: b.bidderId,
+          brandName: b.brandName ?? b.bidder.displayName,
           amount: Number(b.amount),
+          changeRequest: b.changeRequest ?? null,
           status: b.status,
           createdAt: b.createdAt.toISOString(),
         })),
-        settlementPreview: settlementPrice(activeAmounts, floor),
-        placement: a.placement
+        sale: a.placement
           ? {
-              id: a.placement.id,
-              brandName: creative.brandName ?? "Sponsor",
-              tagline: creative.tagline ?? null,
+              ownerName: article.owner?.displayName ?? creative.brandName ?? "Owner",
+              brandName: creative.brandName ?? "Owner",
+              changeRequest: creative.changeRequest ?? null,
+              amount: creative.amount != null ? Number(creative.amount) : null,
               status: a.placement.status,
-              liveFrom: a.placement.liveFrom?.toISOString() ?? null,
-              liveUntil: a.placement.liveUntil?.toISOString() ?? null,
-              amount: a.placement.creativeAsset && typeof a.placement.creativeAsset === "object" && "amount" in a.placement.creativeAsset
-                ? Number((a.placement.creativeAsset as { amount?: number }).amount ?? 0)
-                : null,
             }
           : null,
       };
     });
 }
 
-/** Published articles the author can still open a sponsorship listing on. */
+export interface OwnedArticle {
+  articleId: string;
+  title: string;
+  category: string;
+  author: string;
+  brandName: string;
+  changeRequest: string | null;
+  price: number | null;
+  acquiredAt: string | null;
+}
+
+/** Articles the viewer has acquired ownership of (with the agreed sale terms). */
+export async function listOwnedArticles(ownerId: string): Promise<OwnedArticle[]> {
+  const articles = await prisma.article.findMany({
+    where: { ownerId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      category: { select: { name: true } },
+      author: { select: { displayName: true } },
+      placements: {
+        where: { brandId: ownerId },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
+  });
+
+  return articles.map((a) => {
+    const placement = a.placements[0];
+    const creative = (placement?.creativeAsset ?? {}) as {
+      brandName?: string;
+      changeRequest?: string;
+      amount?: number;
+    };
+    return {
+      articleId: a.id,
+      title: a.title,
+      category: a.category.name,
+      author: a.author.displayName,
+      brandName: creative.brandName ?? "",
+      changeRequest: creative.changeRequest ?? null,
+      price: creative.amount != null ? Number(creative.amount) : null,
+      acquiredAt: placement?.createdAt.toISOString() ?? null,
+    };
+  });
+}
+
+/** Published articles the author still fully owns and can list for sale. */
 export async function listListableArticles(authorId: string) {
   const articles = await prisma.article.findMany({
-    where: { authorId, status: "published", listings: { none: {} } },
+    where: { authorId, status: "published", ownerId: null, listings: { none: {} } },
     orderBy: { publishedAt: "desc" },
     select: { id: true, title: true, category: { select: { name: true } } },
   });
   return articles.map((a) => ({ id: a.id, title: a.title, category: a.category.name }));
 }
 
-export interface ActivePlacement {
+export interface OwnershipInfo {
+  ownerName: string;
   brandName: string;
   tagline: string | null;
-  category: string | null;
 }
 
-/** The live labeled sponsor placement on an article, if any (for the reader view). */
-export async function getActivePlacement(articleId: string): Promise<ActivePlacement | null> {
-  const placement = await prisma.brandingPlacement.findFirst({
-    where: {
-      articleId,
-      status: "live",
-      OR: [{ liveUntil: null }, { liveUntil: { gt: new Date() } }],
+/** Current ownership + branding to display on an article (null if author-owned). */
+export async function getOwnership(articleId: string): Promise<OwnershipInfo | null> {
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: {
+      ownerId: true,
+      owner: { select: { displayName: true } },
+      placements: {
+        where: { status: "live" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
-    orderBy: { createdAt: "desc" },
   });
-  if (!placement) return null;
-  const creative = (placement.creativeAsset ?? {}) as {
+  if (!article || !article.ownerId) return null;
+  const creative = (article.placements[0]?.creativeAsset ?? {}) as {
     brandName?: string;
-    tagline?: string;
-    category?: string;
+    changeRequest?: string;
   };
   return {
-    brandName: creative.brandName ?? "Sponsor",
-    tagline: creative.tagline ?? null,
-    category: creative.category ?? null,
+    ownerName: article.owner?.displayName ?? "New owner",
+    brandName: creative.brandName ?? article.owner?.displayName ?? "New owner",
+    tagline: creative.changeRequest ?? null,
   };
 }

@@ -110,7 +110,7 @@ const LEDGER_LABELS: Record<string, string> = {
   ad_share: "Programmatic ad share",
   donation: "Micro-donation payouts",
   sponsorship: "Sponsorship revenue",
-  report_sale: "Report sale revenue",
+  report_sale: "Ownership & report sales",
   affiliate: "Affiliate revenue",
 };
 

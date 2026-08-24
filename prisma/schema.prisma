@@ -145,6 +145,7 @@ model User {
   subscription   Subscription?
   wallet         Wallet?
   articles       Article[]           @relation("ArticleAuthor")
+  ownedArticles  Article[]           @relation("ArticleOwner")
   revisions      Revision[]
   comments       Comment[]
   likes          Like[]
@@ -263,6 +264,8 @@ model Article {
 
   authorId    String
   author      User          @relation("ArticleAuthor", fields: [authorId], references: [id])
+  ownerId     String?       // commercial owner if sold; null = author owns. Author credit never changes.
+  owner       User?         @relation("ArticleOwner", fields: [ownerId], references: [id])
   categoryId  String
   category    Category      @relation(fields: [categoryId], references: [id])
 
@@ -509,6 +512,8 @@ model Bid {
   bidder        User      @relation(fields: [bidderId], references: [id])
   amount        Decimal   @db.Decimal(12, 2)
   autoBidCeiling Decimal? @db.Decimal(12, 2)
+  brandName     String?   // acquiring brand/company name (defaults to bidder)
+  changeRequest String?   // requested edits agreed as a term of the sale
   status        BidStatus @default(active)
   createdAt     DateTime  @default(now())
 

@@ -32,6 +32,7 @@ export default function SubmitPage() {
   const [content, setContent] = useState<string>("");
   const [contentType, setContentType] = useState("Blog");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [draftLoading, setDraftLoading] = useState(!!editId);
 
   // Tag picker state
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -48,16 +49,18 @@ export default function SubmitPage() {
     listTags().then(setAvailableTags);
   }, []);
 
-  // Load existing draft if editing
+  // Load existing draft if editing — block editor render until loaded
   useEffect(() => {
     if (!editId || initialLoadRef.current) return;
     initialLoadRef.current = true;
     loadDraft(editId).then((draft) => {
-      if (!draft) return;
-      setTitle(draft.title);
-      setContent(draft.content);
-      setContentType(draft.contentType);
-      setSelectedTags(draft.tags);
+      if (draft) {
+        setTitle(draft.title);
+        setContent(draft.content);
+        setContentType(draft.contentType);
+        setSelectedTags(draft.tags);
+      }
+      setDraftLoading(false);
     });
   }, [editId]);
 
@@ -198,12 +201,19 @@ export default function SubmitPage() {
         className="mb-4 w-full border-none bg-transparent font-heading text-3xl font-bold text-text-main outline-none placeholder:text-text-muted/40"
       />
 
-      {/* Editor */}
-      <RichEditor
-        content={content || undefined}
-        onUpdate={handleContentUpdate}
-        placeholder="Start writing your article... Use the toolbar above for formatting."
-      />
+      {/* Editor — deferred until draft loads so Tiptap gets the saved content */}
+      {draftLoading ? (
+        <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-line bg-bg-secondary text-sm text-text-muted">
+          Loading draft...
+        </div>
+      ) : (
+        <RichEditor
+          key={articleId || "new"}
+          content={content || undefined}
+          onUpdate={handleContentUpdate}
+          placeholder="Start writing your article... Use the toolbar above for formatting."
+        />
+      )}
 
       {/* Stats bar */}
       <div className="mt-3 flex items-center gap-6 text-xs text-text-muted">

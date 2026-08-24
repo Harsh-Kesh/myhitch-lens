@@ -320,6 +320,23 @@
     border-radius: 8px;
     margin: 1em 0;
   }
+  .tiptap video {
+    max-width: 100%;
+    border-radius: 8px;
+    margin: 1em 0;
+  }
+  .tiptap audio {
+    width: 100%;
+    margin: 1em 0;
+  }
+  .tiptap sup {
+    vertical-align: super;
+    font-size: 0.75em;
+  }
+  .tiptap sub {
+    vertical-align: sub;
+    font-size: 0.75em;
+  }
   .tiptap p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
     float: left;

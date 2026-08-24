@@ -18,6 +18,7 @@ import { getIntegrations } from "@/lib/lensStore";
 import { defaultIntegrations } from "@/data/defaults";
 import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
+import type { ActivePlacement } from "@/lib/marketplace";
 import { postComment, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
@@ -52,7 +53,13 @@ function IntegrationWidget({ icon, title, desc, action }: { icon: ReactNode; tit
   );
 }
 
-export function ArticleView({ article }: { article: ArticleDetail }) {
+export function ArticleView({
+  article,
+  placement,
+}: {
+  article: ArticleDetail;
+  placement?: ActivePlacement | null;
+}) {
   const router = useRouter();
   const integrations = useLensValue(getIntegrations, defaultIntegrations);
   const [isPending, startTransition] = useTransition();
@@ -148,6 +155,18 @@ export function ArticleView({ article }: { article: ArticleDetail }) {
         <div className="mb-6">
           <span className="text-[11px] font-bold tracking-[0.5px] text-primary uppercase">{article.category}</span>
         </div>
+
+        {placement && (
+          <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-bg-tertiary px-4 py-3">
+            <span className="rounded bg-text-muted/10 px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide text-text-muted uppercase">
+              Sponsored
+            </span>
+            <span className="text-[12.5px] text-text-muted">
+              Brought to you by <strong className="text-text-main">{placement.brandName}</strong>
+              {placement.tagline && <span> — “{placement.tagline}”</span>}
+            </span>
+          </div>
+        )}
 
         <h1 className="mb-4 font-heading text-[28px] leading-[1.3] font-bold text-text-main max-[640px]:text-[23px] max-[480px]:text-[20px]">
           {article.title}

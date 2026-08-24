@@ -12,6 +12,7 @@ import {
   BookIcon,
   CloseIcon,
   ColumnsIcon,
+  DollarSignIcon,
   FolderIcon,
   MenuIcon,
   PencilIcon,
@@ -65,6 +66,11 @@ const NAV_LINKS: NavLink[] = [
     icon: <ColumnsIcon className={navIcon} />,
     roles: ["editor"],
     showQueueCount: true,
+  },
+  {
+    href: "/panel",
+    label: "Stakeholder Panel",
+    icon: <DollarSignIcon className={navIcon} />,
   },
   {
     href: "/analytics",

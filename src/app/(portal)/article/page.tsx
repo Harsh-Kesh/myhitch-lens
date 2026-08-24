@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getArticle } from "@/lib/articles";
+import { getActivePlacement } from "@/lib/marketplace";
 import { ArticleView } from "./ArticleView";
 
 /** Server component: fetch the article (and the viewer's like/bookmark state) from the DB. */
@@ -22,5 +23,7 @@ export default async function ArticlePage({
     );
   }
 
-  return <ArticleView article={article} />;
+  const placement = await getActivePlacement(article.id);
+
+  return <ArticleView article={article} placement={placement} />;
 }

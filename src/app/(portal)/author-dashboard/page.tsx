@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading, EmptyState, StatChip } from "@/components/ui/DashboardKit";
-import { BarChartIcon, BookIcon, CheckIcon, DollarSignIcon, HeartIcon } from "@/components/ui/icons";
+import { BarChartIcon, BookIcon, CheckIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { cn } from "@/lib/cn";
@@ -22,7 +22,7 @@ export default async function AuthorDashboardPage() {
   const session = await auth();
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
-  const { articles, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
+  const { articles, drafts, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
     <>
@@ -60,6 +60,34 @@ export default async function AuthorDashboardPage() {
         <StatChip icon={<HeartIcon className="size-4" />} value={totalLikes.toLocaleString()} label="Total likes" />
         <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
       </div>
+
+      {/* Drafts + New article */}
+      {(drafts.length > 0) && (
+        <div className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className={dashHeading}>
+              <PencilIcon className="size-[18px] text-primary" /> Drafts
+            </h3>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {drafts.map((draft) => (
+              <Link
+                key={draft.id}
+                href={`/submit?draft=${draft.id}`}
+                className="flex items-center gap-3 rounded-lg border border-line bg-bg-secondary px-4 py-3 transition-all hover:border-primary hover:shadow-card"
+              >
+                <PencilIcon className="size-4 text-text-muted" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-text-main">{draft.title}</p>
+                  <p className="text-[11px] text-text-muted">
+                    {draft.status === "changes_requested" ? "Changes requested" : "Draft"} · {new Date(draft.updatedAt).toLocaleDateString()}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-[1.35fr_0.65fr] gap-7 max-[992px]:grid-cols-1">
         {/* Portfolio */}

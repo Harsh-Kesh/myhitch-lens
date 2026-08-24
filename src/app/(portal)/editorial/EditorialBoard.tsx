@@ -15,6 +15,7 @@ import {
   FolderIcon,
   UsersIcon,
 } from "@/components/ui/icons";
+import { RichContentRenderer } from "@/components/ui/RichEditor";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import type { ReviewQueueItem } from "@/lib/articles";
@@ -185,8 +186,12 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                 </span>
               </div>
 
-              <div className="mb-6 max-h-[300px] overflow-y-auto rounded-lg border border-line bg-bg-primary p-5 text-[13.5px] whitespace-pre-wrap">
-                {selected.content}
+              <div className="mb-6 max-h-[300px] overflow-y-auto rounded-lg border border-line bg-bg-primary p-5 text-[13.5px]">
+                {isRichContent(selected.content) ? (
+                  <RichContentRenderer content={selected.content} />
+                ) : (
+                  <div className="whitespace-pre-wrap">{selected.content}</div>
+                )}
               </div>
 
               <div className="mb-6 rounded-lg border border-line bg-bg-primary p-5 max-[480px]:p-4">
@@ -255,4 +260,13 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
       </div>
     </>
   );
+}
+
+function isRichContent(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && parsed.type === "doc";
+  } catch {
+    return false;
+  }
 }

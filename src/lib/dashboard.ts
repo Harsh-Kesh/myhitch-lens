@@ -84,8 +84,15 @@ export interface EarningsBreakdown {
   label: string;
   value: number;
 }
+export interface DraftArticle {
+  id: string;
+  title: string;
+  updatedAt: string;
+  status: string;
+}
 export interface AuthorSpace {
   articles: AuthorArticle[];
+  drafts: DraftArticle[];
   totalViews: number;
   totalLikes: number;
   published: number;
@@ -109,7 +116,7 @@ const LEDGER_LABELS: Record<string, string> = {
 
 /** The author's published portfolio + rollup stats, from the database. */
 export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
-  const [rows, ledgerByType, wallet, rank] = await Promise.all([
+  const [rows, draftRows, ledgerByType, wallet, rank] = await Promise.all([
     prisma.article.findMany({
       where: { authorId: userId, status: "published" },
       orderBy: { publishedAt: "desc" },
@@ -122,6 +129,11 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
         likesCount: true,
         category: { select: { name: true } },
       },
+    }),
+    prisma.article.findMany({
+      where: { authorId: userId, status: { in: ["draft", "changes_requested"] } },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, title: true, updatedAt: true, status: true },
     }),
     prisma.revenueLedger.groupBy({
       by: ["type"],
@@ -175,6 +187,12 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
       views: r.viewsCount,
       likes: r.likesCount,
       earnings: earningsMap.get(r.id) ?? 0,
+    })),
+    drafts: draftRows.map((d) => ({
+      id: d.id,
+      title: d.title || "Untitled draft",
+      updatedAt: d.updatedAt.toISOString(),
+      status: d.status,
     })),
     totalViews: rows.reduce((sum, r) => sum + r.viewsCount, 0),
     totalLikes: rows.reduce((sum, r) => sum + r.likesCount, 0),

@@ -12,6 +12,7 @@ import {
   SendIcon,
   ShoppingCartIcon,
 } from "@/components/ui/icons";
+import { RichContentRenderer } from "@/components/ui/RichEditor";
 import { useLensValue } from "@/hooks/useLensValue";
 import { getIntegrations } from "@/lib/lensStore";
 import { defaultIntegrations } from "@/data/defaults";
@@ -198,12 +199,18 @@ export function ArticleView({ article }: { article: ArticleDetail }) {
           </div>
         </div>
 
-        <div className="mb-8 text-[15.5px] leading-[1.8] whitespace-pre-wrap text-text-main">
-          {article.content.split("\n").map((paragraph, index) => {
-            const trimmed = paragraph.trim();
-            const isListItem = trimmed.startsWith("•") || trimmed.startsWith("1.");
-            return <p key={index} className={isListItem ? "ml-5 font-medium" : "mb-4"}>{paragraph}</p>;
-          })}
+        <div className="mb-8 text-[15.5px] leading-[1.8] text-text-main">
+          {isRichContent(article.content) ? (
+            <RichContentRenderer content={article.content} />
+          ) : (
+            <div className="whitespace-pre-wrap">
+              {article.content.split("\n").map((paragraph, index) => {
+                const trimmed = paragraph.trim();
+                const isListItem = trimmed.startsWith("•") || trimmed.startsWith("1.");
+                return <p key={index} className={isListItem ? "ml-5 font-medium" : "mb-4"}>{paragraph}</p>;
+              })}
+            </div>
+          )}
         </div>
 
         {widgets.length > 0 && <div className="mb-8 flex flex-col gap-4 border-y border-line py-6">{widgets}</div>}
@@ -233,4 +240,13 @@ export function ArticleView({ article }: { article: ArticleDetail }) {
       </div>
     </>
   );
+}
+
+function isRichContent(content: string): boolean {
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && parsed.type === "doc";
+  } catch {
+    return false;
+  }
 }

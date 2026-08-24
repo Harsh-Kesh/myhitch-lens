@@ -187,6 +187,27 @@ async function main() {
     console.log("Seeded reader demo data (bookmarks, follows, notifications).");
   }
 
+  // --- Tags ---
+  const SEED_TAGS = [
+    "artificial intelligence", "machine learning", "deep learning", "nlp",
+    "supply chain", "logistics", "warehousing", "fleet management",
+    "blockchain", "cybersecurity", "cloud computing", "iot",
+    "fintech", "investment", "cryptocurrency",
+    "telemedicine", "biotech", "clinical research",
+    "e-learning", "academic", "remote work",
+    "aviation", "sustainable aviation", "tourism",
+    "startup", "leadership", "marketing", "strategy",
+    "data science", "computer vision", "robotics",
+  ];
+  for (const name of SEED_TAGS) {
+    await prisma.tag.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+  console.log(`Seeded ${SEED_TAGS.length} tags.`);
+
   // --- Revenue / wallet demo data for sarah_chen ---
   if (sarah) {
     const existingLedger = await prisma.revenueLedger.count({ where: { userId: sarah.id } });

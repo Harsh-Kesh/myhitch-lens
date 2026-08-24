@@ -166,7 +166,14 @@ export default function SubmitPage() {
   } catch {
     // ignore parse errors
   }
-  const readingTime = Math.max(1, Math.ceil(wordCount / 200));
+  // ~200 words/min. Show "< 1 min" below a minute so the estimate visibly
+  // reacts to short content instead of sitting on a flat "1 min read".
+  const readingLabel =
+    wordCount === 0
+      ? "0 min read"
+      : wordCount < 200
+        ? "< 1 min read"
+        : `${Math.round(wordCount / 200)} min read`;
 
   return (
     <>
@@ -253,7 +260,7 @@ export default function SubmitPage() {
       {/* Stats bar */}
       <div className="mt-3 flex items-center gap-6 text-xs text-text-muted">
         <span>{wordCount} words</span>
-        <span>{readingTime} min read</span>
+        <span>{readingLabel}</span>
       </div>
 
       {/* Preview modal */}

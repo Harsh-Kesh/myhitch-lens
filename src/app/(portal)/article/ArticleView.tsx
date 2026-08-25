@@ -20,7 +20,8 @@ import { defaultIntegrations } from "@/data/defaults";
 import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
-import { postComment, recordArticleView, toggleBookmark, toggleFollow, toggleLike } from "./actions";
+import { licenseShort } from "@/lib/licenses";
+import { postComment, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -123,6 +124,19 @@ export function ArticleView({
       router.refresh();
     });
   }
+  function runReport() {
+    const details = window.prompt(
+      "Report this article for copyright infringement. Describe the issue (e.g. where the original was published):",
+      "",
+    );
+    if (details === null) return;
+    startTransition(async () => {
+      const res = await reportCopyright(article.id, details);
+      if ("error" in res) alert(res.error);
+      else alert("Thanks — your report was sent to the moderation team.");
+    });
+  }
+
   function runPostComment() {
     const text = draftComment.trim();
     if (!text) return;
@@ -249,6 +263,25 @@ export function ArticleView({
         </div>
 
         {widgets.length > 0 && <div className="mb-8 flex flex-col gap-4 border-y border-line py-6">{widgets}</div>}
+
+        {/* Rights / copyright bar */}
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg-primary px-4 py-3 text-[12px] text-text-muted">
+          <span>
+            <strong className="text-text-main">© {article.author}.</strong>{" "}
+            {licenseShort(article.license)}. Reproduced only with permission.{" "}
+            <a href={`/verify?id=${article.id}`} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+              Verify authenticity
+            </a>
+          </span>
+          <button
+            type="button"
+            onClick={runReport}
+            disabled={isPending}
+            className="shrink-0 rounded-md border border-line px-3 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-danger/40 hover:text-danger disabled:opacity-60"
+          >
+            Report copyright
+          </button>
+        </div>
 
         <div>
           <h3 className="mb-4 font-heading text-base leading-[1.25] font-bold text-text-main">Discussion ({article.comments.length})</h3>

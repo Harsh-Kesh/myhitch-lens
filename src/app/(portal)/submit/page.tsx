@@ -8,6 +8,7 @@ import { formControl, formLabel } from "@/components/ui/Form";
 import { RichEditor, ArticlePreviewModal } from "@/components/ui/RichEditor";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
+import { LICENSE_OPTIONS } from "@/lib/licenses";
 
 import { createDraft, saveDraft, submitForReview, listTags, loadDraft } from "./actions";
 
@@ -31,6 +32,8 @@ export default function SubmitPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState<string>("");
   const [contentType, setContentType] = useState("Blog");
+  const [license, setLicense] = useState("all_rights_reserved");
+  const [rightsAttested, setRightsAttested] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [draftLoading, setDraftLoading] = useState(!!editId);
   const [showPreview, setShowPreview] = useState(false);
@@ -64,6 +67,7 @@ export default function SubmitPage() {
         setContent(draft.content);
         setContentType(draft.contentType);
         setSelectedTags(draft.tags);
+        if (draft.license) setLicense(draft.license);
         setDraftStatus(draft.status);
         if (draft.revisionNotes && draft.revisionNotes.length > 0) {
           setRevisionNotes(draft.revisionNotes);
@@ -142,6 +146,8 @@ export default function SubmitPage() {
         articleId,
         contentType,
         tagNames: selectedTags,
+        license,
+        rightsAttested,
       });
       if (result?.error) {
         alert(result.error);
@@ -362,12 +368,35 @@ export default function SubmitPage() {
               </p>
             </div>
 
-            {/* Media notice */}
-            <div className="mb-6 rounded-lg border border-warning/30 bg-warning/5 p-4">
-              <p className="text-xs font-semibold text-warning">Media Policy</p>
-              <p className="mt-1 text-[12px] text-text-muted">
-                Uploaded images, videos, and audio must not contain logos, brand marks, or watermarks. Articles may be purchased by brands who apply their own branding. The editor will check for compliance.
+            {/* Licence */}
+            <div className="mb-5">
+              <label className={formLabel}>Content licence</label>
+              <select className={formControl} value={license} onChange={(e) => setLicense(e.target.value)}>
+                {LICENSE_OPTIONS.map((o) => (
+                  <option key={o.code} value={o.code}>{o.label}</option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-[11px] text-text-muted">
+                Shown publicly on your article and recorded in its content credential.
               </p>
+            </div>
+
+            {/* Rights attestation */}
+            <div className="mb-6 rounded-lg border border-warning/30 bg-warning/5 p-4">
+              <label className="flex cursor-pointer items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={rightsAttested}
+                  onChange={(e) => setRightsAttested(e.target.checked)}
+                  className="mt-0.5 size-4 accent-primary"
+                />
+                <span className="text-[12px] text-text-main">
+                  I own — or am licensed for — all text and media in this article, and it doesn’t infringe anyone’s copyright.
+                  <span className="mt-1 block text-[11px] text-text-muted">
+                    Uploaded media must carry no third-party logos or watermarks. On publication a signed content credential is minted; false claims can lead to takedown.
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* Summary */}
@@ -403,7 +432,7 @@ export default function SubmitPage() {
               <Button
                 className="flex-1"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !title.trim() || selectedTags.length === 0}
+                disabled={isSubmitting || !title.trim() || selectedTags.length === 0 || !rightsAttested}
               >
                 {isSubmitting ? "Submitting..." : draftStatus === "changes_requested" ? "Resubmit" : "Submit"}
               </Button>

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
+import { createHash } from "crypto";
 import path from "path";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -64,14 +66,36 @@ export async function POST(request: Request) {
     );
   }
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const sha256 = createHash("sha256").update(buffer).digest("hex");
+  const mediaType = file.type.split("/")[0]; // image | video | audio
+
+  // Copyright fingerprint: if this exact file was uploaded before, reuse it and
+  // flag the duplicate rather than storing another copy.
+  const existing = await prisma.assetFingerprint.findUnique({ where: { sha256 } });
+  if (existing) {
+    return NextResponse.json({
+      url: existing.url,
+      sha256,
+      duplicate: true,
+      firstUploadedAt: existing.createdAt.toISOString(),
+      ownUpload: existing.uploaderId === session.user.id,
+    });
+  }
+
   const ext = EXT_MAP[file.type] || "";
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
   const uploadDir = path.join(process.cwd(), "public", "uploads");
   await mkdir(uploadDir, { recursive: true });
   const filePath = path.join(uploadDir, filename);
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const bytes = new Uint8Array(buffer);
   await writeFile(filePath, bytes);
 
-  return NextResponse.json({ url: `/uploads/${filename}` });
+  const url = `/uploads/${filename}`;
+  await prisma.assetFingerprint.create({
+    data: { sha256, url, mediaType, uploaderId: session.user.id },
+  });
+
+  return NextResponse.json({ url, sha256, duplicate: false });
 }

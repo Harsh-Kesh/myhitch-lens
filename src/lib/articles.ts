@@ -123,6 +123,7 @@ export interface ArticleDetail {
   authorId: string;
   authorRank: string;
   authorVerified: boolean;
+  license: string;
   followerCount: number;
   isOwnArticle: boolean;
   followingAuthor: boolean;
@@ -169,6 +170,7 @@ export async function getArticle(
     authorId: row.author.id,
     authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
     authorVerified: row.author.isVerified,
+    license: row.license,
     followerCount,
     isOwnArticle: userId === row.author.id,
     followingAuthor,

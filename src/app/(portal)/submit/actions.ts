@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
+import { isLicenseCode } from "@/lib/licenses";
 
 export type ActionResult = { error: string } | undefined;
 
@@ -83,11 +84,17 @@ export async function submitForReview(input: {
   articleId: string;
   contentType: string;
   tagNames: string[];
+  license: string;
+  rightsAttested: boolean;
 }): Promise<ActionResult> {
   const session = await requireAuthorSession();
 
   if (input.tagNames.length === 0) return { error: "Select at least one tag." };
   if (input.tagNames.length > MAX_TAGS) return { error: `Maximum ${MAX_TAGS} tags.` };
+  if (!input.rightsAttested) {
+    return { error: "You must confirm you own or are licensed for all content and media." };
+  }
+  if (!isLicenseCode(input.license)) return { error: "Choose a valid content licence." };
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
@@ -130,6 +137,8 @@ export async function submitForReview(input: {
       status: "in_review",
       contentType: input.contentType,
       categoryId: bestCategory,
+      license: input.license,
+      rightsAttested: true,
       summary: `${contentText.slice(0, 140)}${contentText.length > 140 ? "…" : ""}`,
       tags: {
         deleteMany: {},
@@ -167,6 +176,7 @@ export async function loadDraft(articleId: string) {
       content: true,
       contentType: true,
       status: true,
+      license: true,
       authorId: true,
       tags: { include: { tag: true } },
       revisions: {
@@ -184,6 +194,7 @@ export async function loadDraft(articleId: string) {
     content: article.content,
     contentType: article.contentType,
     status: article.status,
+    license: article.license,
     tags: article.tags.map((t) => t.tag.name),
     revisionNotes: article.revisions
       .filter((r) => r.note)

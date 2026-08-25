@@ -28,6 +28,45 @@ export async function recordArticleView(articleId: string): Promise<void> {
   ]);
 }
 
+/** File a copyright/infringement report against an article → moderation queue. */
+export async function reportCopyright(
+  articleId: string,
+  details: string,
+): Promise<{ error: string } | { ok: true }> {
+  const session = await auth();
+  if (!session?.user) return { error: "Please sign in to report." };
+  const text = details.trim();
+  if (!text) return { error: "Describe the issue so a moderator can act on it." };
+
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true },
+  });
+  if (!article) return { error: "Article not found." };
+
+  await prisma.$transaction([
+    prisma.disputeTicket.create({
+      data: {
+        userId: session.user.id,
+        subject: `${articleId} — ${article.title}`,
+        reason: "copyright",
+        justify: text,
+      },
+    }),
+    prisma.notification.createMany({
+      data: (
+        await prisma.user.findMany({ where: { role: { in: ["editor", "admin"] } }, select: { id: true } })
+      ).map((u) => ({
+        userId: u.id,
+        type: "copyright_report",
+        text: `Copyright report filed against "${article.title}".`,
+      })),
+    }),
+  ]);
+
+  return { ok: true };
+}
+
 /** Toggle the current user's like on an article and keep the counter in sync. */
 export async function toggleLike(articleId: string): Promise<void> {
   const session = await auth();

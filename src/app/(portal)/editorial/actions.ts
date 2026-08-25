@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { mintProvenance } from "@/lib/provenance";
 
 async function requireEditor() {
   const session = await auth();
@@ -24,6 +25,9 @@ export async function approveAndPublish(articleId: string, scheduleISO?: string)
     data: { status: "published", verified: true, publishedAt: publishAt },
     select: { title: true, authorId: true, author: { select: { displayName: true } } },
   });
+
+  // Mint a tamper-evident content credential (provenance) at publication.
+  await mintProvenance(articleId);
 
   // Notify everyone who follows the author.
   const followers = await prisma.follow.findMany({

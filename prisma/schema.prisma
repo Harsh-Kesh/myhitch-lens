@@ -164,6 +164,7 @@ model User {
   platformIdentity PlatformIdentity?
   entitlements   Entitlement[]
   analyticsEvents AnalyticsEvent[]
+  assetFingerprints AssetFingerprint[]
 
   @@index([role])
 }
@@ -262,6 +263,8 @@ model Article {
   lane        PublishLane   @default(public)
   isPremium   Boolean       @default(false)
   verified    Boolean       @default(false)
+  license       String      @default("all_rights_reserved") // content licence code
+  rightsAttested Boolean    @default(false) // author warranted originality/rights on submit
 
   authorId    String
   author      User          @relation("ArticleAuthor", fields: [authorId], references: [id])
@@ -315,6 +318,22 @@ model MediaAsset {
   storageKey String
   meta      Json?
   createdAt DateTime  @default(now())
+}
+
+// Content-hash fingerprint of every uploaded asset — proves origin and lets the
+// platform detect re-uploads of the same file (copyright duplicate detection).
+model AssetFingerprint {
+  id         String   @id @default(cuid())
+  sha256     String   @unique
+  url        String
+  mediaType  String
+  uploaderId String?
+  uploader   User?    @relation(fields: [uploaderId], references: [id], onDelete: SetNull)
+  license    String?
+  source     String?
+  createdAt  DateTime @default(now())
+
+  @@index([uploaderId])
 }
 
 model Revision {

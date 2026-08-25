@@ -4,6 +4,7 @@ import {
   listListableArticles,
   listOpenPanelListings,
   listOwnedArticles,
+  sweepExpiredAuctions,
 } from "@/lib/marketplace";
 import { CATEGORIES } from "@/data/categories";
 import { PanelMarketplace } from "./PanelMarketplace";
@@ -15,6 +16,9 @@ export default async function PanelPage() {
   // page doesn't crash during the layout/page concurrent render.
   if (!session?.user) return null;
   const userId = session.user.id;
+
+  // Lazy sweep: close any auctions whose time has expired before reading.
+  await sweepExpiredAuctions();
 
   const [open, mine, listable, owned] = await Promise.all([
     listOpenPanelListings(userId),

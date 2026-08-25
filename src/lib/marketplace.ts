@@ -110,6 +110,7 @@ export interface ListingBid {
   brandName: string;
   amount: number;
   changeRequest: string | null;
+  removeMedia: boolean;
   status: string;
   createdAt: string;
 }
@@ -195,6 +196,7 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
           brandName: b.brandName ?? b.bidder.displayName,
           amount: Number(b.amount),
           changeRequest: b.changeRequest ?? null,
+          removeMedia: b.removeMedia,
           status: b.status,
           createdAt: b.createdAt.toISOString(),
         })),
@@ -274,6 +276,67 @@ export interface OwnershipInfo {
   ownerName: string;
   brandName: string;
   tagline: string | null;
+}
+
+/**
+ * Close auctions whose time has expired (lazy sweep — runs on panel load, no
+ * cron needed). Expired auctions with standing offers move to `closed` (the
+ * author is prompted to accept the top offer); those with none are `canceled`.
+ * Ownership never transfers automatically — author acceptance stays mandatory.
+ */
+export async function sweepExpiredAuctions(): Promise<void> {
+  const expired = await prisma.auction.findMany({
+    where: { type: "sponsorship", status: "open", endsAt: { lt: new Date() } },
+    select: {
+      id: true,
+      bids: { where: { status: { in: ["active", "outbid"] } }, select: { id: true } },
+      listing: { select: { article: { select: { authorId: true, title: true } } } },
+    },
+  });
+  if (expired.length === 0) return;
+
+  const withOffers = expired.filter((a) => a.bids.length > 0);
+  const withoutOffers = expired.filter((a) => a.bids.length === 0);
+
+  const ops = [];
+  if (withOffers.length > 0) {
+    ops.push(
+      prisma.auction.updateMany({
+        where: { id: { in: withOffers.map((a) => a.id) } },
+        data: { status: "closed" },
+      }),
+    );
+  }
+  if (withoutOffers.length > 0) {
+    ops.push(
+      prisma.auction.updateMany({
+        where: { id: { in: withoutOffers.map((a) => a.id) } },
+        data: { status: "canceled" },
+      }),
+    );
+  }
+  const notifications = expired
+    .map((a) => {
+      const article = a.listing?.article;
+      if (!article) return null;
+      return a.bids.length > 0
+        ? {
+            userId: article.authorId,
+            type: "auction_ended",
+            text: `Bidding closed on "${article.title}" with ${a.bids.length} offer(s) — review and accept the winner.`,
+          }
+        : {
+            userId: article.authorId,
+            type: "auction_ended",
+            text: `Bidding closed on "${article.title}" with no offers. You can relist it anytime.`,
+          };
+    })
+    .filter((n): n is NonNullable<typeof n> => n !== null);
+  if (notifications.length > 0) {
+    ops.push(prisma.notification.createMany({ data: notifications }));
+  }
+
+  await prisma.$transaction(ops);
 }
 
 /** Current ownership + branding to display on an article (null if author-owned). */

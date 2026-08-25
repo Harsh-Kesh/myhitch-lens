@@ -15,6 +15,36 @@ async function requireUser() {
   return session.user;
 }
 
+const MEDIA_NODE_TYPES = new Set(["image", "figure", "video", "audio"]);
+
+/** Remove media nodes (images/video/audio) from Tiptap JSON, leaving text intact. */
+function stripMediaFromContent(content: string): { content: string; removed: number } {
+  let doc: unknown;
+  try {
+    doc = JSON.parse(content);
+  } catch {
+    return { content, removed: 0 };
+  }
+  let removed = 0;
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const n = node as { content?: unknown[] };
+    if (Array.isArray(n.content)) {
+      n.content = n.content.filter((child) => {
+        const type = (child as { type?: string })?.type;
+        if (type && MEDIA_NODE_TYPES.has(type)) {
+          removed += 1;
+          return false;
+        }
+        return true;
+      });
+      n.content.forEach(walk);
+    }
+  };
+  walk(doc);
+  return { content: JSON.stringify(doc), removed };
+}
+
 /** Author lists one of their published, still-owned articles for ownership sale. */
 export async function createListing(input: {
   articleId: string;
@@ -72,6 +102,7 @@ export async function placeBid(input: {
   brandCategory: string;
   brandName?: string;
   changeRequest?: string;
+  removeMedia?: boolean;
   autoBidCeiling?: number | null;
 }): Promise<ActionResult> {
   const user = await requireUser();
@@ -117,6 +148,7 @@ export async function placeBid(input: {
         amount,
         brandName: input.brandName?.trim() || null,
         changeRequest: input.changeRequest?.trim() || null,
+        removeMedia: input.removeMedia ?? false,
         autoBidCeiling: input.autoBidCeiling != null ? round2(Number(input.autoBidCeiling)) : null,
         status: "active",
       },
@@ -149,7 +181,9 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
         include: {
           listing: {
             include: {
-              article: { select: { id: true, authorId: true, title: true, category: { select: { name: true } } } },
+              article: {
+                select: { id: true, authorId: true, title: true, content: true, category: { select: { name: true } } },
+              },
             },
           },
           placement: true,
@@ -162,7 +196,10 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
   const article = auction.listing?.article;
   if (!article) return { error: "Listing not found." };
   if (article.authorId !== user.id) return { error: "Only the author can accept an offer." };
-  if (auction.status !== "open") return { error: "This auction is already settled." };
+  // Accept while the auction is live ("open") or after it has expired ("closed").
+  if (auction.status !== "open" && auction.status !== "closed") {
+    return { error: "This auction is already settled." };
+  }
   if (auction.placement) return { error: "This article has already been sold." };
 
   // First-price: the buyer pays exactly what they bid (floor-guaranteed at bid time).
@@ -172,6 +209,10 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
   const net = round2(price - fee);
   const brandName = bid.brandName ?? bid.bidder.displayName;
 
+  // Auto-apply the agreed media-removal term to the article content, if requested.
+  const stripped = bid.removeMedia ? stripMediaFromContent(article.content) : null;
+  const mediaRemoved = stripped?.removed ?? 0;
+
   await prisma.$transaction([
     // Winner + losers.
     prisma.bid.update({ where: { id: bid.id }, data: { status: "won" } }),
@@ -180,9 +221,14 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
       data: { status: "lost" },
     }),
     // Ownership transfers to the buyer; author credit (authorId) is untouched.
+    // The agreed media-removal term is auto-applied to the content here.
     prisma.article.update({
       where: { id: article.id },
-      data: { ownerId: bid.bidder.id, lane: "hybrid" },
+      data: {
+        ownerId: bid.bidder.id,
+        lane: "hybrid",
+        ...(stripped ? { content: stripped.content } : {}),
+      },
     }),
     // Record the sale + agreed change request as a labeled placement.
     prisma.brandingPlacement.create({
@@ -197,6 +243,7 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
           changeRequest: bid.changeRequest ?? null,
           category: article.category.name,
           amount: price,
+          mediaRemoved,
         },
       },
     }),
@@ -229,7 +276,9 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
         {
           userId: bid.bidder.id,
           type: "bid_won",
-          text: `Your offer on "${article.title}" was accepted — you now own this article.`,
+          text: `Your offer on "${article.title}" was accepted — you now own this article.${
+            mediaRemoved > 0 ? ` ${mediaRemoved} media item(s) were removed as agreed.` : ""
+          }`,
         },
         {
           userId: article.authorId,

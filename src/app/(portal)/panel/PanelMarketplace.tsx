@@ -196,11 +196,18 @@ export function PanelMarketplace({
                     className={cn(
                       "rounded-full px-2.5 py-1 text-[11px] font-bold",
                       m.status === "open" && "bg-primary-glow text-primary",
+                      m.status === "closed" && "bg-warning/10 text-warning",
                       m.status === "settled" && "bg-success/10 text-success",
                       m.status === "canceled" && "bg-danger/10 text-danger",
                     )}
                   >
-                    {m.status === "settled" ? "Sold" : m.status}
+                    {m.status === "settled"
+                      ? "Sold"
+                      : m.status === "closed"
+                        ? "Ended — review offers"
+                        : m.status === "canceled"
+                          ? "Ended — no offers"
+                          : m.status}
                   </span>
                 </div>
 
@@ -245,14 +252,19 @@ export function PanelMarketplace({
                             >
                               {b.status}
                             </span>
-                            {m.status === "open" && (b.status === "active" || b.status === "outbid") && (
+                            {(m.status === "open" || m.status === "closed") &&
+                              (b.status === "active" || b.status === "outbid") && (
                               <Button
                                 size="sm"
                                 variant="secondary"
                                 disabled={isPending}
                                 onClick={() => {
-                                  const msg = b.changeRequest
-                                    ? `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}?\n\nThey requested: "${b.changeRequest}"\n\nAccepting transfers ownership and agrees to this change. You keep your verified author credit.`
+                                  const terms = [
+                                    b.removeMedia ? "Remove your media (images/video/audio)" : null,
+                                    b.changeRequest ? `"${b.changeRequest}"` : null,
+                                  ].filter(Boolean).join("; ");
+                                  const msg = terms
+                                    ? `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}?\n\nAgreed terms: ${terms}\n\nAccepting transfers ownership and applies these terms. You keep your verified author credit.`
                                     : `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}? This transfers ownership. You keep your verified author credit.`;
                                   if (!window.confirm(msg)) return;
                                   startTransition(async () => {
@@ -267,6 +279,12 @@ export function PanelMarketplace({
                             )}
                           </div>
                         </div>
+                        {b.removeMedia && (
+                          <p className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-[11.5px] text-warning">
+                            <span className="font-semibold">Requests media removal</span> — your images/video/audio
+                            will be stripped on acceptance (body text kept).
+                          </p>
+                        )}
                         {b.changeRequest && (
                           <p className="mt-1.5 rounded bg-bg-tertiary px-2 py-1 text-[11.5px] text-text-muted">
                             <span className="font-semibold">Change request:</span> {b.changeRequest}
@@ -399,6 +417,7 @@ function BidModal({
     brandCategory: string;
     brandName: string;
     changeRequest: string;
+    removeMedia: boolean;
     autoBidCeiling: number | null;
   }) => void;
 }) {
@@ -407,6 +426,7 @@ function BidModal({
   const [brandName, setBrandName] = useState("");
   const [brandCategory, setBrandCategory] = useState(options[0] ?? "");
   const [changeRequest, setChangeRequest] = useState("");
+  const [removeMedia, setRemoveMedia] = useState(false);
   const [ceiling, setCeiling] = useState("");
 
   return (
@@ -442,11 +462,28 @@ function BidModal({
       </div>
 
       <div className="mb-4">
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={removeMedia}
+            onChange={(e) => setRemoveMedia(e.target.checked)}
+            className="mt-0.5 size-4 accent-primary"
+          />
+          <span className="text-[12.5px] text-text-main">
+            Remove the author’s media on transfer
+            <span className="block text-[11px] text-text-muted">
+              Automatically strips the author’s images, video &amp; audio when you win — applied on acceptance. The body text stays intact.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="mb-4">
         <label className={formLabel}>Change request (optional)</label>
         <textarea
           rows={3}
           className={formControl}
-          placeholder="e.g. Remove the stock hero image; we'll add our product shots and logo."
+          placeholder="e.g. Any other edits you'd want — we'll add our product shots and logo."
           value={changeRequest}
           onChange={(e) => setChangeRequest(e.target.value)}
         />
@@ -472,6 +509,7 @@ function BidModal({
               brandCategory,
               brandName: brandName.trim(),
               changeRequest: changeRequest.trim(),
+              removeMedia,
               autoBidCeiling: ceiling.trim() ? Number(ceiling) : null,
             })
           }

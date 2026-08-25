@@ -514,6 +514,7 @@ model Bid {
   autoBidCeiling Decimal? @db.Decimal(12, 2)
   brandName     String?   // acquiring brand/company name (defaults to bidder)
   changeRequest String?   // requested edits agreed as a term of the sale
+  removeMedia   Boolean   @default(false) // structured term: strip the author's media on transfer
   status        BidStatus @default(active)
   createdAt     DateTime  @default(now())
 

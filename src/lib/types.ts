@@ -1,6 +1,6 @@
 /** Domain types for the MYHitch Lens platform. */
 
-export type UserRole = "reader" | "author" | "editor";
+export type UserRole = "reader" | "author" | "editor" | "admin";
 
 export interface Comment {
   name: string;

@@ -20,7 +20,7 @@ import { defaultIntegrations } from "@/data/defaults";
 import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
-import { postComment, toggleBookmark, toggleFollow, toggleLike } from "./actions";
+import { postComment, recordArticleView, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -75,6 +75,15 @@ export function ArticleView({
     audioTimer.current = null;
   }, []);
   useEffect(() => stopAudio, [stopAudio]);
+
+  // Count one view per article per browser session (dedupes refreshes).
+  useEffect(() => {
+    if (article.isOwnArticle) return;
+    const key = `viewed:${article.id}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    void recordArticleView(article.id);
+  }, [article.id, article.isOwnArticle]);
 
   function toggleAudio() {
     if (audioPlaying) {

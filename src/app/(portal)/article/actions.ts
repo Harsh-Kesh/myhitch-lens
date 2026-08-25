@@ -5,6 +5,29 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
+/**
+ * Record a read: increment the article's view counter and log an analytics
+ * event. The author's own views are ignored so metrics stay honest. Called
+ * once per session per article from the client (deduped there).
+ */
+export async function recordArticleView(articleId: string): Promise<void> {
+  const session = await auth();
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { authorId: true, status: true },
+  });
+  if (!article || article.status !== "published") return;
+  // Don't let the author inflate their own view count.
+  if (session?.user && session.user.id === article.authorId) return;
+
+  await prisma.$transaction([
+    prisma.article.update({ where: { id: articleId }, data: { viewsCount: { increment: 1 } } }),
+    prisma.analyticsEvent.create({
+      data: { articleId, userId: session?.user?.id ?? null, kind: "view" },
+    }),
+  ]);
+}
+
 /** Toggle the current user's like on an article and keep the counter in sync. */
 export async function toggleLike(articleId: string): Promise<void> {
   const session = await auth();

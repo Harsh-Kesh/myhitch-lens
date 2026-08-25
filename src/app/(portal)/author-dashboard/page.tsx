@@ -115,12 +115,12 @@ export default async function AuthorDashboardPage() {
               </div>
             ) : (
               articles.map((article) => (
-                <Link key={article.id} href={`/article?id=${article.id}`} className="group flex cursor-pointer flex-col rounded-xl border border-line bg-bg-primary p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary hover:shadow-card">
+                <div key={article.id} className="group flex flex-col rounded-xl border border-line bg-bg-primary p-5 transition-all duration-200 hover:border-primary hover:shadow-card">
                   <div className="mb-3 flex items-center justify-between">
                     <span className="rounded bg-primary-glow px-2 py-0.5 text-[10px] font-bold tracking-wide text-primary uppercase">{article.category}</span>
                     <span className="text-[11px] text-text-muted">{article.type}</span>
                   </div>
-                  <h4 className="mb-2 font-heading text-[15px] leading-snug font-bold text-text-main transition-colors group-hover:text-primary">{article.title}</h4>
+                  <Link href={`/article?id=${article.id}`} className="mb-2 font-heading text-[15px] leading-snug font-bold text-text-main transition-colors hover:text-primary">{article.title}</Link>
                   <p className="mb-4 line-clamp-2 flex-1 text-[12.5px] text-text-muted">{article.summary}</p>
                   <div className="flex items-center justify-between border-t border-line pt-3 text-[11.5px] text-text-muted">
                     <span>{article.views.toLocaleString()} views</span>
@@ -128,7 +128,10 @@ export default async function AuthorDashboardPage() {
                       <span className="font-semibold text-success">+{formatAUD(article.earnings)}</span>
                     )}
                   </div>
-                </Link>
+                  <Link href={`/analytics/article?id=${article.id}`} className="mt-3 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
+                    <BarChartIcon className="size-3.5" /> View analytics
+                  </Link>
+                </div>
               ))
             )}
           </div>

@@ -152,6 +152,7 @@ export const ROLE_NAMES: Record<UserRole, string> = {
   reader: "Markus Green",
   author: "Dr. Sarah Chen",
   editor: "Chief Editor Vance",
+  admin: "Platform Admin",
 };
 
 /** Landing route for each simulated role. */
@@ -159,6 +160,7 @@ export const ROLE_HOME: Record<UserRole, string> = {
   reader: "/reader-dashboard",
   author: "/author-dashboard",
   editor: "/editorial",
+  admin: "/editorial",
 };
 
 /**

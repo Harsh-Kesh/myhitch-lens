@@ -302,3 +302,128 @@ export async function getAnalyticsData(userId: string): Promise<AnalyticsData> {
     categoryShares,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Per-article analytics
+// ---------------------------------------------------------------------------
+
+const REVENUE_LABELS: Record<string, string> = {
+  subscription: "Subscriptions",
+  read_payout: "Read-time payouts",
+  ad_share: "Programmatic ads",
+  donation: "Donations",
+  sponsorship: "Sponsorship",
+  report_sale: "Ownership & report sales",
+  affiliate: "Affiliate",
+};
+
+export interface ArticleAnalytics {
+  id: string;
+  title: string;
+  authorId: string;
+  author: string;
+  authorVerified: boolean;
+  category: string;
+  type: string;
+  status: string;
+  lane: string;
+  publishedAt: string | null;
+  readTimeMin: number;
+  views: number;
+  likes: number;
+  comments: number;
+  bookmarks: number;
+  engagementRate: number; // (likes + comments + bookmarks) / views, %
+  revenueByType: { label: string; value: number }[];
+  totalRevenue: number;
+  owner: string | null;
+  soldPrice: number | null;
+  viewTrend: { date: string; views: number }[]; // last 14 days
+}
+
+/** Deep analytics for a single article. Access is enforced by the caller. */
+export async function getArticleAnalytics(articleId: string): Promise<ArticleAnalytics | null> {
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: {
+      id: true,
+      title: true,
+      authorId: true,
+      contentType: true,
+      status: true,
+      lane: true,
+      publishedAt: true,
+      viewsCount: true,
+      likesCount: true,
+      aiScores: true,
+      author: { select: { displayName: true, isVerified: true } },
+      owner: { select: { displayName: true } },
+      category: { select: { name: true } },
+      _count: { select: { comments: true, bookmarks: true } },
+    },
+  });
+  if (!article) return null;
+
+  const since = new Date();
+  since.setDate(since.getDate() - 13);
+  since.setHours(0, 0, 0, 0);
+
+  const [revenue, viewEvents] = await Promise.all([
+    prisma.revenueLedger.groupBy({
+      by: ["type"],
+      where: { articleId, type: { notIn: ["payout", "fee", "boost", "refund"] } },
+      _sum: { net: true },
+    }),
+    prisma.analyticsEvent.findMany({
+      where: { articleId, kind: "view", createdAt: { gte: since } },
+      select: { createdAt: true },
+    }),
+  ]);
+
+  const revenueByType = revenue
+    .map((r) => ({ label: REVENUE_LABELS[r.type] ?? r.type, value: Number(r._sum.net ?? 0) }))
+    .filter((r) => r.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const totalRevenue = revenueByType.reduce((s, r) => s + r.value, 0);
+
+  // Bucket view events into the last 14 calendar days.
+  const dayCounts = new Map<string, number>();
+  for (let i = 0; i < 14; i += 1) {
+    const d = new Date(since);
+    d.setDate(since.getDate() + i);
+    dayCounts.set(d.toISOString().slice(0, 10), 0);
+  }
+  for (const ev of viewEvents) {
+    const key = ev.createdAt.toISOString().slice(0, 10);
+    if (dayCounts.has(key)) dayCounts.set(key, (dayCounts.get(key) ?? 0) + 1);
+  }
+  const viewTrend = [...dayCounts.entries()].map(([date, views]) => ({ date, views }));
+
+  const scores = (article.aiScores ?? {}) as { readTimeMin?: number };
+  const views = article.viewsCount;
+  const engagements = article.likesCount + article._count.comments + article._count.bookmarks;
+
+  return {
+    id: article.id,
+    title: article.title,
+    authorId: article.authorId,
+    author: article.author.displayName,
+    authorVerified: article.author.isVerified,
+    category: article.category.name,
+    type: article.contentType,
+    status: article.status,
+    lane: article.lane,
+    publishedAt: article.publishedAt?.toISOString() ?? null,
+    readTimeMin: Number(scores.readTimeMin ?? 5),
+    views,
+    likes: article.likesCount,
+    comments: article._count.comments,
+    bookmarks: article._count.bookmarks,
+    engagementRate: views > 0 ? Math.round((engagements / views) * 1000) / 10 : 0,
+    revenueByType,
+    totalRevenue,
+    owner: article.owner?.displayName ?? null,
+    soldPrice: null,
+    viewTrend,
+  };
+}

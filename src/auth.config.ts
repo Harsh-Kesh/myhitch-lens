@@ -18,7 +18,25 @@ const PORTAL_PREFIXES = [
   "/author-dashboard",
   "/reader-dashboard",
   "/editorial",
+  "/verifications",
+  "/panel",
   "/article",
+];
+
+/**
+ * Role-gated areas. A logged-in user whose role is not listed is redirected
+ * away (to /explore) rather than shown a page they shouldn't act on. Anything
+ * not listed here is open to every signed-in user (reading, marketplace,
+ * governance appeals, personal dashboard). Enforced centrally in the edge
+ * middleware; server actions re-check as defense-in-depth.
+ */
+const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
+  { prefix: "/editorial", roles: ["editor", "admin"] },
+  { prefix: "/verifications", roles: ["editor", "admin"] },
+  { prefix: "/submit", roles: ["author", "editor", "admin"] },
+  { prefix: "/analytics", roles: ["author", "editor", "admin"] },
+  { prefix: "/author-dashboard", roles: ["author", "editor", "admin"] },
+  { prefix: "/integrations", roles: ["author", "editor", "admin"] },
 ];
 
 export const authConfig = {
@@ -34,6 +52,17 @@ export const authConfig = {
         (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
       );
       if (isPortal && !isLoggedIn) return false; // → redirect to signIn page
+
+      if (isLoggedIn) {
+        const role = (auth!.user as { role?: UserRole }).role;
+        const rule = ROLE_RULES.find(
+          (r) => pathname === r.prefix || pathname.startsWith(`${r.prefix}/`),
+        );
+        if (rule && (!role || !rule.roles.includes(role))) {
+          // Logged in but wrong role → send to the universal feed.
+          return Response.redirect(new URL("/explore", request.nextUrl));
+        }
+      }
       return true;
     },
     jwt({ token, user }) {

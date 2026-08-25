@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { auth } from "@/auth";
 import { workspacePanel } from "@/components/ui/Form";
 import { BarChartIcon, HeartIcon } from "@/components/ui/icons";
@@ -139,7 +141,9 @@ export default async function AnalyticsPage() {
               {articles.map((article) => (
                 <tr key={article.id} className="border-b border-line">
                   <td className={cn(TABLE_CELL, "font-semibold text-text-main")}>
-                    {article.title}
+                    <Link href={`/analytics/article?id=${article.id}`} className="hover:text-primary hover:underline">
+                      {article.title}
+                    </Link>
                   </td>
                   <td className={cn(TABLE_CELL, "text-text-muted")}>{article.author}</td>
                   <td className={TABLE_CELL}>

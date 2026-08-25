@@ -58,20 +58,20 @@ const NAV_LINKS: NavLink[] = [
     href: "/submit",
     label: "Submit Article",
     icon: <PencilIcon className={navIcon} />,
-    roles: ["author", "editor"],
+    roles: ["author", "editor", "admin"],
   },
   {
     href: "/editorial",
     label: "Editorial Queue",
     icon: <ColumnsIcon className={navIcon} />,
-    roles: ["editor"],
+    roles: ["editor", "admin"],
     showQueueCount: true,
   },
   {
     href: "/verifications",
     label: "Verifications",
     icon: <ShieldIcon className={navIcon} />,
-    roles: ["editor"],
+    roles: ["editor", "admin"],
   },
   {
     href: "/panel",
@@ -82,7 +82,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/analytics",
     label: "Analytics Hub",
     icon: <BarChartIcon className={navIcon} />,
-    roles: ["author", "editor"],
+    roles: ["author", "editor", "admin"],
   },
   {
     href: "/governance",
@@ -93,6 +93,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/integrations",
     label: "Integrations API",
     icon: <PowerIcon className={navIcon} />,
+    roles: ["author", "editor", "admin"],
   },
 ];
 
@@ -114,6 +115,11 @@ const ROLE_PRESENTATION: Record<
     avatarChar: "E",
     avatarBg: "linear-gradient(135deg, #0f2b5c 0%, #0077b6 100%)",
     badge: "Editor Portal",
+  },
+  admin: {
+    avatarChar: "A",
+    avatarBg: "linear-gradient(135deg, #1e293b 0%, #0f2b5c 100%)",
+    badge: "Admin Console",
   },
 };
 

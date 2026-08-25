@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { CheckIcon, ClockIcon, HeartIcon } from "@/components/ui/icons";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import type { FeedArticle } from "@/lib/types";
 
 /** `.article-card` - the feed tile rendered by `renderFeed()` in the old build. */
@@ -24,9 +25,16 @@ export function ArticleCard({ article }: { article: FeedArticle }) {
     >
       <div className="mb-3 flex items-center justify-between text-[11px] font-semibold">
         <span className="text-primary uppercase">{article.category}</span>
-        <span className="rounded bg-bg-tertiary px-2 py-0.5 text-text-muted">
-          {article.type}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {article.verified && (
+            <span className="inline-flex items-center gap-0.5 rounded bg-bg-tertiary px-2 py-0.5 text-text-muted">
+              <CheckIcon className="size-2.5 align-middle" strokeWidth={3} /> Editor-reviewed
+            </span>
+          )}
+          <span className="rounded bg-bg-tertiary px-2 py-0.5 text-text-muted">
+            {article.type}
+          </span>
+        </div>
       </div>
 
       <h3 className="mb-3 font-heading text-lg leading-[1.35] font-bold text-text-main">
@@ -42,13 +50,9 @@ export function ArticleCard({ article }: { article: FeedArticle }) {
           <div className="flex size-6 items-center justify-center rounded-full bg-line text-[11px] font-bold">
             {article.author.charAt(0)}
           </div>
-          <div className="flex flex-col">
+          <div className="flex items-center gap-1">
             <span className="text-xs font-semibold">{article.author}</span>
-            {article.verified && (
-              <span className="inline-flex items-center gap-0.5 text-[9px] text-success">
-                <CheckIcon className="size-2.5 align-middle" strokeWidth={3} /> Verified
-              </span>
-            )}
+            {article.authorVerified && <VerifiedBadge size="xs" />}
           </div>
         </div>
 

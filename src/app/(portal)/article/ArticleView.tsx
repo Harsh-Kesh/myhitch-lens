@@ -13,6 +13,7 @@ import {
   ShoppingCartIcon,
 } from "@/components/ui/icons";
 import { RichContentRenderer } from "@/components/ui/RichEditor";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { useLensValue } from "@/hooks/useLensValue";
 import { getIntegrations } from "@/lib/lensStore";
 import { defaultIntegrations } from "@/data/defaults";
@@ -178,8 +179,13 @@ export function ArticleView({
             {article.author.charAt(0)}
           </div>
           <div className="flex min-w-0 flex-1 flex-col">
-            <span className="text-[13.5px] font-semibold">{article.author}</span>
-            <span className="text-[11px] text-text-muted">{article.authorRank}</span>
+            <span className="flex items-center gap-1 text-[13.5px] font-semibold">
+              {article.author}
+              {article.authorVerified && <VerifiedBadge size="xs" />}
+            </span>
+            <span className="text-[11px] text-text-muted">
+              {article.authorRank} · {article.followerCount.toLocaleString()} followers
+            </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {!article.isOwnArticle && (
@@ -248,7 +254,10 @@ export function ArticleView({
               article.comments.map((comment) => (
                 <div key={comment.id} className="mb-3 rounded-lg border border-line bg-bg-primary p-4">
                   <div className="mb-2 flex justify-between text-[11.5px]">
-                    <span className="font-semibold">{comment.author}</span>
+                    <span className="inline-flex items-center gap-1 font-semibold">
+                      {comment.author}
+                      {comment.verified && <VerifiedBadge size="xs" />}
+                    </span>
                     <span className="text-text-muted">{comment.date}</span>
                   </div>
                   <p className="text-[13px] text-text-main">{comment.text}</p>

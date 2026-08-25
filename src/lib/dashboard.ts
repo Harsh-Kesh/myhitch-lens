@@ -11,6 +11,7 @@ export interface SavedArticle {
 export interface FollowedAuthor {
   id: string;
   name: string;
+  verified: boolean;
 }
 export interface NotificationView {
   id: string;
@@ -44,7 +45,7 @@ export async function getReaderSpace(userId: string): Promise<ReaderSpace> {
     }),
     prisma.follow.findMany({
       where: { followerId: userId },
-      include: { following: { select: { id: true, displayName: true } } },
+      include: { following: { select: { id: true, displayName: true, isVerified: true } } },
     }),
     prisma.notification.findMany({
       where: { userId },
@@ -60,7 +61,7 @@ export async function getReaderSpace(userId: string): Promise<ReaderSpace> {
       category: b.article.category.name,
       author: b.article.author.displayName,
     })),
-    followed: follows.map((f) => ({ id: f.following.id, name: f.following.displayName })),
+    followed: follows.map((f) => ({ id: f.following.id, name: f.following.displayName, verified: f.following.isVerified })),
     notifications: notifications.map((n) => ({
       id: n.id,
       type: n.type,

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading, StatChip } from "@/components/ui/DashboardKit";
 import { BarChartIcon, BookIcon, DollarSignIcon, ShoppingCartIcon } from "@/components/ui/icons";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import type { AuthorListing, OwnedArticle, PanelListing } from "@/lib/marketplace";
@@ -133,7 +134,10 @@ export function PanelMarketplace({
                   {l.title}
                 </Link>
                 <p className="mb-3 line-clamp-2 flex-1 text-[12.5px] text-text-muted">{l.summary}</p>
-                <div className="mb-3 text-[11.5px] text-text-muted">Written by {l.author} (Verified)</div>
+                <div className="mb-3 flex items-center gap-1 text-[11.5px] text-text-muted">
+                  Written by {l.author}
+                  {l.authorVerified && <VerifiedBadge size="xs" />}
+                </div>
 
                 <div className="mb-3 flex items-center justify-between rounded-lg border border-line bg-bg-primary px-3 py-2">
                   <div>

@@ -2,8 +2,9 @@ import Link from "next/link";
 
 import { auth } from "@/auth";
 import { dashCard, dashHeading, EmptyState, StatChip } from "@/components/ui/DashboardKit";
-import { ActivityIcon, BookIcon, BookmarkIcon, CheckIcon, UsersGroupIcon } from "@/components/ui/icons";
+import { ActivityIcon, BookIcon, BookmarkIcon, UsersGroupIcon } from "@/components/ui/icons";
 import { LocalTime } from "@/components/ui/LocalTime";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getReaderSpace } from "@/lib/dashboard";
 import { cn } from "@/lib/cn";
@@ -72,9 +73,12 @@ export default async function ReaderDashboardPage() {
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#2da4df_0%,#0056b3_100%)] text-sm font-bold text-white">{author.name.charAt(0)}</div>
                       <div className="min-w-0">
-                        <span className="block truncate text-[13.5px] font-semibold text-text-main">{author.name}</span>
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-success">
-                          <CheckIcon className="size-2.5" strokeWidth={3} /> Verified Contributor
+                        <span className="flex items-center gap-1 truncate text-[13.5px] font-semibold text-text-main">
+                          {author.name}
+                          {author.verified && <VerifiedBadge size="xs" />}
+                        </span>
+                        <span className="text-[10px] font-medium text-text-muted">
+                          {author.verified ? "Verified author" : "Contributor"}
                         </span>
                       </div>
                     </div>

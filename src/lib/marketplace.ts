@@ -29,6 +29,7 @@ export interface PanelListing {
   category: string;
   author: string;
   authorId: string;
+  authorVerified: boolean;
   floorPrice: number;
   reservePrice: number | null;
   allowedCategories: string[];
@@ -57,7 +58,7 @@ export async function listOpenPanelListings(viewerId?: string): Promise<PanelLis
               title: true,
               summary: true,
               category: { select: { name: true } },
-              author: { select: { id: true, displayName: true } },
+              author: { select: { id: true, displayName: true, isVerified: true } },
             },
           },
         },
@@ -89,6 +90,7 @@ export async function listOpenPanelListings(viewerId?: string): Promise<PanelLis
         category: article.category.name,
         author: article.author.displayName,
         authorId: article.author.id,
+        authorVerified: article.author.isVerified,
         floorPrice: floor,
         reservePrice: listing.reservePrice != null ? Number(listing.reservePrice) : null,
         allowedCategories: listing.allowedCategories,
@@ -140,7 +142,7 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
               title: true,
               summary: true,
               category: { select: { name: true } },
-              author: { select: { id: true, displayName: true } },
+              author: { select: { id: true, displayName: true, isVerified: true } },
               owner: { select: { displayName: true } },
             },
           },
@@ -179,6 +181,7 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
         category: article.category.name,
         author: article.author.displayName,
         authorId: article.author.id,
+        authorVerified: article.author.isVerified,
         floorPrice: floor,
         reservePrice: listing.reservePrice != null ? Number(listing.reservePrice) : null,
         allowedCategories: listing.allowedCategories,

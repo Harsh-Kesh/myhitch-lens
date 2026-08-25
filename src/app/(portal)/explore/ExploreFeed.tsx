@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { ArticleCard, articlesGrid } from "@/components/ui/ArticleCard";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import { CATEGORY_FILTERS } from "@/data/categories";
@@ -22,11 +23,13 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
 
   const [query, setQuery] = useState("");
   const [pickedCategory, setPickedCategory] = useState<string | null>(null);
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const selectedCategory = pickedCategory ?? routeCategory ?? "All";
 
   const filtered = useMemo(() => {
     const search = query.toLowerCase();
     return articles.filter((article) => {
+      if (verifiedOnly && !article.authorVerified) return false;
       const matchesCategory =
         selectedCategory === "All" ||
         article.category.toLowerCase() === selectedCategory.toLowerCase();
@@ -38,7 +41,7 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
         article.summary.toLowerCase().includes(search)
       );
     });
-  }, [articles, selectedCategory, query]);
+  }, [articles, selectedCategory, query, verifiedOnly]);
 
   return (
     <>
@@ -58,7 +61,7 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
         }
       />
 
-      <div className="mb-8 flex gap-2.5 overflow-x-auto pb-2">
+      <div className="mb-8 flex items-center gap-2.5 overflow-x-auto pb-2">
         {CATEGORIES.map((category) => (
           <button
             key={category}
@@ -74,6 +77,21 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
             {CATEGORY_LABELS[category] ?? category}
           </button>
         ))}
+        <span className="mx-1 h-5 w-px shrink-0 bg-line" />
+        <button
+          type="button"
+          onClick={() => setVerifiedOnly((v) => !v)}
+          aria-pressed={verifiedOnly}
+          className={cn(
+            categoryTag,
+            "inline-flex items-center gap-1.5",
+            verifiedOnly
+              ? "border-primary bg-primary text-text-inverse"
+              : "border-line bg-bg-secondary text-text-muted hover:border-line-hover hover:text-text-main",
+          )}
+        >
+          {!verifiedOnly && <VerifiedBadge size="xs" />} Verified voices
+        </button>
       </div>
 
       <div className={articlesGrid}>

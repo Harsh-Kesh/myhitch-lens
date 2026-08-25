@@ -3,11 +3,13 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading, EmptyState, StatChip } from "@/components/ui/DashboardKit";
-import { BarChartIcon, BookIcon, CheckIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
+import { BarChartIcon, BookIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
+import { getMyVerification } from "@/lib/verification";
 import { cn } from "@/lib/cn";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
+import { VerificationStatus } from "./VerificationPanel";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -22,6 +24,7 @@ export default async function AuthorDashboardPage() {
   const session = await auth();
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
+  const verification = await getMyVerification(session!.user.id);
   const { articles, drafts, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
@@ -35,9 +38,7 @@ export default async function AuthorDashboardPage() {
           <div className="min-w-0">
             <h3 className="flex flex-wrap items-center gap-2 font-heading text-lg font-bold text-text-main max-[480px]:text-base">
               {name}
-              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(5,150,105,0.1)] px-2 py-0.5 text-[11px] font-semibold text-success">
-                <CheckIcon className="size-3" strokeWidth={3} /> Verified Author
-              </span>
+              <VerificationStatus state={verification.state} reviewerNote={verification.reviewerNote} />
             </h3>
             <p className="mt-0.5 text-xs text-text-muted">
               {rankPosition != null ? (

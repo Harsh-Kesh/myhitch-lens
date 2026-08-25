@@ -30,7 +30,7 @@ export async function listPublishedArticles(): Promise<FeedArticle[]> {
       likesCount: true,
       aiScores: true,
       category: { select: { name: true } },
-      author: { select: { displayName: true } },
+      author: { select: { displayName: true, isVerified: true } },
     },
   });
 
@@ -43,6 +43,7 @@ export async function listPublishedArticles(): Promise<FeedArticle[]> {
     type: row.contentType,
     author: row.author.displayName,
     verified: row.verified,
+    authorVerified: row.author.isVerified,
     likes: row.likesCount,
     readTime: readTimeOf(row.aiScores),
   }));
@@ -107,6 +108,7 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
 export interface ArticleComment {
   id: string;
   author: string;
+  verified: boolean;
   text: string;
   date: string;
 }
@@ -120,6 +122,8 @@ export interface ArticleDetail {
   author: string;
   authorId: string;
   authorRank: string;
+  authorVerified: boolean;
+  followerCount: number;
   isOwnArticle: boolean;
   followingAuthor: boolean;
   likes: number;
@@ -137,10 +141,10 @@ export async function getArticle(
     where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
     include: {
       category: { select: { name: true } },
-      author: { select: { id: true, displayName: true, rank: { select: { tier: true } } } },
+      author: { select: { id: true, displayName: true, isVerified: true, rank: { select: { tier: true } } } },
       comments: {
         orderBy: { createdAt: "desc" },
-        include: { user: { select: { displayName: true, role: true } } },
+        include: { user: { select: { displayName: true, role: true, isVerified: true } } },
       },
       likes: userId ? { where: { userId }, select: { userId: true } } : false,
       bookmarks: userId ? { where: { userId }, select: { userId: true } } : false,
@@ -148,12 +152,12 @@ export async function getArticle(
   });
   if (!row) return null;
 
-  const followingAuthor =
+  const [followingAuthor, followerCount] = await Promise.all([
     userId && userId !== row.author.id
-      ? (await prisma.follow.count({
-          where: { followerId: userId, followingId: row.author.id },
-        })) > 0
-      : false;
+      ? prisma.follow.count({ where: { followerId: userId, followingId: row.author.id } }).then((n) => n > 0)
+      : Promise.resolve(false),
+    prisma.follow.count({ where: { followingId: row.author.id } }),
+  ]);
 
   return {
     id: row.id,
@@ -164,6 +168,8 @@ export async function getArticle(
     author: row.author.displayName,
     authorId: row.author.id,
     authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
+    authorVerified: row.author.isVerified,
+    followerCount,
     isOwnArticle: userId === row.author.id,
     followingAuthor,
     likes: row.likesCount,
@@ -172,6 +178,7 @@ export async function getArticle(
     comments: row.comments.map((comment) => ({
       id: comment.id,
       author: `${comment.user.displayName} (${comment.user.role.toUpperCase()})`,
+      verified: comment.user.isVerified,
       text: comment.text,
       date: comment.createdAt.toISOString().slice(0, 10),
     })),

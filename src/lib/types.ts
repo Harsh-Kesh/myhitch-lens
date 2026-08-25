@@ -36,7 +36,8 @@ export interface FeedArticle {
   category: string;
   type: string;
   author: string;
-  verified: boolean;
+  verified: boolean; // article-level: content was editor-reviewed
+  authorVerified: boolean; // person-level: the author's blue mark
   likes: number;
   readTime: string;
 }

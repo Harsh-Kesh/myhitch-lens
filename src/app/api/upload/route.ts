@@ -72,9 +72,15 @@ export async function POST(request: Request) {
   const mediaType = file.type.split("/")[0]; // image | video | audio
 
   // Copyright fingerprint: if this exact file was uploaded before, reuse it and
-  // flag the duplicate rather than storing another copy.
+  // flag the duplicate rather than storing another copy. Exception: a record
+  // pointing at the old local-disk fallback (`/uploads/...`) is stale once
+  // Supabase Storage is active — that file was wiped by an earlier redeploy —
+  // so treat it as missing and re-upload fresh instead of returning a dead link.
   const existing = await prisma.assetFingerprint.findUnique({ where: { sha256 } });
-  if (existing) {
+  const existingIsStaleLocalFile =
+    existing && isSupabaseStorageConfigured() && existing.url.startsWith("/uploads/");
+
+  if (existing && !existingIsStaleLocalFile) {
     return NextResponse.json({
       url: existing.url,
       sha256,
@@ -106,9 +112,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  await prisma.assetFingerprint.create({
-    data: { sha256, url, mediaType, uploaderId: session.user.id },
-  });
+  if (existingIsStaleLocalFile) {
+    // Heal the stale record in place (sha256 is unique — update, don't create).
+    await prisma.assetFingerprint.update({
+      where: { sha256 },
+      data: { url, mediaType, uploaderId: session.user.id },
+    });
+  } else {
+    await prisma.assetFingerprint.create({
+      data: { sha256, url, mediaType, uploaderId: session.user.id },
+    });
+  }
 
   return NextResponse.json({ url, sha256, duplicate: false });
 }

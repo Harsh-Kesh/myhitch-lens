@@ -89,15 +89,21 @@ export async function POST(request: Request) {
   const bytes = new Uint8Array(buffer);
 
   let url: string;
-  if (isSupabaseStorageConfigured()) {
-    // Production path: persists across redeploys (the local filesystem doesn't).
-    url = await uploadToStorage(`${mediaType}/${filename}`, bytes, file.type);
-  } else {
-    // Local dev fallback — no Supabase Storage keys needed to run the app locally.
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(path.join(uploadDir, filename), bytes);
-    url = `/uploads/${filename}`;
+  try {
+    if (isSupabaseStorageConfigured()) {
+      // Production path: persists across redeploys (the local filesystem doesn't).
+      url = await uploadToStorage(`${mediaType}/${filename}`, bytes, file.type);
+    } else {
+      // Local dev fallback — no Supabase Storage keys needed to run the app locally.
+      const uploadDir = path.join(process.cwd(), "public", "uploads");
+      await mkdir(uploadDir, { recursive: true });
+      await writeFile(path.join(uploadDir, filename), bytes);
+      url = `/uploads/${filename}`;
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown storage error";
+    console.error("Upload storage error:", message);
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 
   await prisma.assetFingerprint.create({

@@ -11,7 +11,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
  * back to writing into `public/uploads` instead; see `src/app/api/upload/route.ts`.
  */
 
-const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "media";
+const BUCKET = (process.env.SUPABASE_STORAGE_BUCKET || "media").trim().replace(/\/+$/, "");
 
 let client: SupabaseClient | null = null;
 
@@ -21,13 +21,17 @@ export function isSupabaseStorageConfigured(): boolean {
 
 function getClient(): SupabaseClient {
   if (!client) {
-    const url = process.env.SUPABASE_URL;
+    const rawUrl = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) {
+    if (!rawUrl || !key) {
       throw new Error("Supabase Storage is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing).");
     }
+    // Trim whitespace and any trailing slash — a trailing slash on the project
+    // URL produces a double-slash in the storage request path, which Supabase's
+    // edge rejects with "Invalid path specified in request URL".
+    const url = rawUrl.trim().replace(/\/+$/, "");
     // Service-role key: server-only, bypasses RLS — never expose to the client.
-    client = createClient(url, key, { auth: { persistSession: false } });
+    client = createClient(url, key.trim(), { auth: { persistSession: false } });
   }
   return client;
 }

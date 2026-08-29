@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import path from "path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { isSupabaseStorageConfigured, uploadToStorage } from "@/lib/storage";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -85,14 +86,20 @@ export async function POST(request: Request) {
 
   const ext = EXT_MAP[file.type] || "";
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
-  const uploadDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadDir, { recursive: true });
-  const filePath = path.join(uploadDir, filename);
-
   const bytes = new Uint8Array(buffer);
-  await writeFile(filePath, bytes);
 
-  const url = `/uploads/${filename}`;
+  let url: string;
+  if (isSupabaseStorageConfigured()) {
+    // Production path: persists across redeploys (the local filesystem doesn't).
+    url = await uploadToStorage(`${mediaType}/${filename}`, bytes, file.type);
+  } else {
+    // Local dev fallback — no Supabase Storage keys needed to run the app locally.
+    const uploadDir = path.join(process.cwd(), "public", "uploads");
+    await mkdir(uploadDir, { recursive: true });
+    await writeFile(path.join(uploadDir, filename), bytes);
+    url = `/uploads/${filename}`;
+  }
+
   await prisma.assetFingerprint.create({
     data: { sha256, url, mediaType, uploaderId: session.user.id },
   });

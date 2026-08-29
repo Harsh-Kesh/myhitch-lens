@@ -19,6 +19,16 @@ function sanitizeEnvValue(v: string): string {
   return v.replace(/\s+/g, "");
 }
 
+// The Supabase dashboard shows several "URL"-looking values (Project URL,
+// PostgREST/REST API URL, GraphQL endpoint, etc.) — it's an easy mistake to
+// paste one of the service-specific ones. createClient() wants the bare
+// project URL; strip any known API suffix so a mispaste doesn't break Storage.
+function normalizeSupabaseUrl(v: string): string {
+  return sanitizeEnvValue(v)
+    .replace(/\/(rest|storage|auth|graphql|realtime|functions)\/v\d+\/?$/i, "")
+    .replace(/\/+$/, "");
+}
+
 const BUCKET = sanitizeEnvValue(process.env.SUPABASE_STORAGE_BUCKET || "media").replace(/\/+$/, "");
 
 let client: SupabaseClient | null = null;
@@ -34,7 +44,7 @@ function getClient(): SupabaseClient {
     if (!rawUrl || !rawKey) {
       throw new Error("Supabase Storage is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing).");
     }
-    const url = sanitizeEnvValue(rawUrl).replace(/\/+$/, "");
+    const url = normalizeSupabaseUrl(rawUrl);
     const key = sanitizeEnvValue(rawKey);
     // Safe to log: the URL is not a secret. The key itself is never logged —
     // only its length, to confirm it wasn't truncated during copy/paste.

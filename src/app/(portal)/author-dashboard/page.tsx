@@ -10,6 +10,7 @@ import { getMyVerification } from "@/lib/verification";
 import { cn } from "@/lib/cn";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { VerificationStatus } from "./VerificationPanel";
+import { RemovedArticles } from "./RemovedArticles";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -25,7 +26,7 @@ export default async function AuthorDashboardPage() {
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
   const verification = await getMyVerification(session!.user.id);
-  const { articles, drafts, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
+  const { articles, drafts, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
     <>
@@ -98,6 +99,8 @@ export default async function AuthorDashboardPage() {
           </div>
         </div>
       )}
+
+      <RemovedArticles items={removedArticles} strikes={copyrightStrikes} />
 
       <div className="grid grid-cols-[1.35fr_0.65fr] gap-7 max-[992px]:grid-cols-1">
         {/* Portfolio */}

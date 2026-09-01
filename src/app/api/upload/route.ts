@@ -5,6 +5,8 @@ import path from "path";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isSupabaseStorageConfigured, uploadToStorage } from "@/lib/storage";
+import { averageHash, hammingDistance, NEAR_DUPLICATE_THRESHOLD } from "@/lib/imageHash";
+import { applyWatermark, embedCopyrightMetadata } from "@/lib/copyrightMedia";
 
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -48,6 +50,7 @@ export async function POST(request: Request) {
 
   const formData = await request.formData();
   const file = formData.get("file");
+  const wantsWatermark = formData.get("watermark") === "true";
 
   if (!file || !(file instanceof File)) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -67,8 +70,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const sha256 = createHash("sha256").update(buffer).digest("hex");
+  const originalBuffer = Buffer.from(await file.arrayBuffer());
+  const sha256 = createHash("sha256").update(originalBuffer).digest("hex");
   const mediaType = file.type.split("/")[0]; // image | video | audio
 
   // Copyright fingerprint: if this exact file was uploaded before, reuse it and
@@ -90,9 +93,43 @@ export async function POST(request: Request) {
     });
   }
 
+  // Near-duplicate check (images only): catches a re-saved/cropped copy that
+  // exact hashing would miss. Informational — never blocks the upload.
+  let phash: string | null = null;
+  let nearDuplicateOf: string | null = null;
+  if (mediaType === "image") {
+    phash = await averageHash(originalBuffer);
+    if (phash) {
+      const candidates = await prisma.assetFingerprint.findMany({
+        where: { mediaType: "image", phash: { not: null } },
+        select: { phash: true, url: true },
+        take: 500,
+      });
+      for (const c of candidates) {
+        if (c.phash && hammingDistance(phash, c.phash) <= NEAR_DUPLICATE_THRESHOLD) {
+          nearDuplicateOf = c.url;
+          break;
+        }
+      }
+    }
+  }
+
+  // Protect the file before it's stored: embed copyright metadata (author name,
+  // invisible) always, and a visible watermark if the uploader asked for one.
+  let outBuffer: Buffer = originalBuffer;
+  if (mediaType === "image") {
+    outBuffer = await embedCopyrightMetadata(outBuffer, file.type, {
+      author: session.user.name ?? "Author",
+      license: "All rights reserved",
+    });
+    if (wantsWatermark) {
+      outBuffer = await applyWatermark(outBuffer, file.type, session.user.name ?? "Author");
+    }
+  }
+
   const ext = EXT_MAP[file.type] || "";
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
-  const bytes = new Uint8Array(buffer);
+  const bytes = new Uint8Array(outBuffer);
 
   let url: string;
   try {
@@ -116,13 +153,13 @@ export async function POST(request: Request) {
     // Heal the stale record in place (sha256 is unique — update, don't create).
     await prisma.assetFingerprint.update({
       where: { sha256 },
-      data: { url, mediaType, uploaderId: session.user.id },
+      data: { url, mediaType, phash, uploaderId: session.user.id },
     });
   } else {
     await prisma.assetFingerprint.create({
-      data: { sha256, url, mediaType, uploaderId: session.user.id },
+      data: { sha256, phash, url, mediaType, uploaderId: session.user.id },
     });
   }
 
-  return NextResponse.json({ url, sha256, duplicate: false });
+  return NextResponse.json({ url, sha256, duplicate: false, nearDuplicateOf });
 }

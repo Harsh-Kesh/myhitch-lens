@@ -91,9 +91,21 @@ export interface DraftArticle {
   updatedAt: string;
   status: string;
 }
+export interface RemovedArticle {
+  id: string;
+  title: string;
+  ticketId: string;
+  reason: string;
+  removedAt: string;
+  appealStatus: string; // none | pending | upheld | denied
+  appealText: string | null;
+}
+
 export interface AuthorSpace {
   articles: AuthorArticle[];
   drafts: DraftArticle[];
+  removedArticles: RemovedArticle[];
+  copyrightStrikes: number;
   totalViews: number;
   totalLikes: number;
   published: number;
@@ -117,7 +129,7 @@ const LEDGER_LABELS: Record<string, string> = {
 
 /** The author's published portfolio + rollup stats, from the database. */
 export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
-  const [rows, draftRows, ledgerByType, wallet, rank] = await Promise.all([
+  const [rows, draftRows, rejectedRows, ledgerByType, wallet, rank, user] = await Promise.all([
     prisma.article.findMany({
       where: { authorId: userId, status: "published" },
       orderBy: { publishedAt: "desc" },
@@ -136,6 +148,10 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
       orderBy: { updatedAt: "desc" },
       select: { id: true, title: true, updatedAt: true, status: true },
     }),
+    prisma.article.findMany({
+      where: { authorId: userId, status: "rejected" },
+      select: { id: true, title: true },
+    }),
     prisma.revenueLedger.groupBy({
       by: ["type"],
       where: {
@@ -146,7 +162,30 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
     }),
     prisma.wallet.findUnique({ where: { userId } }),
     prisma.contributorRank.findUnique({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { copyrightStrikes: true } }),
   ]);
+
+  // Only surface rejections that were actual copyright takedowns (not plain
+  // editorial rejections) — identified by a resolved copyright DisputeTicket
+  // whose subject references the article.
+  const removedArticles: RemovedArticle[] = [];
+  for (const r of rejectedRows) {
+    const ticket = await prisma.disputeTicket.findFirst({
+      where: { subject: { startsWith: `${r.id} — ` }, reason: "copyright", status: "resolved" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (ticket) {
+      removedArticles.push({
+        id: r.id,
+        title: r.title,
+        ticketId: ticket.id,
+        reason: ticket.justify,
+        removedAt: ticket.createdAt.toISOString(),
+        appealStatus: ticket.appealStatus,
+        appealText: ticket.appealText,
+      });
+    }
+  }
 
   const authorRankPosition = rank
     ? await prisma.contributorRank.count({ where: { points: { gt: rank.points } } })
@@ -179,6 +218,8 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
   const totalEarnings = earningsBreakdown.reduce((s, e) => s + e.value, 0);
 
   return {
+    removedArticles,
+    copyrightStrikes: user?.copyrightStrikes ?? 0,
     articles: rows.map((r) => ({
       id: r.id,
       title: r.title,

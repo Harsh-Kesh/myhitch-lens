@@ -136,6 +136,8 @@ model User {
   role          UserRole  @default(reader)
   displayName   String
   isVerified    Boolean   @default(false) // blue mark — identity verified (denormalized from AuthorVerification)
+  copyrightStrikes Int    @default(0) // incremented each time a copyright takedown against this author is upheld
+  suspended     Boolean   @default(false) // editor/admin action after repeated copyright violations
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -327,6 +329,7 @@ model MediaAsset {
 model AssetFingerprint {
   id         String   @id @default(cuid())
   sha256     String   @unique
+  phash      String?  // 64-bit average-hash (images only) — catches cropped/re-saved near-duplicates
   url        String
   mediaType  String
   uploaderId String?
@@ -336,6 +339,7 @@ model AssetFingerprint {
   createdAt  DateTime @default(now())
 
   @@index([uploaderId])
+  @@index([phash])
 }
 
 model Revision {
@@ -582,6 +586,11 @@ model DisputeTicket {
   justify   String
   status    DisputeStatus @default(open)
   createdAt DateTime      @default(now())
+
+  // Counter-notice / appeal (copyright takedowns only)
+  appealText   String?
+  appealStatus String    @default("none") // none | pending | upheld | denied
+  appealedAt   DateTime?
 }
 
 model ModerationFlag {

@@ -440,9 +440,11 @@ function BrandingWarningModal({
   onCancel,
 }: {
   mediaType: string;
-  onAccept: () => void;
+  onAccept: (watermark: boolean) => void;
   onCancel: () => void;
 }) {
+  const [watermark, setWatermark] = useState(false);
+
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/40" onClick={onCancel} />
@@ -466,6 +468,24 @@ function BrandingWarningModal({
             back for revision.
           </p>
         </div>
+        {mediaType === "image" && (
+          <div className="mb-4 rounded-lg border border-line bg-bg-primary p-3">
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={watermark}
+                onChange={(e) => setWatermark(e.target.checked)}
+                className="mt-0.5 size-4 accent-primary"
+              />
+              <span className="text-[12px] text-text-main">
+                Add a visible copyright watermark
+                <span className="block text-[11px] text-text-muted">
+                  Stamps your name in the corner. Every image also gets invisible copyright metadata automatically.
+                </span>
+              </span>
+            </label>
+          </div>
+        )}
         <div className="flex gap-3">
           <button
             type="button"
@@ -476,7 +496,7 @@ function BrandingWarningModal({
           </button>
           <button
             type="button"
-            onClick={onAccept}
+            onClick={() => onAccept(watermark)}
             className="flex-1 cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover"
           >
             I Understand, Upload
@@ -494,12 +514,14 @@ function BrandingWarningModal({
 function MediaDetailsDialog({
   kind,
   initial,
+  nearDuplicateOf,
   onSubmit,
   onClose,
   onSkip,
 }: {
   kind: string;
   initial?: Partial<MediaAttrs>;
+  nearDuplicateOf?: string | null;
   onSubmit: (data: { caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean }) => void;
   onClose: () => void;
   onSkip?: () => void;
@@ -519,6 +541,12 @@ function MediaDetailsDialog({
         <p className="mb-4 text-[12px] text-text-muted">
           Add a caption and the source/attribution for this {label}.
         </p>
+        {nearDuplicateOf && (
+          <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
+            This image looks similar to one already on the platform. That’s fine if it’s yours or licensed —
+            just flagging it in case it isn’t.
+          </div>
+        )}
         <div className="mb-3">
           <label className="mb-1 block text-xs font-semibold text-text-muted">Caption (optional)</label>
           <input
@@ -594,16 +622,20 @@ const ACCEPTED_TYPES: Record<string, string> = {
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 
-async function uploadFile(file: File): Promise<string> {
+async function uploadFile(
+  file: File,
+  watermark: boolean,
+): Promise<{ url: string; nearDuplicateOf: string | null }> {
   const formData = new FormData();
   formData.append("file", file);
+  if (watermark) formData.append("watermark", "true");
   const res = await fetch("/api/upload", { method: "POST", body: formData });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Upload failed");
   }
   const data = await res.json();
-  return data.url;
+  return { url: data.url, nearDuplicateOf: data.nearDuplicateOf ?? null };
 }
 
 // ---------------------------------------------------------------------------
@@ -748,7 +780,12 @@ export interface RichEditorProps {
   editable?: boolean;
 }
 
-type PendingUpload = { url: string; name: string; kind: "image" | "video" | "audio" };
+type PendingUpload = {
+  url: string;
+  name: string;
+  kind: "image" | "video" | "audio";
+  nearDuplicateOf: string | null;
+};
 
 export function RichEditor({
   content,
@@ -806,13 +843,19 @@ export function RichEditor({
     setShowBrandingWarning(true);
   }, []);
 
-  const handleBrandingAccept = useCallback(() => {
-    setShowBrandingWarning(false);
-    if (fileInputRef.current && pendingMediaType) {
-      fileInputRef.current.accept = ACCEPTED_TYPES[pendingMediaType] || "";
-      fileInputRef.current.click();
-    }
-  }, [pendingMediaType]);
+  const wantWatermarkRef = useRef(false);
+
+  const handleBrandingAccept = useCallback(
+    (watermark: boolean) => {
+      wantWatermarkRef.current = watermark;
+      setShowBrandingWarning(false);
+      if (fileInputRef.current && pendingMediaType) {
+        fileInputRef.current.accept = ACCEPTED_TYPES[pendingMediaType] || "";
+        fileInputRef.current.click();
+      }
+    },
+    [pendingMediaType],
+  );
 
   const handleBrandingCancel = useCallback(() => {
     setShowBrandingWarning(false);
@@ -833,8 +876,8 @@ export function RichEditor({
 
       setUploading(true);
       try {
-        const url = await uploadFile(file);
-        setPendingUpload({ url, name: file.name, kind });
+        const { url, nearDuplicateOf } = await uploadFile(file, wantWatermarkRef.current);
+        setPendingUpload({ url, name: file.name, kind, nearDuplicateOf });
       } catch (err) {
         alert(err instanceof Error ? err.message : "Upload failed");
         setPendingMediaType(null);
@@ -896,6 +939,7 @@ export function RichEditor({
       {pendingUpload && (
         <MediaDetailsDialog
           kind={pendingUpload.kind}
+          nearDuplicateOf={pendingUpload.nearDuplicateOf}
           onSubmit={insertPending}
           onClose={() => {
             setPendingUpload(null);

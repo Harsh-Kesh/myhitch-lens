@@ -141,7 +141,11 @@ export function ArticleView({
     const text = draftComment.trim();
     if (!text) return;
     startTransition(async () => {
-      await postComment(article.id, text);
+      const res = await postComment(article.id, text);
+      if (res && "error" in res) {
+        alert(res.error);
+        return;
+      }
       setDraftComment("");
       router.refresh();
     });
@@ -285,10 +289,16 @@ export function ArticleView({
 
         <div>
           <h3 className="mb-4 font-heading text-base leading-[1.25] font-bold text-text-main">Discussion ({article.comments.length})</h3>
-          <div className="mb-6 flex flex-col gap-3">
-            <textarea rows={2} className={formControl} placeholder="Join the discussion under verified guidelines..." value={draftComment} onChange={(event) => setDraftComment(event.target.value)} />
-            <Button size="sm" className="self-start" disabled={isPending} onClick={runPostComment}>Post Comment</Button>
-          </div>
+          {article.isOwnArticle ? (
+            <p className="mb-6 rounded-lg border border-line bg-bg-primary p-3 text-center text-[12.5px] text-text-muted">
+              Authors can’t comment on their own article.
+            </p>
+          ) : (
+            <div className="mb-6 flex flex-col gap-3">
+              <textarea rows={2} className={formControl} placeholder="Join the discussion under verified guidelines..." value={draftComment} onChange={(event) => setDraftComment(event.target.value)} />
+              <Button size="sm" className="self-start" disabled={isPending} onClick={runPostComment}>Post Comment</Button>
+            </div>
+          )}
           <div className="flex flex-col gap-4">
             {article.comments.length === 0 ? (
               <p className="p-3 text-center text-[12.5px] text-text-muted">No comments yet. Be the first to start the discussion.</p>

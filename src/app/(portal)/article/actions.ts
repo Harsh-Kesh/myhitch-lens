@@ -135,11 +135,17 @@ export async function toggleFollow(authorId: string): Promise<void> {
 }
 
 /** Post a comment as the current user. */
-export async function postComment(articleId: string, text: string): Promise<void> {
+export async function postComment(articleId: string, text: string): Promise<{ error: string } | void> {
   const session = await auth();
   if (!session?.user) return;
   const body = text.trim();
   if (!body) return;
+
+  const article = await prisma.article.findUnique({ where: { id: articleId }, select: { authorId: true } });
+  if (!article) return { error: "Article not found." };
+  if (article.authorId === session.user.id) {
+    return { error: "You can't comment on your own article." };
+  }
 
   await prisma.comment.create({
     data: { articleId, userId: session.user.id, text: body },

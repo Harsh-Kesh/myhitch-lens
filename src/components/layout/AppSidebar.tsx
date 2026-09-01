@@ -80,6 +80,12 @@ const NAV_LINKS: NavLink[] = [
     roles: ["editor", "admin"],
   },
   {
+    href: "/magazine",
+    label: "Magazine Curation",
+    icon: <BookIcon className={navIcon} />,
+    roles: ["editor", "admin"],
+  },
+  {
     href: "/panel",
     label: "Stakeholder Panel",
     icon: <DollarSignIcon className={navIcon} />,

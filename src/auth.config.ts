@@ -20,6 +20,7 @@ const PORTAL_PREFIXES = [
   "/editorial",
   "/verifications",
   "/moderation",
+  "/magazine",
   "/panel",
   "/article",
 ];
@@ -35,6 +36,7 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: "/editorial", roles: ["editor", "admin"] },
   { prefix: "/verifications", roles: ["editor", "admin"] },
   { prefix: "/moderation", roles: ["editor", "admin"] },
+  { prefix: "/magazine", roles: ["editor", "admin"] },
   { prefix: "/submit", roles: ["author", "editor", "admin"] },
   { prefix: "/analytics", roles: ["author", "editor", "admin"] },
   { prefix: "/author-dashboard", roles: ["author", "editor", "admin"] },

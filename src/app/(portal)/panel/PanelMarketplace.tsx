@@ -13,7 +13,7 @@ import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import type { AuthorListing, OwnedArticle, PanelListing } from "@/lib/marketplace";
 
-import { acceptBid, createListing, placeBid } from "./actions";
+import { acceptBid, buyFixedPrice, createListing, placeBid } from "./actions";
 
 function formatAUD(n: number): string {
   return `A$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -44,6 +44,7 @@ export function PanelMarketplace({
   const mounted = now !== null;
 
   const [bidOn, setBidOn] = useState<PanelListing | null>(null);
+  const [buyOn, setBuyOn] = useState<PanelListing | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
   const timeLeft = (iso: string) => {
@@ -67,7 +68,7 @@ export function PanelMarketplace({
     <>
       <ViewHeader
         title="Ownership Marketplace"
-        subtitle="Members bid to acquire the commercial ownership of an article. The author always keeps their verified byline; ownership and branding transfer to the buyer."
+        subtitle="Members acquire commercial ownership of an article — by auction or fixed price. The author always keeps their verified byline; ownership and branding transfer to the buyer."
         actions={
           listable.length > 0 || mine.length > 0 ? (
             <Button size="sm" onClick={() => setShowCreate(true)} disabled={listable.length === 0}>
@@ -127,7 +128,12 @@ export function PanelMarketplace({
             open.map((l) => (
               <div key={l.auctionId} className="flex flex-col rounded-xl border border-line bg-bg-secondary p-5">
                 <div className="mb-2 flex items-center justify-between text-[11px] text-text-muted">
-                  <span className="rounded bg-primary-glow px-2 py-0.5 font-bold text-primary uppercase">{l.category}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="rounded bg-primary-glow px-2 py-0.5 font-bold text-primary uppercase">{l.category}</span>
+                    {l.saleType === "fixed" && (
+                      <span className="rounded bg-success/10 px-2 py-0.5 font-bold text-success uppercase">Fixed Price</span>
+                    )}
+                  </div>
                   <span>{timeLeft(l.endsAt)}</span>
                 </div>
                 <Link href={`/article?id=${l.articleId}`} className="mb-1 font-heading text-[15px] font-bold text-text-main hover:text-primary">
@@ -141,15 +147,19 @@ export function PanelMarketplace({
 
                 <div className="mb-3 flex items-center justify-between rounded-lg border border-line bg-bg-primary px-3 py-2">
                   <div>
-                    <div className="text-[10px] text-text-muted uppercase">{l.topBid > 0 ? "Top offer" : "Floor price"}</div>
+                    <div className="text-[10px] text-text-muted uppercase">
+                      {l.saleType === "fixed" ? "Buy Now price" : l.topBid > 0 ? "Top offer" : "Floor price"}
+                    </div>
                     <div className="font-heading text-base font-bold text-text-main">
-                      {formatAUD(l.topBid > 0 ? l.topBid : l.floorPrice)}
+                      {formatAUD(l.saleType === "fixed" ? l.floorPrice : l.topBid > 0 ? l.topBid : l.floorPrice)}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-[10px] text-text-muted uppercase">Offers</div>
-                    <div className="font-semibold text-text-main">{l.bidCount}</div>
-                  </div>
+                  {l.saleType === "auction" && (
+                    <div className="text-right">
+                      <div className="text-[10px] text-text-muted uppercase">Offers</div>
+                      <div className="font-semibold text-text-main">{l.bidCount}</div>
+                    </div>
+                  )}
                 </div>
 
                 {l.myBid != null && (
@@ -158,8 +168,12 @@ export function PanelMarketplace({
 
                 {l.isOwn ? (
                   <p className="rounded-lg bg-bg-tertiary px-3 py-2 text-center text-[11.5px] text-text-muted">
-                    Your article — manage offers under “My Listings”.
+                    Your article — manage {l.saleType === "fixed" ? "this sale" : "offers"} under “My Listings”.
                   </p>
+                ) : l.saleType === "fixed" ? (
+                  <Button size="sm" className="w-full" onClick={() => setBuyOn(l)}>
+                    Buy Now — {formatAUD(l.floorPrice)}
+                  </Button>
                 ) : (
                   <Button size="sm" className="w-full" onClick={() => setBidOn(l)}>
                     {l.myBid != null ? "Raise Offer" : "Make an Offer"}
@@ -178,7 +192,7 @@ export function PanelMarketplace({
             <div className={dashCard}>
               <p className="p-8 text-center text-[13px] text-text-muted">
                 You haven’t listed any articles for sale yet.
-                {listable.length > 0 && " Click “Sell an Article” to open your first ownership auction."}
+                {listable.length > 0 && " Click “Sell an Article” to open your first listing."}
               </p>
             </div>
           ) : (
@@ -186,12 +200,17 @@ export function PanelMarketplace({
               <div key={m.auctionId} className={dashCard}>
                 <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <Link href={`/article?id=${m.articleId}`} className="font-heading text-[15px] font-bold text-text-main hover:text-primary">
-                      {m.title}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/article?id=${m.articleId}`} className="font-heading text-[15px] font-bold text-text-main hover:text-primary">
+                        {m.title}
+                      </Link>
+                      {m.saleType === "fixed" && (
+                        <span className="rounded bg-success/10 px-2 py-0.5 text-[10px] font-bold text-success uppercase">Fixed Price</span>
+                      )}
+                    </div>
                     <div className="mt-0.5 text-[11.5px] text-text-muted">
-                      Floor {formatAUD(m.floorPrice)}
-                      {m.reservePrice != null && ` · Reserve ${formatAUD(m.reservePrice)}`}
+                      {m.saleType === "fixed" ? "Price" : "Floor"} {formatAUD(m.floorPrice)}
+                      {m.saleType === "auction" && m.reservePrice != null && ` · Reserve ${formatAUD(m.reservePrice)}`}
                       {" · "}
                       {mounted ? timeLeft(m.endsAt) : ""}
                     </div>
@@ -231,72 +250,78 @@ export function PanelMarketplace({
                   </div>
                 )}
 
-                {/* Offers */}
-                {m.bids.length === 0 ? (
-                  <p className="rounded-lg bg-bg-tertiary px-3 py-3 text-center text-[12px] text-text-muted">
-                    No offers yet.
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {m.bids.map((b) => (
-                      <div key={b.bidId} className="rounded-lg border border-line px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <span className="text-[13px] font-semibold text-text-main">{b.brandName}</span>
-                            <span className="ml-2 text-[13px] text-text-main">{formatAUD(b.amount)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "rounded px-2 py-0.5 text-[10px] font-bold uppercase",
-                                b.status === "active" && "bg-primary-glow text-primary",
-                                b.status === "won" && "bg-success/10 text-success",
-                                (b.status === "outbid" || b.status === "lost") && "bg-bg-tertiary text-text-muted",
-                              )}
-                            >
-                              {b.status}
-                            </span>
-                            {(m.status === "open" || m.status === "closed") &&
-                              (b.status === "active" || b.status === "outbid") && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={isPending}
-                                onClick={() => {
-                                  const terms = [
-                                    b.removeMedia ? "Remove your media (images/video/audio)" : null,
-                                    b.changeRequest ? `"${b.changeRequest}"` : null,
-                                  ].filter(Boolean).join("; ");
-                                  const msg = terms
-                                    ? `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}?\n\nAgreed terms: ${terms}\n\nAccepting transfers ownership and applies these terms. You keep your verified author credit.`
-                                    : `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}? This transfers ownership. You keep your verified author credit.`;
-                                  if (!window.confirm(msg)) return;
-                                  startTransition(async () => {
-                                    const res = await acceptBid({ bidId: b.bidId });
-                                    if ("error" in res) alert(res.error);
-                                    else refresh();
-                                  });
-                                }}
+                {/* Offers (auction only — fixed-price sales settle instantly, no offer list) */}
+                {m.saleType === "auction" &&
+                  (m.bids.length === 0 ? (
+                    <p className="rounded-lg bg-bg-tertiary px-3 py-3 text-center text-[12px] text-text-muted">
+                      No offers yet.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {m.bids.map((b) => (
+                        <div key={b.bidId} className="rounded-lg border border-line px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="text-[13px] font-semibold text-text-main">{b.brandName}</span>
+                              <span className="ml-2 text-[13px] text-text-main">{formatAUD(b.amount)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={cn(
+                                  "rounded px-2 py-0.5 text-[10px] font-bold uppercase",
+                                  b.status === "active" && "bg-primary-glow text-primary",
+                                  b.status === "won" && "bg-success/10 text-success",
+                                  (b.status === "outbid" || b.status === "lost") && "bg-bg-tertiary text-text-muted",
+                                )}
                               >
-                                Accept
-                              </Button>
-                            )}
+                                {b.status}
+                              </span>
+                              {(m.status === "open" || m.status === "closed") &&
+                                (b.status === "active" || b.status === "outbid") && (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  disabled={isPending}
+                                  onClick={() => {
+                                    const terms = [
+                                      b.removeMedia ? "Remove your media (images/video/audio)" : null,
+                                      b.changeRequest ? `"${b.changeRequest}"` : null,
+                                    ].filter(Boolean).join("; ");
+                                    const msg = terms
+                                      ? `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}?\n\nAgreed terms: ${terms}\n\nAccepting transfers ownership and applies these terms. You keep your verified author credit.`
+                                      : `Accept ${b.brandName}'s offer of ${formatAUD(b.amount)}? This transfers ownership. You keep your verified author credit.`;
+                                    if (!window.confirm(msg)) return;
+                                    startTransition(async () => {
+                                      const res = await acceptBid({ bidId: b.bidId });
+                                      if ("error" in res) alert(res.error);
+                                      else refresh();
+                                    });
+                                  }}
+                                >
+                                  Accept
+                                </Button>
+                              )}
+                            </div>
                           </div>
+                          {b.removeMedia && (
+                            <p className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-[11.5px] text-warning">
+                              <span className="font-semibold">Requests media removal</span> — your images/video/audio
+                              will be stripped on acceptance (body text kept).
+                            </p>
+                          )}
+                          {b.changeRequest && (
+                            <p className="mt-1.5 rounded bg-bg-tertiary px-2 py-1 text-[11.5px] text-text-muted">
+                              <span className="font-semibold">Change request:</span> {b.changeRequest}
+                            </p>
+                          )}
                         </div>
-                        {b.removeMedia && (
-                          <p className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-[11.5px] text-warning">
-                            <span className="font-semibold">Requests media removal</span> — your images/video/audio
-                            will be stripped on acceptance (body text kept).
-                          </p>
-                        )}
-                        {b.changeRequest && (
-                          <p className="mt-1.5 rounded bg-bg-tertiary px-2 py-1 text-[11.5px] text-text-muted">
-                            <span className="font-semibold">Change request:</span> {b.changeRequest}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ))}
+                {m.saleType === "fixed" && !m.sale && m.status === "open" && (
+                  <p className="rounded-lg bg-bg-tertiary px-3 py-3 text-center text-[12px] text-text-muted">
+                    Waiting for a buyer — no action needed. Purchases complete instantly.
+                  </p>
                 )}
               </div>
             ))
@@ -310,7 +335,7 @@ export function PanelMarketplace({
           {owned.length === 0 ? (
             <div className={dashCard}>
               <p className="p-8 text-center text-[13px] text-text-muted">
-                You don’t own any articles yet. Win an offer in the Marketplace to acquire one.
+                You don’t own any articles yet. Win an offer or buy one in the Marketplace to acquire it.
               </p>
             </div>
           ) : (
@@ -348,7 +373,7 @@ export function PanelMarketplace({
         </div>
       )}
 
-      {/* Offer modal */}
+      {/* Offer modal (auction) */}
       {bidOn && (
         <BidModal
           listing={bidOn}
@@ -361,6 +386,27 @@ export function PanelMarketplace({
               if ("error" in res) alert(res.error);
               else {
                 setBidOn(null);
+                refresh();
+              }
+            });
+          }}
+        />
+      )}
+
+      {/* Buy Now modal (fixed price) */}
+      {buyOn && (
+        <BuyNowModal
+          listing={buyOn}
+          categories={categories}
+          pending={isPending}
+          onClose={() => setBuyOn(null)}
+          onSubmit={(data) => {
+            if (!window.confirm(`Buy "${buyOn.title}" now for ${formatAUD(buyOn.floorPrice)}? This completes immediately.`)) return;
+            startTransition(async () => {
+              const res = await buyFixedPrice({ auctionId: buyOn.auctionId, ...data });
+              if ("error" in res) alert(res.error);
+              else {
+                setBuyOn(null);
                 refresh();
               }
             });
@@ -525,6 +571,115 @@ function BidModal({
   );
 }
 
+function BuyNowModal({
+  listing,
+  categories,
+  pending,
+  onClose,
+  onSubmit,
+}: {
+  listing: PanelListing;
+  categories: string[];
+  pending: boolean;
+  onClose: () => void;
+  onSubmit: (data: {
+    brandCategory: string;
+    brandName: string;
+    changeRequest: string;
+    removeMedia: boolean;
+  }) => void;
+}) {
+  const options = listing.allowedCategories.length > 0 ? listing.allowedCategories : categories;
+  const [brandName, setBrandName] = useState("");
+  const [brandCategory, setBrandCategory] = useState(options[0] ?? "");
+  const [changeRequest, setChangeRequest] = useState("");
+  const [removeMedia, setRemoveMedia] = useState(false);
+
+  return (
+    <ModalShell onClose={onClose}>
+      <h3 className="mb-1 font-heading text-lg font-bold text-text-main">Buy Now</h3>
+      <p className="mb-4 text-[12.5px] text-text-muted">
+        “{listing.title}” — fixed price {formatAUD(listing.floorPrice)}. This completes immediately: no waiting for
+        author approval. The author keeps their verified byline.
+      </p>
+
+      <div className="mb-4 rounded-lg border border-line bg-bg-primary p-3 text-center">
+        <div className="text-[10px] text-text-muted uppercase">Price</div>
+        <div className="font-heading text-2xl font-bold text-text-main">{formatAUD(listing.floorPrice)}</div>
+      </div>
+
+      <div className="mb-4">
+        <label className={formLabel}>Brand / company name</label>
+        <input type="text" className={formControl} placeholder="Shown as the new owner (defaults to your name)" value={brandName} onChange={(e) => setBrandName(e.target.value)} />
+      </div>
+
+      <div className="mb-4">
+        <label className={formLabel}>Your brand category (brand-safety)</label>
+        <select className={formControl} value={brandCategory} onChange={(e) => setBrandCategory(e.target.value)}>
+          {options.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {listing.allowedCategories.length > 0 && (
+          <p className="mt-1 text-[11px] text-text-muted">
+            This author only accepts buyers in: {listing.allowedCategories.join(", ")}.
+          </p>
+        )}
+      </div>
+
+      <div className="mb-4">
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={removeMedia}
+            onChange={(e) => setRemoveMedia(e.target.checked)}
+            className="mt-0.5 size-4 accent-primary"
+          />
+          <span className="text-[12.5px] text-text-main">
+            Remove the author’s media on transfer
+            <span className="block text-[11px] text-text-muted">
+              Automatically strips the author’s images, video &amp; audio the moment your purchase completes. The
+              body text stays intact.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="mb-5">
+        <label className={formLabel}>Change request (optional)</label>
+        <textarea
+          rows={3}
+          className={formControl}
+          placeholder="e.g. Any other edits you'd want — we'll add our product shots and logo."
+          value={changeRequest}
+          onChange={(e) => setChangeRequest(e.target.value)}
+        />
+        <p className="mt-1 text-[11px] text-text-muted">
+          Since this is a fixed-price sale, there’s no author review step — these terms apply automatically on purchase.
+        </p>
+      </div>
+
+      <div className="flex gap-3">
+        <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+        <Button
+          className="flex-1"
+          disabled={pending}
+          onClick={() =>
+            onSubmit({
+              brandCategory,
+              brandName: brandName.trim(),
+              changeRequest: changeRequest.trim(),
+              removeMedia,
+            })
+          }
+        >
+          {pending ? "Processing..." : `Buy Now — ${formatAUD(listing.floorPrice)}`}
+        </Button>
+      </div>
+    </ModalShell>
+  );
+}
+
 function CreateListingModal({
   listable,
   categories,
@@ -538,6 +693,7 @@ function CreateListingModal({
   onClose: () => void;
   onSubmit: (data: {
     articleId: string;
+    saleType: "auction" | "fixed";
     floorPrice: number;
     reservePrice: number | null;
     allowedCategories: string[];
@@ -545,6 +701,7 @@ function CreateListingModal({
   }) => void;
 }) {
   const [articleId, setArticleId] = useState(listable[0]?.id ?? "");
+  const [saleType, setSaleType] = useState<"auction" | "fixed">("auction");
   const [floor, setFloor] = useState("100");
   const [reserve, setReserve] = useState("");
   const [duration, setDuration] = useState("7");
@@ -558,8 +715,7 @@ function CreateListingModal({
     <ModalShell onClose={onClose}>
       <h3 className="mb-1 font-heading text-lg font-bold text-text-main">Sell an Article’s Ownership</h3>
       <p className="mb-4 text-[12.5px] text-text-muted">
-        Opens a first-price auction. Members make offers; you accept the one you choose. You keep your verified
-        byline forever — only commercial ownership and branding transfer to the buyer.
+        You keep your verified byline forever — only commercial ownership and branding transfer to the buyer.
       </p>
 
       <div className="mb-4">
@@ -571,19 +727,55 @@ function CreateListingModal({
         </select>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <div>
-          <label className={formLabel}>Floor price (AUD)</label>
-          <input type="number" min="50" step="1" className={formControl} value={floor} onChange={(e) => setFloor(e.target.value)} />
-        </div>
-        <div>
-          <label className={formLabel}>Reserve (optional)</label>
-          <input type="number" step="1" className={formControl} placeholder="≥ floor" value={reserve} onChange={(e) => setReserve(e.target.value)} />
+      <div className="mb-4">
+        <label className={formLabel}>Sale type</label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setSaleType("auction")}
+            className={cn(
+              "cursor-pointer rounded-lg border px-3 py-2.5 text-left transition-colors",
+              saleType === "auction" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary hover:border-line-hover",
+            )}
+          >
+            <div className="text-[13px] font-semibold text-text-main">Auction</div>
+            <div className="text-[11px] text-text-muted">Members make offers; you pick the winner</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSaleType("fixed")}
+            className={cn(
+              "cursor-pointer rounded-lg border px-3 py-2.5 text-left transition-colors",
+              saleType === "fixed" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary hover:border-line-hover",
+            )}
+          >
+            <div className="text-[13px] font-semibold text-text-main">Fixed Price</div>
+            <div className="text-[11px] text-text-muted">First buyer to click Buy Now gets it, instantly</div>
+          </button>
         </div>
       </div>
 
+      {saleType === "auction" ? (
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <div>
+            <label className={formLabel}>Floor price (AUD)</label>
+            <input type="number" min="50" step="1" className={formControl} value={floor} onChange={(e) => setFloor(e.target.value)} />
+          </div>
+          <div>
+            <label className={formLabel}>Reserve (optional)</label>
+            <input type="number" step="1" className={formControl} placeholder="≥ floor" value={reserve} onChange={(e) => setReserve(e.target.value)} />
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4">
+          <label className={formLabel}>Price (AUD)</label>
+          <input type="number" min="50" step="1" className={formControl} value={floor} onChange={(e) => setFloor(e.target.value)} />
+          <p className="mt-1 text-[11px] text-text-muted">The exact amount a buyer pays — no bidding, no negotiation.</p>
+        </div>
+      )}
+
       <div className="mb-4">
-        <label className={formLabel}>Auction length (days)</label>
+        <label className={formLabel}>{saleType === "fixed" ? "Listing length (days)" : "Auction length (days)"}</label>
         <input type="number" min="1" step="1" className={formControl} value={duration} onChange={(e) => setDuration(e.target.value)} />
       </div>
 
@@ -617,14 +809,15 @@ function CreateListingModal({
           onClick={() =>
             onSubmit({
               articleId,
+              saleType,
               floorPrice: Number(floor),
-              reservePrice: reserve.trim() ? Number(reserve) : null,
+              reservePrice: saleType === "auction" && reserve.trim() ? Number(reserve) : null,
               allowedCategories: allowed,
               durationDays: Number(duration),
             })
           }
         >
-          {pending ? "Listing..." : "Open Auction"}
+          {pending ? "Listing..." : saleType === "fixed" ? "List at Fixed Price" : "Open Auction"}
         </Button>
       </div>
     </ModalShell>

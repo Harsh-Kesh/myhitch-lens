@@ -16,9 +16,12 @@ import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Superscript from "@tiptap/extension-superscript";
 import Subscript from "@tiptap/extension-subscript";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
+import { licenseShort } from "@/lib/licenses";
+import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
+import { getMagazinePlacement } from "@/app/(portal)/magazine/publicActions";
 
 // ---------------------------------------------------------------------------
 // Media node: resizable image / video with caption + source reference
@@ -926,6 +929,10 @@ export function ArticlePreviewModal({
   category,
   contentType,
   tags,
+  authorVerified = false,
+  authorRank = "Contributor",
+  license = "all_rights_reserved",
+  articleId,
   onClose,
 }: {
   title: string;
@@ -934,16 +941,39 @@ export function ArticlePreviewModal({
   category?: string;
   contentType?: string;
   tags?: string[];
+  authorVerified?: boolean;
+  authorRank?: string;
+  license?: string;
+  /** When known, enables the Magazine Page tab (fetches placement live). */
+  articleId?: string;
   onClose: () => void;
 }) {
+  const [view, setView] = useState<"web" | "magazine">("web");
+
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
       <div className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-2xl border border-line bg-bg-primary shadow-card md:inset-y-6 md:inset-x-[8%] lg:inset-x-[12%]">
-        <div className="flex items-center justify-between border-b border-line bg-bg-tertiary px-6 py-3">
-          <div className="flex items-center gap-2">
-            <svg className="size-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            <span className="text-sm font-semibold text-text-main">Article Preview</span>
+        <div className="flex items-center justify-between border-b border-line bg-bg-tertiary px-4 py-2.5">
+          <div className="flex items-center gap-1">
+            {(
+              [
+                ["web", "Web Article"],
+                ["magazine", "Magazine Page"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setView(key)}
+                className={cn(
+                  "cursor-pointer rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors",
+                  view === key ? "bg-primary-glow text-primary" : "text-text-muted hover:text-text-main",
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
           <button
             type="button"
@@ -954,45 +984,275 @@ export function ArticlePreviewModal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-8 max-[640px]:p-5">
-          <div className="mx-auto max-w-[720px]">
-            {category && (
-              <span className="mb-3 inline-block text-[11px] font-bold tracking-[0.5px] text-primary uppercase">
-                {category}
-              </span>
-            )}
-            <h1 className="mb-4 font-heading text-[28px] leading-[1.3] font-bold text-text-main max-[640px]:text-[23px]">
-              {title || "Untitled Article"}
-            </h1>
-            <div className="mb-6 flex flex-wrap items-center gap-3 text-[13px] text-text-muted">
-              <div className="flex items-center gap-2">
-                <div className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-                  {author.charAt(0)}
-                </div>
-                <span className="font-semibold text-text-main">{author}</span>
-              </div>
-              {contentType && <span>· {contentType}</span>}
-              {tags && tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {tags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-primary-glow px-2 py-0.5 text-[10px] font-semibold text-primary">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="text-[15.5px] leading-[1.8] text-text-main">
-              {isRichContent(content) ? (
-                <RichContentRenderer content={content} />
-              ) : (
-                <div className="whitespace-pre-wrap">{content}</div>
-              )}
-            </div>
-          </div>
+          {view === "web" ? (
+            <WebArticlePreview
+              title={title}
+              content={content}
+              author={author}
+              category={category}
+              contentType={contentType}
+              tags={tags}
+              authorVerified={authorVerified}
+              authorRank={authorRank}
+              license={license}
+            />
+          ) : (
+            <MagazinePagePreview title={title} content={content} author={author} category={category} articleId={articleId} />
+          )}
         </div>
       </div>
     </>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Web Article tab — mirrors the real published-article layout as closely as
+// possible (same byline/rights-bar/discussion structure as ArticleView), with
+// interactive controls shown but disabled so it reads as "this is the shape
+// of the real page", not a functional reader view.
+// ---------------------------------------------------------------------------
+
+const previewActionBtn =
+  "flex cursor-not-allowed items-center gap-1.5 rounded-md border border-line bg-bg-secondary px-3 py-1.5 text-xs font-semibold text-text-muted opacity-60";
+
+function WebArticlePreview({
+  title,
+  content,
+  author,
+  category,
+  contentType,
+  tags,
+  authorVerified,
+  authorRank,
+  license,
+}: {
+  title: string;
+  content: string;
+  author: string;
+  category?: string;
+  contentType?: string;
+  tags?: string[];
+  authorVerified: boolean;
+  authorRank: string;
+  license: string;
+}) {
+  return (
+    <div className="mx-auto max-w-[720px] rounded-xl border border-line bg-bg-secondary p-8 max-[640px]:p-5">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        {category && (
+          <span className="text-[11px] font-bold tracking-[0.5px] text-primary uppercase">{category}</span>
+        )}
+        {contentType && <span className="rounded bg-bg-tertiary px-2 py-0.5 text-[10.5px] font-semibold text-text-muted">{contentType}</span>}
+        {tags && tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map((tag) => (
+              <span key={tag} className="rounded-full bg-primary-glow px-2 py-0.5 text-[10px] font-semibold text-primary">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h1 className="mb-4 font-heading text-[28px] leading-[1.3] font-bold text-text-main max-[640px]:text-[23px]">
+        {title || "Untitled Article"}
+      </h1>
+
+      <div className="mb-6 flex flex-wrap items-center gap-y-3 rounded-lg border border-line bg-bg-primary px-[18px] py-3 max-[480px]:px-4">
+        <div className="mr-3 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-bold text-text-inverse">
+          {author.charAt(0) || "?"}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="flex items-center gap-1 text-[13.5px] font-semibold">
+            {author || "Author"}
+            {authorVerified && <VerifiedBadge size="xs" />}
+          </span>
+          <span className="text-[11px] text-text-muted">{authorRank} · — followers (shown once published)</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" disabled title="Available once published" className={cn(previewActionBtn, "cursor-not-allowed border-primary bg-primary text-text-inverse opacity-90")}>
+            + Follow
+          </button>
+          <button type="button" disabled title="Available once published" className={previewActionBtn}>
+            ☆
+          </button>
+          <button type="button" disabled title="Available once published" className={previewActionBtn}>
+            ♡ 0
+          </button>
+        </div>
+      </div>
+
+      <div className="mb-6 flex flex-col gap-2.5 rounded-lg border border-line bg-bg-primary p-4 opacity-70">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="cursor-not-allowed rounded-md bg-primary px-3.5 py-1.5 text-xs font-semibold text-text-inverse">
+            ▶ Play AI Voice Narration
+          </span>
+          <span className="text-[11px] text-text-muted">Available once published</span>
+        </div>
+        <div className="h-1 overflow-hidden rounded-sm bg-bg-tertiary" />
+      </div>
+
+      <div className="mb-8 text-[15.5px] leading-[1.8] text-text-main">
+        {isRichContent(content) ? (
+          <RichContentRenderer content={content} />
+        ) : (
+          <div className="whitespace-pre-wrap">{content || "Nothing written yet."}</div>
+        )}
+      </div>
+
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg-primary px-4 py-3 text-[12px] text-text-muted">
+        <span>
+          <strong className="text-text-main">© {author || "Author"}.</strong> {licenseShort(license)}. Reproduced only
+          with permission.{" "}
+          <span className="cursor-not-allowed text-primary/60 underline" title="Available once published">
+            Verify authenticity
+          </span>
+        </span>
+        <button type="button" disabled title="Available once published" className="shrink-0 cursor-not-allowed rounded-md border border-line px-3 py-1.5 text-[11.5px] font-semibold text-text-muted opacity-60">
+          Report copyright
+        </button>
+      </div>
+
+      <div>
+        <h3 className="mb-4 font-heading text-base leading-[1.25] font-bold text-text-main">Discussion (0)</h3>
+        <p className="rounded-lg border border-line bg-bg-primary p-3 text-center text-[12.5px] text-text-muted">
+          Comments will appear here once the article is published. (Authors can’t comment on their own article.)
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Magazine Page tab — the MYHitch weekly print/digital magazine (published
+// outside Lens) picks its first 3 pages by hand; everything else fills the
+// remaining pages in publish order, so writing ahead of time earns an earlier
+// page. This projects where an article would land right now.
+// ---------------------------------------------------------------------------
+
+interface MagazinePlacementView {
+  issue: { weekId: string; weekLabel: string };
+  page: number;
+  isFeatured: boolean;
+  totalArticlesThisIssue: number;
+  isEstimate: boolean;
+}
+
+function MagazinePagePreview({
+  title,
+  content,
+  author,
+  category,
+  articleId,
+}: {
+  title: string;
+  content: string;
+  author: string;
+  category?: string;
+  articleId?: string;
+}) {
+  const [placement, setPlacement] = useState<MagazinePlacementView | null | undefined>(undefined);
+
+  useEffect(() => {
+    if (!articleId) {
+      setPlacement(null);
+      return;
+    }
+    let cancelled = false;
+    getMagazinePlacement(articleId).then((p) => {
+      if (!cancelled) setPlacement(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [articleId]);
+
+  const excerpt = useMemo(() => {
+    const text = isRichContent(content) ? extractPlainText(content) : content;
+    return text.trim().slice(0, 320);
+  }, [content]);
+
+  return (
+    <div className="mx-auto max-w-[600px]">
+      {!articleId ? (
+        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+          Save this draft first to see its projected magazine placement.
+        </div>
+      ) : placement === undefined ? (
+        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+          Calculating placement…
+        </div>
+      ) : placement === null ? (
+        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+          Placement isn’t available for this article yet.
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 flex items-center justify-between text-[12px] text-text-muted">
+            <span className="font-semibold text-text-main">MYHitch Magazine — weekly issue</span>
+            <span>{placement.issue.weekLabel}</span>
+          </div>
+
+          {placement.isEstimate && (
+            <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
+              Estimated placement — projected as if this published right now. Your actual page depends on when you
+              publish and how many other articles publish before you that week.
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-xl border border-line bg-bg-secondary shadow-card">
+            <div className="flex items-center justify-between border-b border-line bg-bg-tertiary px-5 py-2.5">
+              <span className="font-heading text-sm font-bold tracking-wide text-text-main uppercase">MYHitch</span>
+              <span className="text-[11px] font-semibold text-text-muted">Page {placement.page} of {placement.totalArticlesThisIssue}</span>
+            </div>
+            <div className="p-6">
+              {placement.isFeatured && (
+                <span className="mb-3 inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-[10.5px] font-bold text-white">
+                  ★ Featured — Team Pick
+                </span>
+              )}
+              {category && (
+                <div className="mb-2 text-[10.5px] font-bold tracking-[0.5px] text-primary uppercase">{category}</div>
+              )}
+              <h2 className="mb-3 font-heading text-2xl leading-[1.2] font-bold text-text-main">
+                {title || "Untitled Article"}
+              </h2>
+              <p className="mb-4 text-[11.5px] font-semibold text-text-muted uppercase">By {author || "Author"}</p>
+              <p className="text-[13.5px] leading-[1.7] text-text-main">
+                {excerpt || "Nothing written yet."}
+                {excerpt.length >= 320 && "…"}
+              </p>
+            </div>
+            <div className="border-t border-line bg-bg-tertiary px-5 py-2 text-center text-[10.5px] text-text-muted">
+              continued from page {Math.max(1, placement.page - 1)} · MYHitch Magazine, {placement.issue.weekLabel}
+            </div>
+          </div>
+
+          <p className="mt-4 text-center text-[11px] text-text-muted">
+            Pages 1–3 are hand-picked by the MYHitch editorial team each week; every other page follows publish order —
+            publish earlier to land on an earlier page.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function extractPlainText(json: string): string {
+  try {
+    const doc = JSON.parse(json);
+    const parts: string[] = [];
+    const walk = (n: unknown) => {
+      if (!n || typeof n !== "object") return;
+      const node = n as { type?: string; text?: string; content?: unknown[] };
+      if (node.type === "text" && node.text) parts.push(node.text);
+      if (Array.isArray(node.content)) node.content.forEach(walk);
+    };
+    walk(doc);
+    return parts.join(" ");
+  } catch {
+    return "";
+  }
 }
 
 function isRichContent(content: string): boolean {

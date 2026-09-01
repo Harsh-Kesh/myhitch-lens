@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { feeFor, round2 } from "@/lib/marketplace";
+import type { Prisma } from "@prisma/client";
 
 export type ActionResult = { error: string } | { ok: true };
 
@@ -48,6 +49,7 @@ function stripMediaFromContent(content: string): { content: string; removed: num
 /** Author lists one of their published, still-owned articles for ownership sale. */
 export async function createListing(input: {
   articleId: string;
+  saleType?: "auction" | "fixed";
   floorPrice: number;
   reservePrice?: number | null;
   slots?: number;
@@ -65,11 +67,19 @@ export async function createListing(input: {
   if (article.status !== "published") return { error: "Only published articles can be listed." };
   if (article.ownerId) return { error: "This article's ownership has already been sold." };
 
+  const saleType = input.saleType === "fixed" ? "fixed" : "auction";
+
   const floor = round2(Number(input.floorPrice));
   if (!Number.isFinite(floor) || floor < MARKETPLACE_DEFAULTS.minBid) {
-    return { error: `Floor price must be at least A$${MARKETPLACE_DEFAULTS.minBid}.` };
+    return {
+      error:
+        saleType === "fixed"
+          ? `Price must be at least A$${MARKETPLACE_DEFAULTS.minBid}.`
+          : `Floor price must be at least A$${MARKETPLACE_DEFAULTS.minBid}.`,
+    };
   }
-  const reserve = input.reservePrice != null ? round2(Number(input.reservePrice)) : null;
+  // A reserve only makes sense when there's bidding to reserve against.
+  const reserve = saleType === "auction" && input.reservePrice != null ? round2(Number(input.reservePrice)) : null;
   if (reserve != null && reserve < floor) {
     return { error: "Reserve price cannot be below the floor price." };
   }
@@ -81,6 +91,7 @@ export async function createListing(input: {
     data: {
       articleId: input.articleId,
       slots: input.slots ?? 1,
+      saleType,
       floorPrice: floor,
       reservePrice: reserve,
       allowedCategories: input.allowedCategories,
@@ -115,6 +126,7 @@ export async function placeBid(input: {
     },
   });
   if (!auction || auction.type !== "sponsorship") return { error: "Auction not found." };
+  if (auction.listing?.saleType === "fixed") return { error: "This article is for sale at a fixed price — use Buy Now." };
   if (auction.status !== "open") return { error: "This auction is closed." };
   if (auction.endsAt.getTime() < Date.now()) return { error: "This auction has ended." };
 
@@ -166,6 +178,106 @@ export async function placeBid(input: {
   return { ok: true };
 }
 
+interface SettleArgs {
+  bidId: string;
+  bidderId: string;
+  bidderName: string;
+  brandName: string | null;
+  changeRequest: string | null;
+  removeMedia: boolean;
+  amount: number;
+  auctionId: string;
+  articleId: string;
+  articleAuthorId: string;
+  articleTitle: string;
+  articleContent: string;
+  articleCategoryName: string;
+  listingFloorPrice: number;
+}
+
+/** Shared settlement: ownership transfer, first-price funds, placement, notifications. */
+async function settleSale(a: SettleArgs): Promise<void> {
+  const price = Math.max(a.listingFloorPrice, a.amount);
+  const fee = feeFor("sponsorship", price); // 20% marketplace fee
+  const net = round2(price - fee);
+  const brandName = a.brandName ?? a.bidderName;
+
+  const stripped = a.removeMedia ? stripMediaFromContent(a.articleContent) : null;
+  const mediaRemoved = stripped?.removed ?? 0;
+
+  const ops: Prisma.PrismaPromise<unknown>[] = [
+    prisma.bid.update({ where: { id: a.bidId }, data: { status: "won" } }),
+    prisma.bid.updateMany({
+      where: { auctionId: a.auctionId, id: { not: a.bidId }, status: { in: ["active", "outbid"] } },
+      data: { status: "lost" },
+    }),
+    prisma.article.update({
+      where: { id: a.articleId },
+      data: {
+        ownerId: a.bidderId,
+        lane: "hybrid",
+        ...(stripped ? { content: stripped.content } : {}),
+      },
+    }),
+    prisma.brandingPlacement.create({
+      data: {
+        articleId: a.articleId,
+        auctionId: a.auctionId,
+        brandId: a.bidderId,
+        status: "live",
+        liveFrom: new Date(),
+        creativeAsset: {
+          brandName,
+          changeRequest: a.changeRequest,
+          category: a.articleCategoryName,
+          amount: price,
+          mediaRemoved,
+        },
+      },
+    }),
+    prisma.auction.update({ where: { id: a.auctionId }, data: { status: "settled" } }),
+    prisma.wallet.upsert({
+      where: { userId: a.articleAuthorId },
+      update: { balance: { increment: net } },
+      create: { userId: a.articleAuthorId, balance: net },
+    }),
+    prisma.wallet.upsert({
+      where: { userId: a.bidderId },
+      update: { balance: { decrement: price } },
+      create: { userId: a.bidderId, balance: -price },
+    }),
+    prisma.revenueLedger.create({
+      data: {
+        userId: a.articleAuthorId,
+        articleId: a.articleId,
+        type: "report_sale",
+        gross: price,
+        feeApplied: fee,
+        net,
+        meta: { kind: "ownership_sale", buyer: brandName, auctionId: a.auctionId },
+      },
+    }),
+    prisma.notification.createMany({
+      data: [
+        {
+          userId: a.bidderId,
+          type: "bid_won",
+          text: `Your purchase of "${a.articleTitle}" is complete — you now own this article.${
+            mediaRemoved > 0 ? ` ${mediaRemoved} media item(s) were removed as agreed.` : ""
+          }`,
+        },
+        {
+          userId: a.articleAuthorId,
+          type: "sale",
+          text: `Ownership of "${a.articleTitle}" sold: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
+        },
+      ],
+    }),
+  ];
+
+  await prisma.$transaction(ops);
+}
+
 /**
  * Author accepts an offer → ownership transfers to the buyer (author keeps their
  * verified credit), first-price funds settle, agreed change request is recorded.
@@ -202,92 +314,89 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
   }
   if (auction.placement) return { error: "This article has already been sold." };
 
-  // First-price: the buyer pays exactly what they bid (floor-guaranteed at bid time).
-  const floor = Number(auction.listing!.floorPrice);
-  const price = Math.max(floor, Number(bid.amount));
-  const fee = feeFor("sponsorship", price); // 20% marketplace fee
-  const net = round2(price - fee);
-  const brandName = bid.brandName ?? bid.bidder.displayName;
+  await settleSale({
+    bidId: bid.id,
+    bidderId: bid.bidder.id,
+    bidderName: bid.bidder.displayName,
+    brandName: bid.brandName,
+    changeRequest: bid.changeRequest,
+    removeMedia: bid.removeMedia,
+    amount: Number(bid.amount),
+    auctionId: auction.id,
+    articleId: article.id,
+    articleAuthorId: article.authorId,
+    articleTitle: article.title,
+    articleContent: article.content,
+    articleCategoryName: article.category.name,
+    listingFloorPrice: Number(auction.listing!.floorPrice),
+  });
 
-  // Auto-apply the agreed media-removal term to the article content, if requested.
-  const stripped = bid.removeMedia ? stripMediaFromContent(article.content) : null;
-  const mediaRemoved = stripped?.removed ?? 0;
+  revalidatePath("/panel");
+  revalidatePath("/author-dashboard");
+  revalidatePath(`/article?id=${article.id}`);
+  return { ok: true };
+}
 
-  await prisma.$transaction([
-    // Winner + losers.
-    prisma.bid.update({ where: { id: bid.id }, data: { status: "won" } }),
-    prisma.bid.updateMany({
-      where: { auctionId: auction.id, id: { not: bid.id }, status: { in: ["active", "outbid"] } },
-      data: { status: "lost" },
-    }),
-    // Ownership transfers to the buyer; author credit (authorId) is untouched.
-    // The agreed media-removal term is auto-applied to the content here.
-    prisma.article.update({
-      where: { id: article.id },
-      data: {
-        ownerId: bid.bidder.id,
-        lane: "hybrid",
-        ...(stripped ? { content: stripped.content } : {}),
-      },
-    }),
-    // Record the sale + agreed change request as a labeled placement.
-    prisma.brandingPlacement.create({
-      data: {
-        articleId: article.id,
-        auctionId: auction.id,
-        brandId: bid.bidder.id,
-        status: "live",
-        liveFrom: new Date(),
-        creativeAsset: {
-          brandName,
-          changeRequest: bid.changeRequest ?? null,
-          category: article.category.name,
-          amount: price,
-          mediaRemoved,
-        },
-      },
-    }),
-    prisma.auction.update({ where: { id: auction.id }, data: { status: "settled" } }),
-    // Money conservation: buyer pays, author receives net of fee.
-    prisma.wallet.upsert({
-      where: { userId: article.authorId },
-      update: { balance: { increment: net } },
-      create: { userId: article.authorId, balance: net },
-    }),
-    prisma.wallet.upsert({
-      where: { userId: bid.bidder.id },
-      update: { balance: { decrement: price } },
-      create: { userId: bid.bidder.id, balance: -price },
-    }),
-    prisma.revenueLedger.create({
-      data: {
-        userId: article.authorId,
-        articleId: article.id,
-        type: "report_sale",
-        gross: price,
-        feeApplied: fee,
-        net,
-        meta: { kind: "ownership_sale", buyer: brandName, auctionId: auction.id },
-      },
-    }),
-    // Notify both sides.
-    prisma.notification.createMany({
-      data: [
-        {
-          userId: bid.bidder.id,
-          type: "bid_won",
-          text: `Your offer on "${article.title}" was accepted — you now own this article.${
-            mediaRemoved > 0 ? ` ${mediaRemoved} media item(s) were removed as agreed.` : ""
-          }`,
-        },
-        {
-          userId: article.authorId,
-          type: "sale",
-          text: `Ownership of "${article.title}" sold: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
-        },
-      ],
-    }),
-  ]);
+/** Instant purchase of a fixed-price listing — no bidding, no author approval step. */
+export async function buyFixedPrice(input: {
+  auctionId: string;
+  brandCategory: string;
+  brandName?: string;
+  changeRequest?: string;
+  removeMedia?: boolean;
+}): Promise<ActionResult> {
+  const user = await requireUser();
+
+  const auction = await prisma.auction.findUnique({
+    where: { id: input.auctionId },
+    include: {
+      listing: { include: { article: { select: { id: true, authorId: true, title: true, content: true, category: { select: { name: true } } } } } },
+      placement: true,
+    },
+  });
+  if (!auction || auction.type !== "sponsorship") return { error: "Listing not found." };
+  if (auction.listing?.saleType !== "fixed") return { error: "This listing isn't a fixed-price sale." };
+  if (auction.status !== "open") return { error: "This listing is no longer available." };
+  if (auction.endsAt.getTime() < Date.now()) return { error: "This listing has expired." };
+  if (auction.placement) return { error: "This article has already been sold." };
+
+  const article = auction.listing.article;
+  if (article.authorId === user.id) return { error: "You can't buy your own article." };
+
+  const allowed = auction.listing.allowedCategories;
+  if (allowed.length > 0 && !allowed.includes(input.brandCategory)) {
+    return { error: `Brand category "${input.brandCategory}" is not permitted for this article.` };
+  }
+
+  const price = Number(auction.listing.floorPrice);
+  const bid = await prisma.bid.create({
+    data: {
+      auctionId: auction.id,
+      bidderId: user.id,
+      amount: price,
+      brandName: input.brandName?.trim() || null,
+      changeRequest: input.changeRequest?.trim() || null,
+      removeMedia: input.removeMedia ?? false,
+      status: "active",
+    },
+  });
+
+  await settleSale({
+    bidId: bid.id,
+    bidderId: user.id,
+    bidderName: user.name ?? "Buyer",
+    brandName: bid.brandName,
+    changeRequest: bid.changeRequest,
+    removeMedia: bid.removeMedia,
+    amount: price,
+    auctionId: auction.id,
+    articleId: article.id,
+    articleAuthorId: article.authorId,
+    articleTitle: article.title,
+    articleContent: article.content,
+    articleCategoryName: article.category.name,
+    listingFloorPrice: price,
+  });
 
   revalidatePath("/panel");
   revalidatePath("/author-dashboard");

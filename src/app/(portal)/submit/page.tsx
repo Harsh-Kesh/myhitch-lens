@@ -10,7 +10,7 @@ import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import { LICENSE_OPTIONS } from "@/lib/licenses";
 
-import { createDraft, saveDraft, submitForReview, listTags, loadDraft } from "./actions";
+import { createDraft, saveDraft, submitForReview, listTags, loadDraft, getMyProfileSummary } from "./actions";
 
 const CONTENT_TYPES = [
   { value: "Blog", label: "Blog Post" },
@@ -55,6 +55,12 @@ export default function SubmitPage() {
   // Load available tags
   useEffect(() => {
     listTags().then(setAvailableTags);
+  }, []);
+
+  // Real author name + verified status, for an accurate preview.
+  const [profile, setProfile] = useState<{ name: string; verified: boolean }>({ name: "Author", verified: false });
+  useEffect(() => {
+    getMyProfileSummary().then(setProfile);
   }, []);
 
   // Load existing draft if editing — block editor render until loaded
@@ -274,10 +280,13 @@ export default function SubmitPage() {
         <ArticlePreviewModal
           title={title}
           content={content}
-          author="Dr. Sarah Chen"
+          author={profile.name}
           category={contentType}
           contentType={contentType}
           tags={selectedTags}
+          authorVerified={profile.verified}
+          license={license}
+          articleId={articleId ?? undefined}
           onClose={() => setShowPreview(false)}
         />
       )}

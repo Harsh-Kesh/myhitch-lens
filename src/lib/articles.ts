@@ -60,6 +60,8 @@ export interface ReviewQueueItem {
   title: string;
   author: string;
   authorRank: string;
+  authorVerified: boolean;
+  license: string;
   category: string;
   type: string;
   /** ISO timestamp (UTC); formatted to the viewer's local time in the client. */
@@ -85,7 +87,7 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     orderBy: { createdAt: "asc" },
     include: {
       category: { select: { name: true } },
-      author: { select: { displayName: true, rank: { select: { tier: true } } } },
+      author: { select: { displayName: true, isVerified: true, rank: { select: { tier: true } } } },
     },
   });
 
@@ -94,6 +96,8 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     title: row.title,
     author: row.author.displayName,
     authorRank: TIER_LABEL[row.author.rank?.tier ?? "bronze"] ?? "Contributor",
+    authorVerified: row.author.isVerified,
+    license: row.license,
     category: row.category.name,
     type: row.contentType,
     submittedAt: row.createdAt.toISOString(),

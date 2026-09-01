@@ -30,6 +30,7 @@ export interface PanelListing {
   author: string;
   authorId: string;
   authorVerified: boolean;
+  saleType: "auction" | "fixed";
   floorPrice: number;
   reservePrice: number | null;
   allowedCategories: string[];
@@ -91,6 +92,7 @@ export async function listOpenPanelListings(viewerId?: string): Promise<PanelLis
         author: article.author.displayName,
         authorId: article.author.id,
         authorVerified: article.author.isVerified,
+        saleType: (listing.saleType === "fixed" ? "fixed" : "auction"),
         floorPrice: floor,
         reservePrice: listing.reservePrice != null ? Number(listing.reservePrice) : null,
         allowedCategories: listing.allowedCategories,
@@ -182,6 +184,7 @@ export async function listAuthorListings(authorId: string): Promise<AuthorListin
         author: article.author.displayName,
         authorId: article.author.id,
         authorVerified: article.author.isVerified,
+        saleType: (listing.saleType === "fixed" ? "fixed" : "auction"),
         floorPrice: floor,
         reservePrice: listing.reservePrice != null ? Number(listing.reservePrice) : null,
         allowedCategories: listing.allowedCategories,

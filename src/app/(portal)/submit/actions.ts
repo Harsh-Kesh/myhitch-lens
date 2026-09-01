@@ -159,6 +159,16 @@ export async function submitForReview(input: {
   redirect("/author-dashboard");
 }
 
+/** The current user's display name + verified status, for the live preview. */
+export async function getMyProfileSummary(): Promise<{ name: string; verified: boolean }> {
+  const session = await requireAuthorSession();
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { displayName: true, isVerified: true },
+  });
+  return { name: user?.displayName ?? session.user.name ?? "Author", verified: user?.isVerified ?? false };
+}
+
 /** Fetch all available tags for the tag picker. */
 export async function listTags(): Promise<string[]> {
   const tags = await prisma.tag.findMany({ orderBy: { name: "asc" } });

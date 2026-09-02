@@ -132,6 +132,7 @@ Airlines adopting SAF programs like JetNRest are leading the transition by integ
   },
 ];
 
+/** Demo review-queue submissions — seeded as real in_review articles by prisma/seed.ts. */
 export const defaultQueue: QueueItem[] = [
   {
     id: "rev-1",

@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -18,9 +16,7 @@ import {
   UsersGroupIcon,
 } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
-import { useLensValue } from "@/hooks/useLensValue";
-import { getArticles } from "@/lib/lensStore";
-import { defaultArticles } from "@/data/defaults";
+import { prisma } from "@/lib/prisma";
 import { CATEGORIES } from "@/data/categories";
 
 const categoryIcon = "size-6 text-primary";
@@ -40,14 +36,13 @@ const CATEGORY_ICONS: Record<string, ReactNode> = {
   Community: <UsersGroupIcon className={categoryIcon} />,
 };
 
-export default function CategoriesPage() {
-  const articles = useLensValue(getArticles, defaultArticles);
-
-  /** Real publication counts per category, replacing the old fictional values. */
-  const counts = articles.reduce<Record<string, number>>((tally, article) => {
-    tally[article.category] = (tally[article.category] ?? 0) + 1;
-    return tally;
-  }, {});
+export default async function CategoriesPage() {
+  const rows = await prisma.article.findMany({
+    where: { status: "published" },
+    select: { category: { select: { name: true } } },
+  });
+  const counts: Record<string, number> = {};
+  for (const r of rows) counts[r.category.name] = (counts[r.category.name] ?? 0) + 1;
 
   return (
     <>

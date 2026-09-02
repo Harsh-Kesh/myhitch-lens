@@ -21,10 +21,9 @@ import {
   UsersIcon,
 } from "@/components/ui/icons";
 import { useLensValue } from "@/hooks/useLensValue";
-import { getQueue, getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
+import { getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
 import { logoutUser } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
-import { defaultQueue } from "@/data/defaults";
 import type { UserRole } from "@/lib/types";
 
 const navIcon = "size-4 shrink-0";
@@ -140,14 +139,25 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
 
 /**
  * `.app-sidebar` - a direct port of `injectSidebarMenu()`, which used to build
- * this markup as an HTML string on every page load. Role, name and queue count
- * are read from localStorage after mount so server and client render alike.
+ * this markup as an HTML string on every page load. Role and name are seeded
+ * from the real session and then read from localStorage after mount so
+ * server and client render alike; the pending-review count is always the
+ * real, server-fetched value (editor/admin only).
  *
  * On phones and small tablets the column slides in over the workspace instead
  * of stacking above it - nine nav links, the role simulator and the profile
  * widget would otherwise push every view a full screen down the page.
  */
-export function AppSidebar({ role: sessionRole, name: sessionName }: { role: UserRole; name: string }) {
+export function AppSidebar({
+  role: sessionRole,
+  name: sessionName,
+  pendingReviewCount = 0,
+}: {
+  role: UserRole;
+  name: string;
+  /** Real count of articles awaiting editorial review — editor/admin only. */
+  pendingReviewCount?: number;
+}) {
   const pathname = usePathname();
 
   // Fall back to the real, server-known session values (not a hardcoded
@@ -155,8 +165,7 @@ export function AppSidebar({ role: sessionRole, name: sessionName }: { role: Use
   // nav before the localStorage sync effect catches up.
   const role = useLensValue(getUserRole, sessionRole);
   const name = useLensValue(getUserName, sessionName || ROLE_NAMES[sessionRole]);
-  const queue = useLensValue(getQueue, defaultQueue);
-  const queueCount = queue.length;
+  const queueCount = pendingReviewCount;
 
   /**
    * Navigating dismisses the drawer; so does growing past the breakpoint, where

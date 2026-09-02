@@ -42,6 +42,7 @@ export interface FeedArticle {
   readTime: string;
 }
 
+/** Seed shape for a demo review-queue submission (consumed by prisma/seed.ts). */
 export interface QueueItem {
   id: string;
   title: string;
@@ -56,6 +57,7 @@ export interface QueueItem {
   sentiment: string;
   content: string;
 }
+
 
 export interface Integrations {
   mart: boolean;

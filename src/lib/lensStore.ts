@@ -4,13 +4,11 @@ import {
   defaultFollowed,
   defaultIntegrations,
   defaultNotifications,
-  defaultQueue,
 } from "@/data/defaults";
 import type {
   Article,
   Integrations,
   Notification,
-  QueueItem,
   UserRole,
 } from "@/lib/types";
 
@@ -22,7 +20,6 @@ import type {
 
 export const STORAGE_KEYS = {
   articles: "lens_articles",
-  queue: "lens_queue",
   bookmarks: "lens_bookmarks",
   followed: "lens_followed",
   notifications: "lens_notifications",
@@ -110,10 +107,6 @@ function writeRaw(key: string, value: string): void {
 export const getArticles = () => read<Article[]>(STORAGE_KEYS.articles, defaultArticles);
 export const saveArticles = (value: Article[]) => write(STORAGE_KEYS.articles, value);
 
-/* --- Editorial queue --- */
-export const getQueue = () => read<QueueItem[]>(STORAGE_KEYS.queue, defaultQueue);
-export const saveQueue = (value: QueueItem[]) => write(STORAGE_KEYS.queue, value);
-
 /* --- Bookmarks --- */
 export const getBookmarks = () => read<string[]>(STORAGE_KEYS.bookmarks, defaultBookmarks);
 export const saveBookmarks = (value: string[]) => write(STORAGE_KEYS.bookmarks, value);
@@ -165,7 +158,6 @@ export function checkAndInitDatabase(): void {
   if (!isBrowser()) return;
   const ls = window.localStorage;
   if (!ls.getItem(STORAGE_KEYS.articles)) saveArticles(defaultArticles);
-  if (!ls.getItem(STORAGE_KEYS.queue)) saveQueue(defaultQueue);
   if (!ls.getItem(STORAGE_KEYS.bookmarks)) saveBookmarks(defaultBookmarks);
   if (!ls.getItem(STORAGE_KEYS.followed)) saveFollowed(defaultFollowed);
   if (!ls.getItem(STORAGE_KEYS.notifications)) saveNotifications(defaultNotifications);

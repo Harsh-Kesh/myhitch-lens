@@ -25,6 +25,8 @@ import { getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
 import { logoutUser } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
 import type { UserRole } from "@/lib/types";
+import type { NotificationView } from "@/lib/notifications";
+import { NotificationBell } from "./NotificationBell";
 
 const navIcon = "size-4 shrink-0";
 
@@ -152,11 +154,15 @@ export function AppSidebar({
   role: sessionRole,
   name: sessionName,
   pendingReviewCount = 0,
+  notifications = [],
+  unreadCount = 0,
 }: {
   role: UserRole;
   name: string;
   /** Real count of articles awaiting editorial review — editor/admin only. */
   pendingReviewCount?: number;
+  notifications?: NotificationView[];
+  unreadCount?: number;
 }) {
   const pathname = usePathname();
 
@@ -216,6 +222,7 @@ export function AppSidebar({
           <span className="truncate text-[13px] font-semibold text-text-muted">
             {name}
           </span>
+          <NotificationBell notifications={notifications} unreadCount={unreadCount} />
           <button
             type="button"
             onClick={() => setOpenedPath((open) => (open === pathname ? null : pathname))}
@@ -273,7 +280,7 @@ export function AppSidebar({
           >
             {presentation.avatarChar}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h5 className="truncate font-heading text-[13.5px] font-semibold text-text-main">
               {name}
             </h5>
@@ -281,6 +288,7 @@ export function AppSidebar({
               {presentation.badge}
             </span>
           </div>
+          <NotificationBell notifications={notifications} unreadCount={unreadCount} />
         </div>
 
         {/* `.sidebar-nav` */}

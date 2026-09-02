@@ -81,12 +81,12 @@ export function PanelMarketplace({
       <div className="mb-6 grid grid-cols-3 gap-4 max-[560px]:grid-cols-1">
         <StatChip icon={<ShoppingCartIcon className="size-4" />} value={open.length} label="For sale" />
         <StatChip icon={<BarChartIcon className="size-4" />} value={totalOffers} label="Offers on my articles" />
-        <StatChip icon={<BookIcon className="size-4" />} value={owned.length} label="Articles I own" accent />
+        <StatChip icon={<BookIcon className="size-4" />} value={owned.length} label="Holdings" accent />
       </div>
 
       {/* Tabs */}
       <div className="mb-5 flex gap-1 border-b border-line">
-        {([["market", "Marketplace"], ["mine", "My Listings"], ["owned", "Articles I Own"]] as const).map(
+        {([["market", "Marketplace"], ["mine", "My Listings"], ["owned", "My Holdings"]] as const).map(
           ([key, label]) => (
             <button
               key={key}
@@ -329,7 +329,7 @@ export function PanelMarketplace({
         </div>
       )}
 
-      {/* Articles I own tab */}
+      {/* My Holdings tab */}
       {tab === "owned" && (
         <div className="flex flex-col gap-4">
           {owned.length === 0 ? (

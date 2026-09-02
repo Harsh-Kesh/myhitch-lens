@@ -82,4 +82,14 @@ export const MARKETPLACE_DEFAULTS = {
   refundIfNotDelivered: true,
 } as const;
 
+/** Reader → author micro-donation defaults. */
+export const DONATION_DEFAULTS = {
+  /** Suggested one-tap amounts shown in the donation picker (AUD). */
+  presetAmounts: [5, 10, 25, 50] as const,
+  /** Stripe's practical minimum for an AUD charge. */
+  minAmount: 2,
+  /** Sanity ceiling — larger support should go through a real invoice, not this button. */
+  maxAmount: 500,
+} as const;
+
 export type PlatformFeeType = keyof typeof PLATFORM_FEES;

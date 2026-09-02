@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { appBaseUrl, getStripe, isStripeConfigured } from "@/lib/stripe";
+import { CURRENCY, DONATION_DEFAULTS } from "@/lib/platformConfig";
 
 /**
  * Record a read: increment the article's view counter and log an analytics
@@ -109,6 +111,54 @@ export async function appealTakedown(
   ]);
 
   return { ok: true };
+}
+
+/** Start a Stripe Checkout session for a one-time reader → author donation. */
+export async function createDonationCheckout(
+  articleId: string,
+  amount: number,
+): Promise<{ error: string } | { url: string }> {
+  const session = await auth();
+  if (!session?.user) return { error: "Please sign in to send support." };
+  if (!isStripeConfigured()) return { error: "Donations aren't set up yet — check back soon." };
+
+  if (!Number.isFinite(amount) || amount < DONATION_DEFAULTS.minAmount || amount > DONATION_DEFAULTS.maxAmount) {
+    return { error: `Choose an amount between $${DONATION_DEFAULTS.minAmount} and $${DONATION_DEFAULTS.maxAmount}.` };
+  }
+
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, authorId: true, status: true },
+  });
+  if (!article || article.status !== "published") return { error: "Article not found." };
+  if (article.authorId === session.user.id) return { error: "You can't donate to your own article." };
+
+  const base = appBaseUrl();
+  const stripe = getStripe();
+  const checkoutSession = await stripe.checkout.sessions.create({
+    mode: "payment",
+    line_items: [
+      {
+        price_data: {
+          currency: CURRENCY.toLowerCase(),
+          product_data: { name: `Support: ${article.title}` },
+          unit_amount: Math.round(amount * 100),
+        },
+        quantity: 1,
+      },
+    ],
+    metadata: {
+      kind: "donation",
+      articleId,
+      authorId: article.authorId,
+      donorId: session.user.id,
+    },
+    success_url: `${base}/article?id=${articleId}&donation=success`,
+    cancel_url: `${base}/article?id=${articleId}&donation=cancelled`,
+  });
+
+  if (!checkoutSession.url) return { error: "Could not start checkout. Please try again." };
+  return { url: checkoutSession.url };
 }
 
 /** Toggle the current user's like on an article and keep the counter in sync. */

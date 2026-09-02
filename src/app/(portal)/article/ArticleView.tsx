@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import { Button, buttonClasses } from "@/components/ui/Button";
@@ -22,6 +22,7 @@ import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
 import { licenseShort } from "@/lib/licenses";
 import { postComment, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
+import { SupportAuthorModal } from "./SupportAuthorModal";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -63,10 +64,13 @@ export function ArticleView({
   ownership?: OwnershipInfo | null;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const integrations = useLensValue(getIntegrations, defaultIntegrations);
   const [isPending, startTransition] = useTransition();
 
   const [draftComment, setDraftComment] = useState("");
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const donationStatus = searchParams.get("donation");
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPercent, setAudioPercent] = useState(0);
   const audioTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -167,17 +171,36 @@ export function ArticleView({
       <IntegrationWidget key="travel" icon={<SendIcon className="size-5 text-primary" />} title="JetNRest SAF Travel Search" desc="Search carbon-offset airline bookings directly to author's research hubs." action={<Button size="sm" onClick={() => alert("Launching flight lookup modal (Simulated SAF paths)...")}>Compare SAF Flights</Button>} />,
     );
   }
-  if (integrations.donations) {
+  if (integrations.donations && !article.isOwnArticle) {
     widgets.push(
-      <IntegrationWidget key="donations" icon={<HeartIcon className="size-5 text-primary" />} title={`Support ${article.author}'s Research`} desc="Send micro-grants directly to support ongoing work." action={<Button variant="secondary" size="sm" onClick={() => alert("Connecting secure donation gateway... (Simulated)")}>Send Donation</Button>} />,
+      <IntegrationWidget key="donations" icon={<HeartIcon className="size-5 text-primary" />} title={`Support ${article.author}'s Research`} desc="Send a one-time contribution directly to support ongoing work." action={<Button variant="secondary" size="sm" onClick={() => setShowSupportModal(true)}>Send Donation</Button>} />,
     );
   }
 
   return (
     <>
+      {showSupportModal && (
+        <SupportAuthorModal
+          articleId={article.id}
+          authorName={article.author}
+          onClose={() => setShowSupportModal(false)}
+        />
+      )}
+
       <button type="button" onClick={() => router.back()} className={buttonClasses("secondary", "sm", "mb-5")}>
         ← Back
       </button>
+
+      {donationStatus === "success" && (
+        <div className="mb-5 rounded-lg border border-success/30 bg-success/5 px-4 py-3 text-[13px] font-medium text-success">
+          Thank you — your support was sent to {article.author}.
+        </div>
+      )}
+      {donationStatus === "cancelled" && (
+        <div className="mb-5 rounded-lg border border-line bg-bg-tertiary px-4 py-3 text-[13px] text-text-muted">
+          Donation cancelled — no payment was made.
+        </div>
+      )}
 
       <div className="min-h-[400px] rounded-xl border border-line bg-bg-secondary p-8 max-[640px]:p-5">
         <div className="mb-6">

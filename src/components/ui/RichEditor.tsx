@@ -1182,13 +1182,16 @@ interface MagazinePlacementView {
   isEstimate: boolean;
 }
 
-// A page opening with a headline/byline has less room left for body copy than
-// a plain continuation page, so each gets its own character budget and column
-// height — otherwise every "page" holds a suspiciously identical amount of text.
-const MAGAZINE_FIRST_PAGE_BUDGET = 780;
-const MAGAZINE_CONTINUATION_BUDGET = 1450;
-const MAGAZINE_FIRST_PAGE_COLUMN_HEIGHT = 320;
-const MAGAZINE_CONTINUATION_COLUMN_HEIGHT = 480;
+// Sized to what a real magazine page actually holds in two columns of running
+// text (~550-650 words), not to what looked tidy in a small mockup box — a
+// typical few-paragraph article should read as comfortably filling PART of
+// one page, not spilling across several. A page opening with a headline/
+// byline has less room left for body copy than a plain continuation page, so
+// each gets its own budget and column height.
+const MAGAZINE_FIRST_PAGE_BUDGET = 2600;
+const MAGAZINE_CONTINUATION_BUDGET = 3800;
+const MAGAZINE_FIRST_PAGE_COLUMN_HEIGHT = 900;
+const MAGAZINE_CONTINUATION_COLUMN_HEIGHT = 1150;
 
 interface DummyIssuePiece {
   title: string;

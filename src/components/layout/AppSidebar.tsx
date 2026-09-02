@@ -151,11 +151,14 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
  * of stacking above it - nine nav links, the role simulator and the profile
  * widget would otherwise push every view a full screen down the page.
  */
-export function AppSidebar() {
+export function AppSidebar({ role: sessionRole, name: sessionName }: { role: UserRole; name: string }) {
   const pathname = usePathname();
 
-  const role = useLensValue(getUserRole, "author" as UserRole);
-  const name = useLensValue(getUserName, ROLE_NAMES.author);
+  // Fall back to the real, server-known session values (not a hardcoded
+  // role) so a fresh load/hydration never briefly renders the wrong role's
+  // nav before the localStorage sync effect catches up.
+  const role = useLensValue(getUserRole, sessionRole);
+  const name = useLensValue(getUserName, sessionName || ROLE_NAMES[sessionRole]);
   const queue = useLensValue(getQueue, defaultQueue);
   const queueCount = queue.length;
 

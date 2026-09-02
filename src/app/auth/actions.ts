@@ -18,10 +18,14 @@ const ROLE_HOME: Record<UserRole, string> = {
   admin: "/editorial",
 };
 
+/**
+ * Roles a visitor can self-assign at signup. Deliberately excludes "editor",
+ * "admin", and "corporate" — those carry moderation/publishing/suspension
+ * powers and must only be granted by an existing editor/admin (or seeded
+ * directly), never chosen by the signing-up user themselves.
+ */
 function parseRole(value: unknown): UserRole {
-  return value === "reader" || value === "author" || value === "editor"
-    ? value
-    : "reader";
+  return value === "reader" || value === "author" ? value : "reader";
 }
 
 export async function registerUser(input: {

@@ -19,10 +19,13 @@ const PRESETS: { role: UserRole; label: string; username: string; password: stri
   { role: "editor", label: "Sign in as Chief Editor Vance (Editor)", username: "editor_vance", password: "boss_editor", dotColor: "#e28743" },
 ];
 
+// "editor" (and admin/corporate) are deliberately absent — those roles carry
+// moderation/publishing/suspension powers and are never self-assignable at
+// signup; they're granted internally. Keep in sync with the server-side
+// allow-list in `parseRole` (src/app/auth/actions.ts).
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "reader", label: "Reader Profile" },
   { value: "author", label: "Author (Premium)" },
-  { value: "editor", label: "Editor (Compliance Admin)" },
 ];
 
 const presetButton =
@@ -33,7 +36,7 @@ const tabButton =
   "flex-1 cursor-pointer rounded-md border-none px-4 py-2 text-[13.5px] font-semibold transition-all duration-200";
 
 function parseRole(value: string | null): UserRole | null {
-  return value === "reader" || value === "author" || value === "editor" ? value : null;
+  return value === "reader" || value === "author" ? value : null;
 }
 
 function AuthCard() {
@@ -101,7 +104,7 @@ function AuthCard() {
           <p className="mt-1 text-[13px] text-text-muted">
             {tab === "signin"
               ? "Sign in to your vetted MYHitch Lens account."
-              : "Join as a reader, author, or editor."}
+              : "Join as a reader or author."}
           </p>
         </div>
 

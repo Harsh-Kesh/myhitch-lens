@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading, EmptyState, StatChip } from "@/components/ui/DashboardKit";
-import { BarChartIcon, BookIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
+import { BarChartIcon, BookIcon, ClockIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { getMyVerification } from "@/lib/verification";
@@ -27,7 +27,7 @@ export default async function AuthorDashboardPage() {
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
   const verification = await getMyVerification(session!.user.id);
-  const { articles, drafts, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
+  const { articles, drafts, pendingReview, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
     <>
@@ -97,6 +97,32 @@ export default async function AuthorDashboardPage() {
                   </div>
                 </Link>
                 <DeleteDraftButton draftId={draft.id} title={draft.title} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pendingReview.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className={dashHeading}>
+              <ClockIcon className="size-[18px] text-primary" /> Pending Review
+            </h3>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {pendingReview.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 rounded-lg border border-line bg-bg-secondary px-4 py-3"
+              >
+                <ClockIcon className="size-4 shrink-0 text-text-muted" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-text-main">{item.title}</p>
+                  <p className="text-[11px] text-text-muted">
+                    Submitted {new Date(item.submittedAt).toLocaleDateString()} · Awaiting editorial review
+                  </p>
+                </div>
               </div>
             ))}
           </div>

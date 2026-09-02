@@ -91,6 +91,11 @@ export interface DraftArticle {
   updatedAt: string;
   status: string;
 }
+export interface PendingReviewArticle {
+  id: string;
+  title: string;
+  submittedAt: string;
+}
 export interface RemovedArticle {
   id: string;
   title: string;
@@ -104,6 +109,7 @@ export interface RemovedArticle {
 export interface AuthorSpace {
   articles: AuthorArticle[];
   drafts: DraftArticle[];
+  pendingReview: PendingReviewArticle[];
   removedArticles: RemovedArticle[];
   copyrightStrikes: number;
   totalViews: number;
@@ -129,7 +135,7 @@ const LEDGER_LABELS: Record<string, string> = {
 
 /** The author's published portfolio + rollup stats, from the database. */
 export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
-  const [rows, draftRows, rejectedRows, ledgerByType, wallet, rank, user] = await Promise.all([
+  const [rows, draftRows, pendingReviewRows, rejectedRows, ledgerByType, wallet, rank, user] = await Promise.all([
     prisma.article.findMany({
       where: { authorId: userId, status: "published" },
       orderBy: { publishedAt: "desc" },
@@ -147,6 +153,11 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
       where: { authorId: userId, status: { in: ["draft", "changes_requested"] } },
       orderBy: { updatedAt: "desc" },
       select: { id: true, title: true, updatedAt: true, status: true },
+    }),
+    prisma.article.findMany({
+      where: { authorId: userId, status: "in_review" },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, title: true, updatedAt: true },
     }),
     prisma.article.findMany({
       where: { authorId: userId, status: "rejected" },
@@ -235,6 +246,11 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
       title: d.title || "Untitled draft",
       updatedAt: d.updatedAt.toISOString(),
       status: d.status,
+    })),
+    pendingReview: pendingReviewRows.map((p) => ({
+      id: p.id,
+      title: p.title || "Untitled",
+      submittedAt: p.updatedAt.toISOString(),
     })),
     totalViews: rows.reduce((sum, r) => sum + r.viewsCount, 0),
     totalLikes: rows.reduce((sum, r) => sum + r.likesCount, 0),

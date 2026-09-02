@@ -1182,6 +1182,111 @@ interface MagazinePlacementView {
   isEstimate: boolean;
 }
 
+// A page opening with a headline/byline has less room left for body copy than
+// a plain continuation page, so each gets its own character budget and column
+// height — otherwise every "page" holds a suspiciously identical amount of text.
+const MAGAZINE_FIRST_PAGE_BUDGET = 780;
+const MAGAZINE_CONTINUATION_BUDGET = 1450;
+const MAGAZINE_FIRST_PAGE_COLUMN_HEIGHT = 320;
+const MAGAZINE_CONTINUATION_COLUMN_HEIGHT = 480;
+
+interface DummyIssuePiece {
+  title: string;
+  category: string;
+  author: string;
+  text: string;
+}
+
+/**
+ * Standing filler for the pages around the author's own — dummy on purpose
+ * (there's no real neighbouring content for a future/hypothetical issue),
+ * keyed by page number so the same page always shows the same piece.
+ */
+const DUMMY_ISSUE_ARTICLES: DummyIssuePiece[] = [
+  {
+    title: "Data Snapshot: Regional Warehouse Growth",
+    category: "Data",
+    author: "MYHitch Research Desk",
+    text: "Warehouse footprints across Central Europe and Northern Mexico have grown by double digits for six consecutive quarters, according to newly compiled leasing data. The shift tracks closely with reshoring announcements from mid-market manufacturers, who cite tariff exposure and freight volatility as the leading drivers. Analysts caution that available skilled labour, not floor space, is quickly becoming the binding constraint on how fast these new facilities can actually open for business.",
+  },
+  {
+    title: "Q&A: Rethinking Supplier Risk",
+    category: "Interview",
+    author: "Priya Natarajan",
+    text: "We sat down with a veteran procurement lead to talk through how supplier risk scoring has changed since 2023. Her view: single-source dependency is no longer a footnote in a risk report, it's the headline. Buyers who once optimised purely for landed cost are now paying a visibility premium just to know, in real time, how exposed a given supplier really is to a single port, a single region, or a single flashpoint.",
+  },
+  {
+    title: "Opinion: Verification Is the New Moat",
+    category: "Opinion",
+    author: "MYHitch Editorial Board",
+    text: "Anyone can publish. Fewer can prove who they are, what they know, and why it should be believed. As AI-generated commentary floods every feed, the platforms that win readers back won't be the ones publishing fastest — they'll be the ones who can show their work, byline by byline, credential by credential.",
+  },
+  {
+    title: "Briefing: This Week in Trade Policy",
+    category: "Briefing",
+    author: "MYHitch Research Desk",
+    text: "A rundown of the policy moves quietly reshaping freight lanes this quarter: a new bilateral customs pilot between two mid-sized Pacific economies, a proposed tightening of rules-of-origin thresholds, and a court ruling that could unwind a years-old tariff exemption relied on by several major retailers.",
+  },
+];
+
+function dummyPieceForPage(pageNum: number): DummyIssuePiece {
+  const index = ((pageNum % DUMMY_ISSUE_ARTICLES.length) + DUMMY_ISSUE_ARTICLES.length) % DUMMY_ISSUE_ARTICLES.length;
+  return DUMMY_ISSUE_ARTICLES[index];
+}
+
+/** Splits text into page-sized chunks, breaking on word boundaries. */
+function paginateText(text: string, firstPageBudget: number, laterPageBudget: number): string[] {
+  const pages: string[] = [];
+  let remaining = text.trim();
+  if (!remaining) return [""];
+  let index = 0;
+  while (remaining.length > 0) {
+    const budget = index === 0 ? firstPageBudget : laterPageBudget;
+    if (remaining.length <= budget) {
+      pages.push(remaining);
+      break;
+    }
+    let cut = remaining.lastIndexOf(" ", budget);
+    if (cut <= 0) cut = budget;
+    pages.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+    index += 1;
+  }
+  return pages;
+}
+
+function rangeArray(start: number, end: number): number[] {
+  const out: number[] = [];
+  for (let i = start; i <= end; i++) out.push(i);
+  return out;
+}
+
+const magazinePagePillBase =
+  "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full font-sans text-[11px] font-semibold transition-colors";
+
+function DummyPieceBlock({ piece, compact }: { piece: DummyIssuePiece; compact?: boolean }) {
+  return (
+    <div className={compact ? "mt-4 border-t border-[#1c1a16]/15 pt-4" : ""}>
+      <div className="mb-1.5 text-[10.5px] font-sans font-bold tracking-[0.16em] text-[#8a3324] uppercase">{piece.category}</div>
+      <h3 className={cn("mb-2 font-bold tracking-[-0.01em] text-balance", compact ? "text-[19px] leading-[1.15]" : "text-[26px] leading-[1.12]")}>
+        {piece.title}
+      </h3>
+      <div className="mb-3 text-[11.5px] tracking-[0.02em] italic text-[#1c1a16]/70">By {piece.author}</div>
+      <div
+        className={cn(
+          "text-[13.5px] leading-[1.65] [hyphens:auto] [text-align:justify]",
+          !compact && "[column-gap:26px] [column-rule:1px_solid_rgba(28,26,22,0.12)] max-[480px]:columns-1",
+        )}
+        style={compact ? undefined : { columns: 2, maxHeight: MAGAZINE_CONTINUATION_COLUMN_HEIGHT, overflow: "hidden" }}
+      >
+        <p className={compact ? "line-clamp-3" : "first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[44px] first-letter:leading-[34px]"}>
+          {piece.text}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function MagazinePagePreview({
   title,
   content,
@@ -1196,6 +1301,7 @@ function MagazinePagePreview({
   articleId?: string;
 }) {
   const [placement, setPlacement] = useState<MagazinePlacementView | null | undefined>(undefined);
+  const [viewPage, setViewPage] = useState<number | null>(null);
 
   useEffect(() => {
     if (!articleId) return; // JSX already special-cases !articleId ahead of `placement`
@@ -1208,97 +1314,205 @@ function MagazinePagePreview({
     };
   }, [articleId]);
 
-  const excerpt = useMemo(() => {
+  const fullText = useMemo(() => {
     const text = isRichContent(content) ? extractPlainText(content) : content;
-    return text.trim().slice(0, 1100);
+    return text.trim();
   }, [content]);
-  const isTruncated = excerpt.length >= 1100;
+
+  const articlePages = useMemo(
+    () => paginateText(fullText || "Nothing written yet.", MAGAZINE_FIRST_PAGE_BUDGET, MAGAZINE_CONTINUATION_BUDGET),
+    [fullText],
+  );
+
+  if (!articleId) {
+    return (
+      <div className="mx-auto max-w-[600px] rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+        Save this draft first to see its projected magazine placement.
+      </div>
+    );
+  }
+  if (placement === undefined) {
+    return (
+      <div className="mx-auto max-w-[600px] rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+        Calculating placement…
+      </div>
+    );
+  }
+  if (placement === null) {
+    return (
+      <div className="mx-auto max-w-[600px] rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
+        Placement isn’t available for this article yet.
+      </div>
+    );
+  }
+
+  const startPage = placement.page;
+  const endPage = startPage + articlePages.length - 1;
+  const spansMultiplePages = endPage > startPage;
+  const currentPage = viewPage ?? startPage;
+  const withinArticle = currentPage >= startPage && currentPage <= endPage;
+  const isFirstPageOfArticle = currentPage === startPage;
+  const isLastPageOfArticle = currentPage === endPage;
+
+  const minNav = Math.max(1, startPage - 2);
+  const maxNav = endPage + 2;
+  const railPages = rangeArray(Math.max(1, startPage - 1), endPage + 1);
+
+  let trailingFillerPiece: DummyIssuePiece | null = null;
+  if (withinArticle && isLastPageOfArticle) {
+    const lastChunk = articlePages[articlePages.length - 1];
+    const budget = articlePages.length === 1 ? MAGAZINE_FIRST_PAGE_BUDGET : MAGAZINE_CONTINUATION_BUDGET;
+    if (lastChunk.length < budget * 0.65) trailingFillerPiece = dummyPieceForPage(endPage + 1);
+  }
 
   return (
     <div className="mx-auto max-w-[600px]">
-      {!articleId ? (
-        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
-          Save this draft first to see its projected magazine placement.
+      {placement.isEstimate && (
+        <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
+          Estimated placement — projected as if this published right now. Your actual page depends on when you
+          publish and how many other articles publish before you that week.
         </div>
-      ) : placement === undefined ? (
-        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
-          Calculating placement…
+      )}
+
+      {/* Page navigation — lets an author flip into the (dummy) pages before
+          and after theirs, so their piece reads as sitting inside a real
+          multi-article issue rather than floating alone. */}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setViewPage(Math.max(minNav, currentPage - 1))}
+          disabled={currentPage <= minNav}
+          className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ← Prev
+        </button>
+        <div className="flex items-center gap-1.5">
+          {railPages.map((p) => {
+            const isThisArticle = p >= startPage && p <= endPage;
+            const isActive = p === currentPage;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setViewPage(p)}
+                title={isThisArticle ? `Page ${p} — this article` : `Page ${p} — another article (dummy)`}
+                className={cn(
+                  magazinePagePillBase,
+                  isActive
+                    ? "bg-primary text-text-inverse"
+                    : isThisArticle
+                      ? "bg-primary-glow text-primary hover:bg-primary/20"
+                      : "bg-bg-tertiary text-text-muted hover:text-text-main",
+                )}
+              >
+                {p}
+              </button>
+            );
+          })}
         </div>
-      ) : placement === null ? (
-        <div className="rounded-xl border border-line bg-bg-secondary p-8 text-center text-[13px] text-text-muted">
-          Placement isn’t available for this article yet.
-        </div>
-      ) : (
-        <>
-          {placement.isEstimate && (
-            <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
-              Estimated placement — projected as if this published right now. Your actual page depends on when you
-              publish and how many other articles publish before you that week.
+        <button
+          type="button"
+          onClick={() => setViewPage(Math.min(maxNav, currentPage + 1))}
+          disabled={currentPage >= maxNav}
+          className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next →
+        </button>
+      </div>
+      {spansMultiplePages && (
+        <p className="mb-3 text-center text-[11px] text-text-muted">
+          This piece runs {articlePages.length} pages at its current length — pages {startPage}–{endPage}.
+        </p>
+      )}
+
+      {/* The physical page — a distinct print typography system (serif,
+          running head, folio) on purpose: the magazine is a separate
+          product from the Lens web app, and this should read as a page
+          torn from it, not another app card. */}
+      <div
+        className="mx-auto overflow-hidden rounded-[2px] bg-[#fbfaf6] text-[#1c1a16] shadow-[0_1px_2px_rgba(0,0,0,0.08),0_18px_38px_rgba(20,16,8,0.16)] ring-1 ring-black/5"
+        style={{ fontFamily: "Georgia, 'Iowan Old Style', 'Times New Roman', serif" }}
+      >
+        <div className="px-9 pt-7 pb-5 max-[480px]:px-6">
+          {/* Running head */}
+          <div className="mb-5 flex items-center justify-between border-b border-[#1c1a16]/70 pb-2">
+            <span className="font-sans text-[10px] font-bold tracking-[0.22em] uppercase">MYHitch Magazine</span>
+            <span className="font-sans text-[10px] tracking-[0.1em] text-[#1c1a16]/60 uppercase">{placement.issue.weekLabel}</span>
+          </div>
+
+          {withinArticle ? (
+            isFirstPageOfArticle ? (
+              <>
+                {placement.isFeatured && (
+                  <div className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-bold tracking-[0.14em] text-[#9a6a00] uppercase">
+                    <span>★</span> Editors&rsquo; Pick
+                  </div>
+                )}
+                {category && (
+                  <div className="mb-1.5 text-[10.5px] font-sans font-bold tracking-[0.16em] text-[#8a3324] uppercase">{category}</div>
+                )}
+                <h2 className="mb-3 text-[32px] leading-[1.08] font-bold tracking-[-0.01em] text-balance">
+                  {title || "Untitled Article"}
+                </h2>
+                <div className="mb-5 flex items-center gap-3 border-y border-[#1c1a16]/15 py-2 text-[12px] tracking-[0.02em] italic text-[#1c1a16]/70">
+                  By {author || "Author"}
+                </div>
+              </>
+            ) : (
+              <div className="mb-4 text-center text-[11.5px] tracking-[0.04em] text-[#1c1a16]/60 italic">
+                {title || "Untitled Article"} &nbsp;·&nbsp; continued from page {currentPage - 1}
+              </div>
+            )
+          ) : (
+            <div className="mb-4 text-[10px] font-sans font-bold tracking-[0.16em] text-[#1c1a16]/40 uppercase">
+              In this issue
             </div>
           )}
 
-          {/* The physical page — a distinct print typography system (serif,
-              running head, folio) on purpose: the magazine is a separate
-              product from the Lens web app, and this should read as a page
-              torn from it, not another app card. */}
-          <div
-            className="mx-auto overflow-hidden rounded-[2px] bg-[#fbfaf6] text-[#1c1a16] shadow-[0_1px_2px_rgba(0,0,0,0.08),0_18px_38px_rgba(20,16,8,0.16)] ring-1 ring-black/5"
-            style={{ fontFamily: "Georgia, 'Iowan Old Style', 'Times New Roman', serif" }}
-          >
-            <div className="px-9 pt-7 pb-5 max-[480px]:px-6">
-              {/* Running head */}
-              <div className="mb-5 flex items-center justify-between border-b border-[#1c1a16]/70 pb-2">
-                <span className="font-sans text-[10px] font-bold tracking-[0.22em] uppercase">MYHitch Magazine</span>
-                <span className="font-sans text-[10px] tracking-[0.1em] text-[#1c1a16]/60 uppercase">{placement.issue.weekLabel}</span>
-              </div>
-
-              {placement.isFeatured && (
-                <div className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-bold tracking-[0.14em] text-[#9a6a00] uppercase">
-                  <span>★</span> Editors&rsquo; Pick
-                </div>
-              )}
-              {category && (
-                <div className="mb-1.5 text-[10.5px] font-sans font-bold tracking-[0.16em] text-[#8a3324] uppercase">{category}</div>
-              )}
-              <h2 className="mb-3 text-[32px] leading-[1.08] font-bold tracking-[-0.01em] text-balance">
-                {title || "Untitled Article"}
-              </h2>
-              <div className="mb-5 flex items-center gap-3 border-y border-[#1c1a16]/15 py-2 text-[12px] tracking-[0.02em] italic text-[#1c1a16]/70">
-                By {author || "Author"}
-              </div>
-
+          {withinArticle ? (
+            <>
               <div
                 className="relative text-[13.5px] leading-[1.65] [column-gap:26px] [column-rule:1px_solid_rgba(28,26,22,0.12)] [hyphens:auto] [text-align:justify] max-[480px]:columns-1"
-                style={{ columns: 2, maxHeight: 340, overflow: "hidden" }}
+                style={{
+                  columns: 2,
+                  maxHeight: isFirstPageOfArticle ? MAGAZINE_FIRST_PAGE_COLUMN_HEIGHT : MAGAZINE_CONTINUATION_COLUMN_HEIGHT,
+                  overflow: "hidden",
+                }}
               >
-                <p className="first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[52px] first-letter:leading-[38px]">
-                  {excerpt || "Nothing written yet."}
-                  {isTruncated && "…"}
+                <p
+                  className={
+                    isFirstPageOfArticle
+                      ? "first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[52px] first-letter:leading-[38px]"
+                      : undefined
+                  }
+                >
+                  {articlePages[currentPage - startPage]}
                 </p>
-                {isTruncated && (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#fbfaf6] to-transparent" />
-                )}
               </div>
-              {isTruncated && (
+              {!isLastPageOfArticle && (
                 <p className="mt-1 text-right text-[11px] italic text-[#1c1a16]/60">
-                  Continued on page {placement.page + 1} →
+                  Continued on page {currentPage + 1} →
                 </p>
               )}
-            </div>
+              {trailingFillerPiece && <DummyPieceBlock piece={trailingFillerPiece} compact />}
+            </>
+          ) : (
+            <DummyPieceBlock piece={dummyPieceForPage(currentPage)} />
+          )}
+        </div>
 
-            {/* Folio */}
-            <div className="flex items-center justify-between border-t border-[#1c1a16]/70 px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-[#1c1a16]/60 uppercase max-[480px]:px-6">
-              <span>MYHitch Weekly</span>
-              <span>Page {placement.page} of {placement.totalArticlesThisIssue}</span>
-            </div>
-          </div>
+        {/* Folio */}
+        <div className="flex items-center justify-between border-t border-[#1c1a16]/70 px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-[#1c1a16]/60 uppercase max-[480px]:px-6">
+          <span>MYHitch Weekly</span>
+          <span>Page {currentPage} of {placement.totalArticlesThisIssue}</span>
+        </div>
+      </div>
 
-          <p className="mt-4 text-center text-[11px] text-text-muted">
-            Pages 1–3 are hand-picked by the MYHitch editorial team each week; every other page follows publish order —
-            publish earlier to land on an earlier page.
-          </p>
-        </>
-      )}
+      <p className="mt-4 text-center text-[11px] text-text-muted">
+        Pages 1–3 are hand-picked by the MYHitch editorial team each week; every other page follows publish order —
+        publish earlier to land on an earlier page. Neighbouring pages here are placeholders so you can see how your
+        piece sits inside a real issue.
+      </p>
     </div>
   );
 }

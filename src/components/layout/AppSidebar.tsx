@@ -105,7 +105,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/integrations",
     label: "Integrations API",
     icon: <PowerIcon className={navIcon} />,
-    roles: ["author", "editor", "admin"],
+    roles: ["editor", "admin"],
   },
 ];
 

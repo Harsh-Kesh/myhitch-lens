@@ -84,7 +84,7 @@ export default function IntegrationsPage() {
     <>
       <ViewHeader
         title="MYHitch Ecosystem Integrations"
-        subtitle="Toggle API modules to dynamically append product widgets and actions into your reader's article views."
+        subtitle="Platform-wide switches — toggling a module appends its widget to every article on the site, for every reader."
       />
 
       {/* Integrations Deck Grid */}

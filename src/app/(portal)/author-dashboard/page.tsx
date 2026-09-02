@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { VerificationStatus } from "./VerificationPanel";
 import { RemovedArticles } from "./RemovedArticles";
+import { DeleteDraftButton } from "./DeleteDraftButton";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -73,28 +74,30 @@ export default async function AuthorDashboardPage() {
           </div>
           <div className="flex flex-wrap gap-3">
             {drafts.map((draft) => (
-              <Link
+              <div
                 key={draft.id}
-                href={`/submit?draft=${draft.id}`}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg border px-4 py-3 transition-all hover:shadow-card",
+                  "flex items-center gap-1 rounded-lg border pr-2 pl-4 transition-all hover:shadow-card",
                   draft.status === "changes_requested"
                     ? "border-warning/40 bg-warning/5 hover:border-warning"
                     : "border-line bg-bg-secondary hover:border-primary",
                 )}
               >
-                {draft.status === "changes_requested" ? (
-                  <svg className="size-4 shrink-0 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                ) : (
-                  <PencilIcon className="size-4 shrink-0 text-text-muted" />
-                )}
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-text-main">{draft.title}</p>
-                  <p className={cn("text-[11px]", draft.status === "changes_requested" ? "font-semibold text-warning" : "text-text-muted")}>
-                    {draft.status === "changes_requested" ? "Revision requested — click to edit" : "Draft"} · {new Date(draft.updatedAt).toLocaleDateString()}
-                  </p>
-                </div>
-              </Link>
+                <Link href={`/submit?draft=${draft.id}`} className="flex min-w-0 flex-1 items-center gap-3 py-3">
+                  {draft.status === "changes_requested" ? (
+                    <svg className="size-4 shrink-0 text-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  ) : (
+                    <PencilIcon className="size-4 shrink-0 text-text-muted" />
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-text-main">{draft.title}</p>
+                    <p className={cn("text-[11px]", draft.status === "changes_requested" ? "font-semibold text-warning" : "text-text-muted")}>
+                      {draft.status === "changes_requested" ? "Revision requested — click to edit" : "Draft"} · {new Date(draft.updatedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </Link>
+                <DeleteDraftButton draftId={draft.id} title={draft.title} />
+              </div>
             ))}
           </div>
         </div>

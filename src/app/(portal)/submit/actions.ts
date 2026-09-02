@@ -224,6 +224,26 @@ export async function loadDraft(articleId: string) {
   };
 }
 
+/** Permanently delete a draft (or a draft sent back for changes). */
+export async function deleteDraft(articleId: string): Promise<ActionResult> {
+  const session = await requireAuthorSession();
+
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { authorId: true, status: true },
+  });
+  if (!article) return { error: "Draft not found." };
+  if (article.authorId !== session.user.id) return { error: "Not your draft." };
+  if (article.status !== "draft" && article.status !== "changes_requested") {
+    return { error: "Only drafts can be deleted." };
+  }
+
+  await prisma.article.delete({ where: { id: articleId } });
+
+  revalidatePath("/author-dashboard");
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

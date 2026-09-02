@@ -40,7 +40,10 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: "/submit", roles: ["author", "editor", "admin"] },
   { prefix: "/analytics", roles: ["author", "editor", "admin"] },
   { prefix: "/author-dashboard", roles: ["author", "editor", "admin"] },
-  { prefix: "/integrations", roles: ["author", "editor", "admin"] },
+  // Not author-facing: these toggles are a single, platform-wide switch (no
+  // per-author or per-article scoping behind them yet), so exposing them to
+  // authors implies personal control that doesn't actually exist.
+  { prefix: "/integrations", roles: ["editor", "admin"] },
 ];
 
 export const authConfig = {

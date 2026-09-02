@@ -13,6 +13,11 @@ export type ActionResult = { error: string } | { ok: true };
 async function requireUser() {
   const session = await auth();
   if (!session?.user) throw new Error("Not signed in");
+  // Staff accounts have no task in the marketplace — they're neither buyers
+  // nor sellers — matching the route-level rule in auth.config.ts.
+  if (["editor", "admin"].includes(session.user.role)) {
+    throw new Error("Not available for staff accounts.");
+  }
   return session.user;
 }
 

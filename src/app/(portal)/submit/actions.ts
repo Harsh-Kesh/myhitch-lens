@@ -15,7 +15,10 @@ const MAX_TAGS = 5;
 function requireAuthorSession() {
   return auth().then((session) => {
     if (!session?.user) throw new Error("Not signed in");
-    if (!["author", "editor", "admin"].includes(session.user.role)) {
+    // Editor/admin accounts are staff, not contributors — they don't author
+    // from these accounts, so authoring stays author-only, matching the
+    // route-level rule in auth.config.ts.
+    if (session.user.role !== "author") {
       throw new Error("Only authors can submit articles.");
     }
     return session;

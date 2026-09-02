@@ -58,7 +58,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/submit",
     label: "Submit Article",
     icon: <PencilIcon className={navIcon} />,
-    roles: ["author", "editor", "admin"],
+    roles: ["author"],
   },
   {
     href: "/editorial",
@@ -83,6 +83,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/panel",
     label: "Stakeholder Panel",
     icon: <DollarSignIcon className={navIcon} />,
+    roles: ["reader", "author"],
   },
   {
     href: "/analytics",
@@ -94,6 +95,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/governance",
     label: "Governance Center",
     icon: <ShieldIcon className={navIcon} />,
+    roles: ["reader", "author"],
   },
   {
     href: "/integrations",

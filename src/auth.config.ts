@@ -35,13 +35,21 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: "/editorial", roles: ["editor", "admin"] },
   { prefix: "/trust-safety", roles: ["editor", "admin"] },
   { prefix: "/magazine", roles: ["editor", "admin"] },
-  { prefix: "/submit", roles: ["author", "editor", "admin"] },
+  // Editor/admin accounts are MYHitch staff — moderation and platform
+  // operation, not authorship. They don't write from these accounts, so
+  // there's no reason for them to reach the authoring workspace itself.
+  { prefix: "/submit", roles: ["author"] },
+  { prefix: "/author-dashboard", roles: ["author"] },
   { prefix: "/analytics", roles: ["author", "editor", "admin"] },
-  { prefix: "/author-dashboard", roles: ["author", "editor", "admin"] },
   // Not author-facing: these toggles are a single, platform-wide switch (no
   // per-author or per-article scoping behind them yet), so exposing them to
   // authors implies personal control that doesn't actually exist.
   { prefix: "/integrations", roles: ["editor", "admin"] },
+  // The ownership/sponsorship marketplace and the policy/appeals page are
+  // reader- and author-facing self-service surfaces — staff have no task to
+  // perform there today (an editor isn't a buyer, seller, or appellant).
+  { prefix: "/panel", roles: ["reader", "author", "corporate"] },
+  { prefix: "/governance", roles: ["reader", "author", "corporate"] },
 ];
 
 export const authConfig = {

@@ -361,6 +361,114 @@ export async function getAnalyticsData(userId: string): Promise<AnalyticsData> {
 }
 
 // ---------------------------------------------------------------------------
+// Platform-wide analytics (editor/admin view of the Analytics Hub)
+// ---------------------------------------------------------------------------
+
+export interface TopAuthorRow {
+  id: string;
+  name: string;
+  articles: number;
+  views: number;
+  earnings: number;
+}
+export interface PlatformAnalyticsData {
+  totalViews: number;
+  totalArticles: number;
+  totalAuthors: number;
+  totalEarnings: number;
+  topArticles: AnalyticsArticle[];
+  topAuthors: TopAuthorRow[];
+  categoryShares: CategoryShare[];
+}
+
+/** Rough, platform-wide view across every author's published work — editor/admin only. */
+export async function getPlatformAnalytics(): Promise<PlatformAnalyticsData> {
+  const [articles, ledgerTotal] = await Promise.all([
+    prisma.article.findMany({
+      where: { status: "published" },
+      orderBy: { viewsCount: "desc" },
+      select: {
+        id: true,
+        title: true,
+        viewsCount: true,
+        likesCount: true,
+        authorId: true,
+        author: { select: { displayName: true } },
+        category: { select: { name: true } },
+      },
+    }),
+    prisma.revenueLedger.aggregate({
+      where: { type: { notIn: ["payout", "fee", "boost", "refund"] } },
+      _sum: { net: true },
+    }),
+  ]);
+
+  const articleIds = articles.map((a) => a.id);
+  const articleEarnings = articleIds.length > 0
+    ? await prisma.revenueLedger.groupBy({
+        by: ["articleId"],
+        where: { articleId: { in: articleIds }, type: { notIn: ["payout", "fee", "boost", "refund"] } },
+        _sum: { net: true },
+      })
+    : [];
+  const earningsByArticle = new Map(articleEarnings.map((e) => [e.articleId, Number(e._sum.net ?? 0)]));
+
+  const authorIds = [...new Set(articles.map((a) => a.authorId))];
+  const authorEarnings = authorIds.length > 0
+    ? await prisma.revenueLedger.groupBy({
+        by: ["userId"],
+        where: { userId: { in: authorIds }, type: { notIn: ["payout", "fee", "boost", "refund"] } },
+        _sum: { net: true },
+      })
+    : [];
+  const earningsByAuthor = new Map(authorEarnings.map((e) => [e.userId, Number(e._sum.net ?? 0)]));
+
+  const totalViews = articles.reduce((s, a) => s + a.viewsCount, 0);
+
+  const catCounts = new Map<string, number>();
+  for (const a of articles) {
+    catCounts.set(a.category.name, (catCounts.get(a.category.name) ?? 0) + a.viewsCount);
+  }
+  const categoryShares: CategoryShare[] = [...catCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, views]) => ({
+      label,
+      percent: totalViews > 0 ? Math.round((views / totalViews) * 100) : 0,
+    }));
+
+  const authorAgg = new Map<string, { name: string; articles: number; views: number }>();
+  for (const a of articles) {
+    const entry = authorAgg.get(a.authorId) ?? { name: a.author.displayName, articles: 0, views: 0 };
+    entry.articles += 1;
+    entry.views += a.viewsCount;
+    authorAgg.set(a.authorId, entry);
+  }
+  const topAuthors: TopAuthorRow[] = [...authorAgg.entries()]
+    .map(([id, v]) => ({ id, name: v.name, articles: v.articles, views: v.views, earnings: earningsByAuthor.get(id) ?? 0 }))
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 10);
+
+  return {
+    totalViews,
+    totalArticles: articles.length,
+    totalAuthors: authorAgg.size,
+    totalEarnings: Number(ledgerTotal._sum.net ?? 0),
+    // Capped — a platform-wide table has no natural "it's just my own work" limit.
+    topArticles: articles.slice(0, 25).map((a) => ({
+      id: a.id,
+      title: a.title,
+      author: a.author.displayName,
+      category: a.category.name,
+      views: a.viewsCount,
+      likes: a.likesCount,
+      earnings: earningsByArticle.get(a.id) ?? 0,
+    })),
+    topAuthors,
+    categoryShares,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Per-article analytics
 // ---------------------------------------------------------------------------
 

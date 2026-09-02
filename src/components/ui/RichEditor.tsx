@@ -1198,10 +1198,7 @@ function MagazinePagePreview({
   const [placement, setPlacement] = useState<MagazinePlacementView | null | undefined>(undefined);
 
   useEffect(() => {
-    if (!articleId) {
-      setPlacement(null);
-      return;
-    }
+    if (!articleId) return; // JSX already special-cases !articleId ahead of `placement`
     let cancelled = false;
     getMagazinePlacement(articleId).then((p) => {
       if (!cancelled) setPlacement(p);
@@ -1213,8 +1210,9 @@ function MagazinePagePreview({
 
   const excerpt = useMemo(() => {
     const text = isRichContent(content) ? extractPlainText(content) : content;
-    return text.trim().slice(0, 320);
+    return text.trim().slice(0, 1100);
   }, [content]);
+  const isTruncated = excerpt.length >= 1100;
 
   return (
     <div className="mx-auto max-w-[600px]">
@@ -1232,11 +1230,6 @@ function MagazinePagePreview({
         </div>
       ) : (
         <>
-          <div className="mb-4 flex items-center justify-between text-[12px] text-text-muted">
-            <span className="font-semibold text-text-main">MYHitch Magazine — weekly issue</span>
-            <span>{placement.issue.weekLabel}</span>
-          </div>
-
           {placement.isEstimate && (
             <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
               Estimated placement — projected as if this published right now. Your actual page depends on when you
@@ -1244,31 +1237,59 @@ function MagazinePagePreview({
             </div>
           )}
 
-          <div className="overflow-hidden rounded-xl border border-line bg-bg-secondary shadow-card">
-            <div className="flex items-center justify-between border-b border-line bg-bg-tertiary px-5 py-2.5">
-              <span className="font-heading text-sm font-bold tracking-wide text-text-main uppercase">MYHitch</span>
-              <span className="text-[11px] font-semibold text-text-muted">Page {placement.page} of {placement.totalArticlesThisIssue}</span>
-            </div>
-            <div className="p-6">
+          {/* The physical page — a distinct print typography system (serif,
+              running head, folio) on purpose: the magazine is a separate
+              product from the Lens web app, and this should read as a page
+              torn from it, not another app card. */}
+          <div
+            className="mx-auto overflow-hidden rounded-[2px] bg-[#fbfaf6] text-[#1c1a16] shadow-[0_1px_2px_rgba(0,0,0,0.08),0_18px_38px_rgba(20,16,8,0.16)] ring-1 ring-black/5"
+            style={{ fontFamily: "Georgia, 'Iowan Old Style', 'Times New Roman', serif" }}
+          >
+            <div className="px-9 pt-7 pb-5 max-[480px]:px-6">
+              {/* Running head */}
+              <div className="mb-5 flex items-center justify-between border-b border-[#1c1a16]/70 pb-2">
+                <span className="font-sans text-[10px] font-bold tracking-[0.22em] uppercase">MYHitch Magazine</span>
+                <span className="font-sans text-[10px] tracking-[0.1em] text-[#1c1a16]/60 uppercase">{placement.issue.weekLabel}</span>
+              </div>
+
               {placement.isFeatured && (
-                <span className="mb-3 inline-flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-[10.5px] font-bold text-white">
-                  ★ Featured — Team Pick
-                </span>
+                <div className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-bold tracking-[0.14em] text-[#9a6a00] uppercase">
+                  <span>★</span> Editors&rsquo; Pick
+                </div>
               )}
               {category && (
-                <div className="mb-2 text-[10.5px] font-bold tracking-[0.5px] text-primary uppercase">{category}</div>
+                <div className="mb-1.5 text-[10.5px] font-sans font-bold tracking-[0.16em] text-[#8a3324] uppercase">{category}</div>
               )}
-              <h2 className="mb-3 font-heading text-2xl leading-[1.2] font-bold text-text-main">
+              <h2 className="mb-3 text-[32px] leading-[1.08] font-bold tracking-[-0.01em] text-balance">
                 {title || "Untitled Article"}
               </h2>
-              <p className="mb-4 text-[11.5px] font-semibold text-text-muted uppercase">By {author || "Author"}</p>
-              <p className="text-[13.5px] leading-[1.7] text-text-main">
-                {excerpt || "Nothing written yet."}
-                {excerpt.length >= 320 && "…"}
-              </p>
+              <div className="mb-5 flex items-center gap-3 border-y border-[#1c1a16]/15 py-2 text-[12px] tracking-[0.02em] italic text-[#1c1a16]/70">
+                By {author || "Author"}
+              </div>
+
+              <div
+                className="relative text-[13.5px] leading-[1.65] [column-gap:26px] [column-rule:1px_solid_rgba(28,26,22,0.12)] [hyphens:auto] [text-align:justify] max-[480px]:columns-1"
+                style={{ columns: 2, maxHeight: 340, overflow: "hidden" }}
+              >
+                <p className="first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[52px] first-letter:leading-[38px]">
+                  {excerpt || "Nothing written yet."}
+                  {isTruncated && "…"}
+                </p>
+                {isTruncated && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#fbfaf6] to-transparent" />
+                )}
+              </div>
+              {isTruncated && (
+                <p className="mt-1 text-right text-[11px] italic text-[#1c1a16]/60">
+                  Continued on page {placement.page + 1} →
+                </p>
+              )}
             </div>
-            <div className="border-t border-line bg-bg-tertiary px-5 py-2 text-center text-[10.5px] text-text-muted">
-              continued from page {Math.max(1, placement.page - 1)} · MYHitch Magazine, {placement.issue.weekLabel}
+
+            {/* Folio */}
+            <div className="flex items-center justify-between border-t border-[#1c1a16]/70 px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-[#1c1a16]/60 uppercase max-[480px]:px-6">
+              <span>MYHitch Weekly</span>
+              <span>Page {placement.page} of {placement.totalArticlesThisIssue}</span>
             </div>
           </div>
 

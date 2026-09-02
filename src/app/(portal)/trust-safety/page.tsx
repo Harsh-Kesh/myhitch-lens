@@ -5,13 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { listVerificationQueue } from "@/lib/verification";
 import { TrustSafetyHub } from "./TrustSafetyHub";
 
-/** Editor/admin: author verification + copyright moderation, one hub. */
+const EDITORIAL_REASONS = ["plagiarism", "category", "editorial", "other"];
+
+/** Editor/admin: author verification, copyright moderation, and editorial appeals — one hub. */
 export default async function TrustSafetyPage() {
   const session = await auth();
   if (!session?.user) return null;
   if (!["editor", "admin"].includes(session.user.role)) redirect("/explore");
 
-  const [verificationQueue, rows, appealRows] = await Promise.all([
+  const [verificationQueue, rows, appealRows, editorialAppealRows, categories] = await Promise.all([
     listVerificationQueue(),
     prisma.disputeTicket.findMany({
       where: { reason: "copyright", status: { in: ["open", "under_review"] } },
@@ -22,6 +24,12 @@ export default async function TrustSafetyPage() {
       where: { reason: "copyright", appealStatus: "pending" },
       orderBy: { appealedAt: "asc" },
     }),
+    prisma.disputeTicket.findMany({
+      where: { reason: { in: EDITORIAL_REASONS }, status: { in: ["open", "under_review"] } },
+      orderBy: { createdAt: "asc" },
+      include: { user: { select: { displayName: true } } },
+    }),
+    prisma.category.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
 
   function parseSubject(subject: string): { articleId: string; articleTitle: string } {
@@ -30,12 +38,15 @@ export default async function TrustSafetyPage() {
   }
 
   const authorIds = new Set<string>();
-  const articleByTicket = new Map<string, { articleId: string; articleTitle: string; authorId: string | null }>();
-  for (const r of [...rows, ...appealRows]) {
+  const articleByTicket = new Map<
+    string,
+    { articleId: string; articleTitle: string; authorId: string | null; status: string | null }
+  >();
+  for (const r of [...rows, ...appealRows, ...editorialAppealRows]) {
     const { articleId, articleTitle } = parseSubject(r.subject);
-    const article = await prisma.article.findUnique({ where: { id: articleId }, select: { authorId: true } });
+    const article = await prisma.article.findUnique({ where: { id: articleId }, select: { authorId: true, status: true } });
     if (article) authorIds.add(article.authorId);
-    articleByTicket.set(r.id, { articleId, articleTitle, authorId: article?.authorId ?? null });
+    articleByTicket.set(r.id, { articleId, articleTitle, authorId: article?.authorId ?? null, status: article?.status ?? null });
   }
 
   const authors = await prisma.user.findMany({
@@ -77,5 +88,27 @@ export default async function TrustSafetyPage() {
     };
   });
 
-  return <TrustSafetyHub verificationQueue={verificationQueue} reports={reports} appeals={appeals} />;
+  const editorialAppeals = editorialAppealRows.map((r) => {
+    const info = articleByTicket.get(r.id)!;
+    return {
+      id: r.id,
+      articleId: info.articleId,
+      articleTitle: info.articleTitle,
+      articleStatus: info.status ?? "unknown",
+      reason: r.reason,
+      justify: r.justify,
+      createdAt: r.createdAt.toISOString(),
+      authorName: r.user.displayName,
+    };
+  });
+
+  return (
+    <TrustSafetyHub
+      verificationQueue={verificationQueue}
+      reports={reports}
+      appeals={appeals}
+      editorialAppeals={editorialAppeals}
+      categories={categories}
+    />
+  );
 }

@@ -99,10 +99,15 @@ export interface PendingReviewArticle {
 export interface RemovedArticle {
   id: string;
   title: string;
-  ticketId: string;
+  /** Which appeal mechanism applies: a copyright counter-notice, or a general editorial appeal. */
+  kind: "copyright" | "editorial";
+  /** The ticket already filed for this removal — null for "editorial" until the author files one. */
+  ticketId: string | null;
   reason: string;
   removedAt: string;
-  appealStatus: string; // none | pending | upheld | denied
+  // copyright: none | pending | upheld | denied (DisputeTicket.appealStatus)
+  // editorial: none | open | under_review | resolved | rejected (DisputeTicket.status)
+  appealStatus: string;
   appealText: string | null;
 }
 
@@ -161,7 +166,7 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
     }),
     prisma.article.findMany({
       where: { authorId: userId, status: "rejected" },
-      select: { id: true, title: true },
+      select: { id: true, title: true, updatedAt: true },
     }),
     prisma.revenueLedger.groupBy({
       by: ["type"],
@@ -176,26 +181,46 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
     prisma.user.findUnique({ where: { id: userId }, select: { copyrightStrikes: true } }),
   ]);
 
-  // Only surface rejections that were actual copyright takedowns (not plain
-  // editorial rejections) — identified by a resolved copyright DisputeTicket
-  // whose subject references the article.
+  // Every rejection is one of two kinds: a resolved copyright takedown (its
+  // own counter-notice flow via appealTakedown), or a plain editorial call —
+  // handled by the general fileEditorialAppeal flow instead.
   const removedArticles: RemovedArticle[] = [];
   for (const r of rejectedRows) {
-    const ticket = await prisma.disputeTicket.findFirst({
+    const copyrightTicket = await prisma.disputeTicket.findFirst({
       where: { subject: { startsWith: `${r.id} — ` }, reason: "copyright", status: "resolved" },
       orderBy: { createdAt: "desc" },
     });
-    if (ticket) {
+    if (copyrightTicket) {
       removedArticles.push({
         id: r.id,
         title: r.title,
-        ticketId: ticket.id,
-        reason: ticket.justify,
-        removedAt: ticket.createdAt.toISOString(),
-        appealStatus: ticket.appealStatus,
-        appealText: ticket.appealText,
+        kind: "copyright",
+        ticketId: copyrightTicket.id,
+        reason: copyrightTicket.justify,
+        removedAt: copyrightTicket.createdAt.toISOString(),
+        appealStatus: copyrightTicket.appealStatus,
+        appealText: copyrightTicket.appealText,
       });
+      continue;
     }
+
+    const [lastRevision, editorialTicket] = await Promise.all([
+      prisma.revision.findFirst({ where: { articleId: r.id }, orderBy: { createdAt: "desc" } }),
+      prisma.disputeTicket.findFirst({
+        where: { subject: { startsWith: `${r.id} — ` }, reason: { in: ["plagiarism", "category", "editorial", "other"] } },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    removedArticles.push({
+      id: r.id,
+      title: r.title,
+      kind: "editorial",
+      ticketId: editorialTicket?.id ?? null,
+      reason: lastRevision?.note || "No reason recorded.",
+      removedAt: (lastRevision?.createdAt ?? r.updatedAt).toISOString(),
+      appealStatus: editorialTicket?.status ?? "none",
+      appealText: editorialTicket?.justify ?? null,
+    });
   }
 
   const authorRankPosition = rank

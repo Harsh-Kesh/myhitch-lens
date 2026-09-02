@@ -113,6 +113,66 @@ export async function appealTakedown(
   return { ok: true };
 }
 
+const EDITORIAL_APPEAL_REASONS = ["plagiarism", "category", "editorial", "other"] as const;
+export type EditorialAppealReason = (typeof EDITORIAL_APPEAL_REASONS)[number];
+
+/**
+ * Author disputes a non-copyright editorial call on their own article — an
+ * inaccurate plagiarism flag, a miscategorisation, a rejection they think was
+ * unfair, or anything else. Separate from `appealTakedown`, which is only for
+ * reversing a copyright takedown.
+ */
+export async function fileEditorialAppeal(input: {
+  articleId: string;
+  reason: EditorialAppealReason;
+  justify: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const session = await auth();
+  if (!session?.user) return { error: "Please sign in." };
+  if (!EDITORIAL_APPEAL_REASONS.includes(input.reason)) return { error: "Choose a valid reason." };
+  const text = input.justify.trim();
+  if (!text) return { error: "Explain the issue so an editor can act on it." };
+
+  const article = await prisma.article.findUnique({
+    where: { id: input.articleId },
+    select: { authorId: true, title: true },
+  });
+  if (!article) return { error: "Article not found." };
+  if (article.authorId !== session.user.id) return { error: "Not your article." };
+
+  const existing = await prisma.disputeTicket.findFirst({
+    where: {
+      subject: { startsWith: `${input.articleId} — ` },
+      reason: input.reason,
+      status: { in: ["open", "under_review"] },
+    },
+  });
+  if (existing) return { error: "You already have an open appeal of this type for this article." };
+
+  await prisma.$transaction([
+    prisma.disputeTicket.create({
+      data: {
+        userId: session.user.id,
+        subject: `${input.articleId} — ${article.title}`,
+        reason: input.reason,
+        justify: text,
+      },
+    }),
+    prisma.notification.createMany({
+      data: (
+        await prisma.user.findMany({ where: { role: { in: ["editor", "admin"] } }, select: { id: true } })
+      ).map((u) => ({
+        userId: u.id,
+        type: "appeal",
+        text: `${session.user.name ?? "An author"} filed an appeal on "${article.title}".`,
+      })),
+    }),
+  ]);
+
+  revalidatePath("/author-dashboard");
+  return { ok: true };
+}
+
 /** Start a Stripe Checkout session for a one-time reader → author donation. */
 export async function createDonationCheckout(
   articleId: string,

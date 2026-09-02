@@ -75,10 +75,3 @@ export interface Notification {
   text: string;
 }
 
-export interface Appeal {
-  docId: string;
-  reason: string;
-  justify: string;
-  date: string;
-  status: string;
-}

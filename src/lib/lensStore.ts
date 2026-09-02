@@ -7,7 +7,6 @@ import {
   defaultQueue,
 } from "@/data/defaults";
 import type {
-  Appeal,
   Article,
   Integrations,
   Notification,
@@ -27,7 +26,6 @@ export const STORAGE_KEYS = {
   bookmarks: "lens_bookmarks",
   followed: "lens_followed",
   notifications: "lens_notifications",
-  appeals: "lens_appeals",
   integrations: "lens_integrations",
   role: "lens_role",
   user: "lens_user",
@@ -130,10 +128,6 @@ export const getNotifications = () =>
 export const saveNotifications = (value: Notification[]) =>
   write(STORAGE_KEYS.notifications, value);
 
-/* --- Governance appeals --- */
-export const getAppeals = () => read<Appeal[]>(STORAGE_KEYS.appeals, []);
-export const saveAppeals = (value: Appeal[]) => write(STORAGE_KEYS.appeals, value);
-
 /* --- Integrations --- */
 export const getIntegrations = () =>
   read<Integrations>(STORAGE_KEYS.integrations, defaultIntegrations);
@@ -175,7 +169,6 @@ export function checkAndInitDatabase(): void {
   if (!ls.getItem(STORAGE_KEYS.bookmarks)) saveBookmarks(defaultBookmarks);
   if (!ls.getItem(STORAGE_KEYS.followed)) saveFollowed(defaultFollowed);
   if (!ls.getItem(STORAGE_KEYS.notifications)) saveNotifications(defaultNotifications);
-  if (!ls.getItem(STORAGE_KEYS.appeals)) saveAppeals([]);
   if (!ls.getItem(STORAGE_KEYS.integrations)) saveIntegrations(defaultIntegrations);
   if (!ls.getItem(STORAGE_KEYS.role)) setUserRole("author");
   if (!ls.getItem(STORAGE_KEYS.user)) setUserName("Dr. Sarah Chen");

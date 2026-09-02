@@ -83,9 +83,14 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
   }
 
   function doReject(id: string) {
-    if (!confirm("Reject this submission?")) return;
+    const text = feedback.trim();
+    if (!text) {
+      alert("Please write a reason for rejecting — the author will see it and can appeal.");
+      return;
+    }
+    if (!confirm("Reject this submission? The author will be notified with your reason.")) return;
     startTransition(async () => {
-      await rejectSubmission(id);
+      await rejectSubmission(id, text);
       reset();
       router.refresh();
     });

@@ -78,9 +78,30 @@ export async function requestRevisions(articleId: string, note: string, editorNa
   revalidatePath("/author-dashboard");
 }
 
-/** Reject a submission outright. */
-export async function rejectSubmission(articleId: string): Promise<void> {
-  await requireEditor();
-  await prisma.article.update({ where: { id: articleId }, data: { status: "rejected" } });
+/** Reject a submission outright, with a reason the author can see and appeal. */
+export async function rejectSubmission(articleId: string, reason: string): Promise<void> {
+  const editor = await requireEditor();
+  const text = reason.trim();
+  if (!text) throw new Error("A reason is required");
+
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { title: true, authorId: true },
+  });
+  if (!article) throw new Error("Article not found");
+
+  await prisma.$transaction([
+    prisma.article.update({ where: { id: articleId }, data: { status: "rejected" } }),
+    prisma.revision.create({ data: { articleId, editorId: editor.id, note: text } }),
+    prisma.notification.create({
+      data: {
+        userId: article.authorId,
+        type: "rejected",
+        text: `Your article "${article.title}" was rejected: ${text.slice(0, 120)}${text.length > 120 ? "…" : ""} You can appeal this decision from your dashboard.`,
+      },
+    }),
+  ]);
+
   revalidatePath("/editorial");
+  revalidatePath("/author-dashboard");
 }

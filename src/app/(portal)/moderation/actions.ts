@@ -48,7 +48,7 @@ export async function removeArticle(ticketId: string): Promise<ActionResult> {
     await prisma.disputeTicket.update({ where: { id: ticketId }, data: { status: "resolved" } });
   }
 
-  revalidatePath("/moderation");
+  revalidatePath("/trust-safety");
   revalidatePath("/explore");
   revalidatePath("/author-dashboard");
   return { ok: true };
@@ -58,7 +58,7 @@ export async function removeArticle(ticketId: string): Promise<ActionResult> {
 export async function dismissReport(ticketId: string): Promise<ActionResult> {
   await requireEditor();
   await prisma.disputeTicket.update({ where: { id: ticketId }, data: { status: "rejected" } });
-  revalidatePath("/moderation");
+  revalidatePath("/trust-safety");
   return { ok: true };
 }
 
@@ -100,7 +100,7 @@ export async function resolveAppeal(ticketId: string, decision: "uphold" | "rein
     ]);
   }
 
-  revalidatePath("/moderation");
+  revalidatePath("/trust-safety");
   revalidatePath("/author-dashboard");
   revalidatePath("/explore");
   return { ok: true };
@@ -119,7 +119,7 @@ export async function suspendAuthor(userId: string, reason: string): Promise<Act
     }),
   ]);
 
-  revalidatePath("/moderation");
+  revalidatePath("/trust-safety");
   return { ok: true };
 }
 
@@ -132,6 +132,6 @@ export async function unsuspendAuthor(userId: string): Promise<ActionResult> {
       data: { userId, type: "suspended", text: "Your account suspension has been lifted." },
     }),
   ]);
-  revalidatePath("/moderation");
+  revalidatePath("/trust-safety");
   return { ok: true };
 }

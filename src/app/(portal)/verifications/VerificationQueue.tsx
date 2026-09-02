@@ -13,7 +13,14 @@ import type { VerificationRequestView } from "@/lib/verification";
 
 import { approveVerification, rejectVerification } from "./actions";
 
-export function VerificationQueue({ queue }: { queue: VerificationRequestView[] }) {
+export function VerificationQueue({
+  queue,
+  hideHeader = false,
+}: {
+  queue: VerificationRequestView[];
+  /** Suppress the page-level heading when embedded inside a shared hub layout. */
+  hideHeader?: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -42,10 +49,12 @@ export function VerificationQueue({ queue }: { queue: VerificationRequestView[] 
 
   return (
     <>
-      <ViewHeader
-        title="Author Verification"
-        subtitle="Review applications for the Verified blue mark. Approving confirms a real, credible voice; the badge then shows wherever the author appears."
-      />
+      {!hideHeader && (
+        <ViewHeader
+          title="Author Verification"
+          subtitle="Review applications for the Verified blue mark. Approving confirms a real, credible voice; the badge then shows wherever the author appears."
+        />
+      )}
 
       <div className={dashCard}>
         <h3 className={dashHeading}>

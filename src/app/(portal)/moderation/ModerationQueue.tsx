@@ -46,7 +46,16 @@ function StrikeBadge({ strikes }: { strikes: number }) {
   );
 }
 
-export function ModerationQueue({ reports, appeals }: { reports: Report[]; appeals: Appeal[] }) {
+export function ModerationQueue({
+  reports,
+  appeals,
+  hideHeader = false,
+}: {
+  reports: Report[];
+  appeals: Appeal[];
+  /** Suppress the page-level heading when embedded inside a shared hub layout. */
+  hideHeader?: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -97,10 +106,12 @@ export function ModerationQueue({ reports, appeals }: { reports: Report[]; appea
 
   return (
     <>
-      <ViewHeader
-        title="Copyright Moderation"
-        subtitle="Review copyright / infringement reports and take down offending articles (notice-and-takedown)."
-      />
+      {!hideHeader && (
+        <ViewHeader
+          title="Copyright Moderation"
+          subtitle="Review copyright / infringement reports and take down offending articles (notice-and-takedown)."
+        />
+      )}
 
       {appeals.length > 0 && (
         <div className={cn(dashCard, "mb-6")}>

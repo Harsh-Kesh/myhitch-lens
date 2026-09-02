@@ -90,7 +90,7 @@ export async function requestVerification(input: {
     });
   }
 
-  revalidatePath("/verifications");
+  revalidatePath("/trust-safety");
   revalidatePath("/author-dashboard");
   return { ok: true };
 }
@@ -165,7 +165,7 @@ export async function revokeVerification(userId: string, note: string): Promise<
 }
 
 function revalidateVerifiedSurfaces() {
-  revalidatePath("/verifications");
+  revalidatePath("/trust-safety");
   revalidatePath("/author-dashboard");
   revalidatePath("/explore");
   revalidatePath("/reader-dashboard");

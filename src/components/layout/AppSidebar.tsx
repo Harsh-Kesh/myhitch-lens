@@ -68,14 +68,8 @@ const NAV_LINKS: NavLink[] = [
     showQueueCount: true,
   },
   {
-    href: "/verifications",
-    label: "Verifications",
-    icon: <ShieldIcon className={navIcon} />,
-    roles: ["editor", "admin"],
-  },
-  {
-    href: "/moderation",
-    label: "Copyright Moderation",
+    href: "/trust-safety",
+    label: "Trust & Safety",
     icon: <ShieldIcon className={navIcon} />,
     roles: ["editor", "admin"],
   },

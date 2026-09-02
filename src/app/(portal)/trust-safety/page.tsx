@@ -2,15 +2,17 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { ModerationQueue } from "./ModerationQueue";
+import { listVerificationQueue } from "@/lib/verification";
+import { TrustSafetyHub } from "./TrustSafetyHub";
 
-/** Editor/admin: copyright reports awaiting a takedown decision. */
-export default async function ModerationPage() {
+/** Editor/admin: author verification + copyright moderation, one hub. */
+export default async function TrustSafetyPage() {
   const session = await auth();
   if (!session?.user) return null;
   if (!["editor", "admin"].includes(session.user.role)) redirect("/explore");
 
-  const [rows, appealRows] = await Promise.all([
+  const [verificationQueue, rows, appealRows] = await Promise.all([
+    listVerificationQueue(),
     prisma.disputeTicket.findMany({
       where: { reason: "copyright", status: { in: ["open", "under_review"] } },
       orderBy: { createdAt: "asc" },
@@ -75,5 +77,5 @@ export default async function ModerationPage() {
     };
   });
 
-  return <ModerationQueue reports={reports} appeals={appeals} />;
+  return <TrustSafetyHub verificationQueue={verificationQueue} reports={reports} appeals={appeals} />;
 }

@@ -1,0 +1,259 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
+import { mintProvenance } from "@/lib/provenance";
+import { feeFor, round2 } from "@/lib/marketplace";
+import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES } from "@/lib/exchange";
+import type { ExchangeOpportunityType } from "@prisma/client";
+
+export type ActionResult = { error: string } | { ok: true };
+
+async function requireAuthor() {
+  const session = await auth();
+  if (!session?.user || session.user.role !== "author") throw new Error("Not authorized");
+  return session.user;
+}
+
+async function requireEditor() {
+  const session = await auth();
+  if (!session?.user || !["editor", "admin"].includes(session.user.role)) {
+    throw new Error("Not authorized");
+  }
+  return session.user;
+}
+
+async function logEvent(opportunityId: string, actorId: string | null, action: string, note?: string) {
+  await prisma.exchangeOpportunityEvent.create({
+    data: { opportunityId, actorId, action, note },
+  });
+}
+
+/** Author routes an unpublished article to the Exchange Hub instead of publishing it directly. */
+export async function submitToExchangeHub(input: {
+  articleId: string;
+  type: ExchangeOpportunityType;
+  description: string;
+  expectedValue?: number | null;
+  closingAt?: string | null;
+  brandPlacementNotes?: string;
+  sponsorAckRequirements?: string;
+  commercialConditions?: string;
+}): Promise<ActionResult> {
+  const user = await requireAuthor();
+
+  const description = input.description.trim();
+  if (!description) return { error: "Describe the opportunity for reviewing businesses." };
+
+  const article = await prisma.article.findUnique({
+    where: { id: input.articleId },
+    select: { authorId: true, status: true, title: true },
+  });
+  if (!article) return { error: "Article not found." };
+  if (article.authorId !== user.id) return { error: "Not your article." };
+  if (!EXCHANGE_ELIGIBLE_STATUSES.includes(article.status as (typeof EXCHANGE_ELIGIBLE_STATUSES)[number])) {
+    return { error: "Only unpublished articles can be submitted to the Exchange Hub." };
+  }
+
+  const existingOpen = await prisma.exchangeOpportunity.findFirst({
+    where: { articleId: input.articleId, status: { in: EXCHANGE_OPEN_STATUSES } },
+  });
+  if (existingOpen) return { error: "This article already has an open Exchange Hub submission." };
+
+  const opportunity = await prisma.exchangeOpportunity.create({
+    data: {
+      articleId: input.articleId,
+      authorId: user.id,
+      type: input.type,
+      description,
+      expectedValue: input.expectedValue != null ? round2(Number(input.expectedValue)) : null,
+      closingAt: input.closingAt ? new Date(input.closingAt) : null,
+      brandPlacementNotes: input.brandPlacementNotes?.trim() || null,
+      sponsorAckRequirements: input.sponsorAckRequirements?.trim() || null,
+      commercialConditions: input.commercialConditions?.trim() || null,
+    },
+  });
+
+  const editors = await prisma.user.findMany({
+    where: { role: { in: ["editor", "admin"] } },
+    select: { id: true },
+  });
+
+  await prisma.$transaction([
+    prisma.article.update({ where: { id: input.articleId }, data: { status: "pending_exchange" } }),
+    prisma.notification.createMany({
+      data: editors.map((e) => ({
+        userId: e.id,
+        type: "exchange_submitted",
+        text: `New Exchange Hub opportunity submitted: "${article.title}" — review it in the Editorial Queue.`,
+      })),
+    }),
+  ]);
+  await logEvent(opportunity.id, user.id, "submitted", description);
+
+  revalidatePath("/exchange");
+  revalidatePath("/editorial");
+  return { ok: true };
+}
+
+/** Author withdraws a submission that hasn't been resolved yet — the article returns to normal review. */
+export async function cancelExchangeSubmission(opportunityId: string): Promise<ActionResult> {
+  const user = await requireAuthor();
+
+  const opportunity = await prisma.exchangeOpportunity.findUnique({ where: { id: opportunityId } });
+  if (!opportunity) return { error: "Opportunity not found." };
+  if (opportunity.authorId !== user.id) return { error: "Not your submission." };
+  if (!EXCHANGE_OPEN_STATUSES.includes(opportunity.status)) return { error: "This submission is already resolved." };
+
+  await prisma.$transaction([
+    prisma.exchangeOpportunity.update({ where: { id: opportunityId }, data: { status: "cancelled" } }),
+    prisma.article.update({ where: { id: opportunity.articleId }, data: { status: "in_review" } }),
+  ]);
+  await logEvent(opportunityId, user.id, "cancelled");
+
+  revalidatePath("/exchange");
+  revalidatePath("/editorial");
+  return { ok: true };
+}
+
+/**
+ * Records the outcome of negotiation — stands in for what MYHitch Connect will
+ * eventually report back once a real Exchange Hub exists. Moves the
+ * opportunity to `agreement_pending`, awaiting the separate approval step.
+ */
+export async function recordExchangeAgreement(input: {
+  opportunityId: string;
+  agreedBrandName: string;
+  agreedValue: number;
+  agreedTerms?: string;
+}): Promise<ActionResult> {
+  const editor = await requireEditor();
+
+  const brandName = input.agreedBrandName.trim();
+  if (!brandName) return { error: "Brand/sponsor name is required." };
+  const value = round2(Number(input.agreedValue));
+  if (!Number.isFinite(value) || value <= 0) return { error: "Enter a valid agreed value." };
+
+  const opportunity = await prisma.exchangeOpportunity.findUnique({ where: { id: input.opportunityId } });
+  if (!opportunity) return { error: "Opportunity not found." };
+  if (!EXCHANGE_OPEN_STATUSES.includes(opportunity.status)) return { error: "This opportunity is already resolved." };
+
+  await prisma.exchangeOpportunity.update({
+    where: { id: input.opportunityId },
+    data: {
+      status: "agreement_pending",
+      agreedBrandName: brandName,
+      agreedValue: value,
+      agreedTerms: input.agreedTerms?.trim() || null,
+    },
+  });
+  await logEvent(input.opportunityId, editor.id, "agreement_recorded", `${brandName} — A$${value.toFixed(2)}`);
+
+  revalidatePath("/editorial");
+  return { ok: true };
+}
+
+/**
+ * MYHitch Approval — applies the agreed sponsorship and publishes the article.
+ * Credits the author's wallet the same way an ownership sale does (sponsorship
+ * fee split), so the payout flow (Stripe Connect) works identically either way.
+ */
+export async function approveExchangeOpportunity(opportunityId: string): Promise<ActionResult> {
+  const editor = await requireEditor();
+
+  const opportunity = await prisma.exchangeOpportunity.findUnique({
+    where: { id: opportunityId },
+    include: { article: { select: { title: true, authorId: true } } },
+  });
+  if (!opportunity) return { error: "Opportunity not found." };
+  if (opportunity.status !== "agreement_pending") {
+    return { error: "Record the agreed terms before approving." };
+  }
+  if (opportunity.agreedValue == null || !opportunity.agreedBrandName) {
+    return { error: "Missing agreed terms." };
+  }
+
+  const value = Number(opportunity.agreedValue);
+  const fee = feeFor("sponsorship", value);
+  const net = round2(value - fee);
+
+  await prisma.$transaction([
+    prisma.article.update({
+      where: { id: opportunity.articleId },
+      data: { status: "published", verified: true, publishedAt: new Date() },
+    }),
+    prisma.exchangeOpportunity.update({
+      where: { id: opportunityId },
+      data: { status: "published", resolvedById: editor.id, resolvedAt: new Date() },
+    }),
+    prisma.wallet.upsert({
+      where: { userId: opportunity.authorId },
+      update: { balance: { increment: net } },
+      create: { userId: opportunity.authorId, balance: net },
+    }),
+    prisma.revenueLedger.create({
+      data: {
+        userId: opportunity.authorId,
+        articleId: opportunity.articleId,
+        type: "sponsorship",
+        gross: value,
+        feeApplied: fee,
+        net,
+        meta: { kind: "exchange_opportunity", opportunityId, brand: opportunity.agreedBrandName },
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId: opportunity.authorId,
+        type: "exchange_approved",
+        text: `Your Exchange Hub agreement with ${opportunity.agreedBrandName} was approved — "${opportunity.article.title}" is now published (A$${net.toFixed(2)} added to your wallet).`,
+      },
+    }),
+  ]);
+
+  await mintProvenance(opportunity.articleId);
+  await logEvent(opportunityId, editor.id, "approved_and_published");
+
+  revalidatePath("/editorial");
+  revalidatePath("/exchange");
+  revalidatePath("/explore");
+  revalidatePath("/author-dashboard");
+  return { ok: true };
+}
+
+/** Rejects the opportunity outright — the article returns to normal editorial review. */
+export async function rejectExchangeOpportunity(opportunityId: string, note: string): Promise<ActionResult> {
+  const editor = await requireEditor();
+  const text = note.trim();
+  if (!text) return { error: "A reason is required." };
+
+  const opportunity = await prisma.exchangeOpportunity.findUnique({
+    where: { id: opportunityId },
+    include: { article: { select: { title: true } } },
+  });
+  if (!opportunity) return { error: "Opportunity not found." };
+  if (!EXCHANGE_OPEN_STATUSES.includes(opportunity.status)) return { error: "This opportunity is already resolved." };
+
+  await prisma.$transaction([
+    prisma.exchangeOpportunity.update({
+      where: { id: opportunityId },
+      data: { status: "rejected", resolvedById: editor.id, resolvedAt: new Date() },
+    }),
+    prisma.article.update({ where: { id: opportunity.articleId }, data: { status: "in_review" } }),
+    prisma.notification.create({
+      data: {
+        userId: opportunity.authorId,
+        type: "exchange_rejected",
+        text: `Your Exchange Hub submission for "${opportunity.article.title}" was rejected: ${text}. It's back in the normal editorial queue.`,
+      },
+    }),
+  ]);
+  await logEvent(opportunityId, editor.id, "rejected", text);
+
+  revalidatePath("/editorial");
+  revalidatePath("/exchange");
+  revalidatePath("/author-dashboard");
+  return { ok: true };
+}

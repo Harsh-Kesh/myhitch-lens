@@ -10,6 +10,7 @@ import {
   ArrowLeftIcon,
   BarChartIcon,
   BookIcon,
+  BriefcaseIcon,
   CloseIcon,
   ColumnsIcon,
   DollarSignIcon,
@@ -85,6 +86,12 @@ const NAV_LINKS: NavLink[] = [
     label: "Stakeholder Panel",
     icon: <DollarSignIcon className={navIcon} />,
     roles: ["reader", "author"],
+  },
+  {
+    href: "/exchange",
+    label: "Exchange Hub",
+    icon: <BriefcaseIcon className={navIcon} />,
+    roles: ["author"],
   },
   {
     href: "/analytics",

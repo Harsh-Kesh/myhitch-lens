@@ -68,7 +68,7 @@ export function PanelMarketplace({
     <>
       <ViewHeader
         title="Ownership Marketplace"
-        subtitle="Members acquire commercial ownership of an article — by auction or fixed price. The author always keeps their verified byline; ownership and branding transfer to the buyer."
+        subtitle="Members acquire commercial ownership of an already-published article — by auction or fixed price. The author always keeps their verified byline; ownership and branding transfer to the buyer. Looking to line up a sponsor before an article goes live instead? Use the Exchange Hub."
         actions={
           listable.length > 0 || mine.length > 0 ? (
             <Button size="sm" onClick={() => setShowCreate(true)} disabled={listable.length === 0}>

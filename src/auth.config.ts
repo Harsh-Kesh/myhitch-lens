@@ -21,6 +21,7 @@ const PORTAL_PREFIXES = [
   "/trust-safety",
   "/magazine",
   "/panel",
+  "/exchange",
   "/article",
 ];
 
@@ -50,6 +51,10 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   // perform there today (an editor isn't a buyer, seller, or appellant).
   { prefix: "/panel", roles: ["reader", "author", "corporate"] },
   { prefix: "/governance", roles: ["reader", "author", "corporate"] },
+  // Pre-publication Exchange Hub submissions — an authoring action, same
+  // reasoning as /submit. Editors handle the resulting queue from /editorial,
+  // where they already work, rather than getting a second route.
+  { prefix: "/exchange", roles: ["author"] },
 ];
 
 export const authConfig = {

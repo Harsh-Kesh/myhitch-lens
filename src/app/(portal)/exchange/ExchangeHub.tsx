@@ -1,7 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -79,9 +78,8 @@ export function ExchangeHub({
 
       {listable.length === 0 && opportunities.length === 0 && (
         <p className="mb-4 text-[12.5px] text-text-muted">
-          You don&apos;t have an unpublished draft or in-review article yet — write one first, then you can offer it here
-          before publishing. Looking to sell an already-published article&apos;s ownership instead? That&apos;s the{" "}
-          <Link href="/panel" className="font-semibold text-primary hover:underline">Ownership Marketplace</Link>.
+          You don&apos;t have an unpublished draft or in-review article yet — write one first, then you can offer it
+          here before publishing.
         </p>
       )}
 

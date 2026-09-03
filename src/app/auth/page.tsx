@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { loginUser, registerUser } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
+import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { UserRole } from "@/lib/types";
 
 type AuthTab = "signin" | "signup";
@@ -39,12 +40,16 @@ function parseRole(value: string | null): UserRole | null {
   return value === "reader" || value === "author" ? value : null;
 }
 
+const COUNTRIES = ["Australia", "New Zealand", "United Kingdom", "United States", "Canada", "Singapore", "Other"];
+
 function AuthCard() {
   const searchParams = useSearchParams();
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [country, setCountry] = useState("");
+  const [abn, setAbn] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -60,7 +65,7 @@ function AuthCard() {
     startTransition(async () => {
       const result =
         tab === "signup"
-          ? await registerUser({ username, email, password, role })
+          ? await registerUser({ username, email, password, role, country, abn })
           : await loginUser({ username, password });
       // A successful auth redirects server-side; only errors return here.
       if (result?.error) setError(result.error);
@@ -174,6 +179,25 @@ function AuthCard() {
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {tab === "signup" && (
+            <div>
+              <label htmlFor="authCountry" className={formLabel}>Country</label>
+              <select id="authCountry" className={formControl} value={country} onChange={(e) => setCountry(e.target.value)}>
+                <option value="">Select your country</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {tab === "signup" && country === ABN_COUNTRY && (
+            <div>
+              <label htmlFor="authAbn" className={formLabel}>ABN (optional)</label>
+              <input id="authAbn" type="text" className={formControl} placeholder="11 digit ABN" value={abn} onChange={(e) => setAbn(e.target.value)} />
             </div>
           )}
 

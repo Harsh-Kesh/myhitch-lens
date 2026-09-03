@@ -13,11 +13,11 @@ import {
   BriefcaseIcon,
   CloseIcon,
   ColumnsIcon,
-  DollarSignIcon,
   FolderIcon,
   MenuIcon,
   PencilIcon,
   PowerIcon,
+  SettingsIcon,
   ShieldIcon,
   UsersIcon,
 } from "@/components/ui/icons";
@@ -54,7 +54,7 @@ const NAV_LINKS: NavLink[] = [
     icon: <UsersIcon className={navIcon} />,
     roles: ["author"],
   },
-  { href: "/explore", label: "Explore Feed", icon: <BookIcon className={navIcon} /> },
+  { href: "/explore", label: "Search Articles", icon: <BookIcon className={navIcon} /> },
   { href: "/categories", label: "Categories", icon: <FolderIcon className={navIcon} /> },
   {
     href: "/submit",
@@ -82,12 +82,6 @@ const NAV_LINKS: NavLink[] = [
     roles: ["editor", "admin"],
   },
   {
-    href: "/panel",
-    label: "Stakeholder Panel",
-    icon: <DollarSignIcon className={navIcon} />,
-    roles: ["reader", "author"],
-  },
-  {
     href: "/exchange",
     label: "Exchange Hub",
     icon: <BriefcaseIcon className={navIcon} />,
@@ -111,6 +105,7 @@ const NAV_LINKS: NavLink[] = [
     icon: <PowerIcon className={navIcon} />,
     roles: ["editor", "admin"],
   },
+  { href: "/profile", label: "My Profile", icon: <SettingsIcon className={navIcon} /> },
 ];
 
 const ROLE_PRESENTATION: Record<

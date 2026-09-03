@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 
 import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { UserRole } from "@prisma/client";
 
 export type AuthResult = { error: string } | undefined;
@@ -33,11 +34,15 @@ export async function registerUser(input: {
   email: string;
   password: string;
   role: string;
+  country?: string;
+  abn?: string;
 }): Promise<AuthResult> {
   const username = input.username.trim().toLowerCase();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
   const role = parseRole(input.role);
+  const country = input.country?.trim() || null;
+  const abn = country === ABN_COUNTRY ? input.abn?.trim() || null : null;
 
   if (!username || !email || !password) {
     return { error: "Please fill in username, email, and password." };
@@ -64,7 +69,7 @@ export async function registerUser(input: {
       passwordHash,
       role,
       displayName,
-      profile: { create: {} },
+      profile: { create: { country, abn } },
       wallet: { create: {} },
       rank: { create: {} },
     },

@@ -61,6 +61,17 @@ enum ArticleStatus {
   archived
 }
 
+/**
+ * Where the author intends this article to go once approved — chosen at
+ * submission (and re-affirmed if they later route it to the Exchange Hub
+ * from an already-submitted article). Editors see this on the review queue
+ * so they don't publish something the author meant to hold for a sponsor.
+ */
+enum ArticleDestination {
+  main_app
+  exchange_hub
+}
+
 enum ExchangeOpportunityType {
   sponsorship
   advertising
@@ -204,6 +215,8 @@ model Profile {
   website   String?
   socials   Json?    // { linkedin, x, orcid, ... } — social profile integration
   avatarUrl String?
+  country   String?  // drives which tax-id field (if any) applies — e.g. ABN for Australia
+  abn       String?  // Australian Business Number; optional, only meaningful when country = Australia
   updatedAt DateTime @updatedAt
 }
 
@@ -285,6 +298,7 @@ model Article {
   content     String
   contentType String // Blog | News | Report | Research Paper
   status      ArticleStatus @default(draft)
+  destination ArticleDestination @default(main_app)
   lane        PublishLane   @default(public)
   isPremium   Boolean       @default(false)
   verified    Boolean       @default(false)

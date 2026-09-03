@@ -6,7 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { mintProvenance } from "@/lib/provenance";
 import { feeFor, round2 } from "@/lib/marketplace";
-import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES } from "@/lib/exchange";
+import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES, isCopyrightClear } from "@/lib/exchange";
 import type { ExchangeOpportunityType } from "@prisma/client";
 
 export type ActionResult = { error: string } | { ok: true };
@@ -56,6 +56,9 @@ export async function submitToExchangeHub(input: {
   if (!EXCHANGE_ELIGIBLE_STATUSES.includes(article.status as (typeof EXCHANGE_ELIGIBLE_STATUSES)[number])) {
     return { error: "Only unpublished articles can be submitted to the Exchange Hub." };
   }
+  if (!(await isCopyrightClear(input.articleId))) {
+    return { error: "Only articles with confirmed original rights and no open copyright complaint can go to the Exchange Hub." };
+  }
 
   const existingOpen = await prisma.exchangeOpportunity.findFirst({
     where: { articleId: input.articleId, status: { in: EXCHANGE_OPEN_STATUSES } },
@@ -82,7 +85,10 @@ export async function submitToExchangeHub(input: {
   });
 
   await prisma.$transaction([
-    prisma.article.update({ where: { id: input.articleId }, data: { status: "pending_exchange" } }),
+    prisma.article.update({
+      where: { id: input.articleId },
+      data: { status: "pending_exchange", destination: "exchange_hub" },
+    }),
     prisma.notification.createMany({
       data: editors.map((e) => ({
         userId: e.id,
@@ -109,7 +115,10 @@ export async function cancelExchangeSubmission(opportunityId: string): Promise<A
 
   await prisma.$transaction([
     prisma.exchangeOpportunity.update({ where: { id: opportunityId }, data: { status: "cancelled" } }),
-    prisma.article.update({ where: { id: opportunity.articleId }, data: { status: "in_review" } }),
+    prisma.article.update({
+      where: { id: opportunity.articleId },
+      data: { status: "in_review", destination: "main_app" },
+    }),
   ]);
   await logEvent(opportunityId, user.id, "cancelled");
 
@@ -241,7 +250,10 @@ export async function rejectExchangeOpportunity(opportunityId: string, note: str
       where: { id: opportunityId },
       data: { status: "rejected", resolvedById: editor.id, resolvedAt: new Date() },
     }),
-    prisma.article.update({ where: { id: opportunity.articleId }, data: { status: "in_review" } }),
+    prisma.article.update({
+      where: { id: opportunity.articleId },
+      data: { status: "in_review", destination: "main_app" },
+    }),
     prisma.notification.create({
       data: {
         userId: opportunity.authorId,

@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
+import type { ArticleDestination } from "@prisma/client";
 
 export type ActionResult = { error: string } | undefined;
 
@@ -99,6 +100,7 @@ export async function submitForReview(input: {
   tagNames: string[];
   license: string;
   rightsAttested: boolean;
+  destination: ArticleDestination;
 }): Promise<ActionResult> {
   const session = await requireAuthorSession();
   const suspendedError = await checkNotSuspended(session.user.id);
@@ -110,6 +112,9 @@ export async function submitForReview(input: {
     return { error: "You must confirm you own or are licensed for all content and media." };
   }
   if (!isLicenseCode(input.license)) return { error: "Choose a valid content licence." };
+  if (input.destination !== "main_app" && input.destination !== "exchange_hub") {
+    return { error: "Choose where this article should go once approved." };
+  }
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
@@ -154,6 +159,7 @@ export async function submitForReview(input: {
       categoryId: bestCategory,
       license: input.license,
       rightsAttested: true,
+      destination: input.destination,
       summary: `${contentText.slice(0, 140)}${contentText.length > 140 ? "…" : ""}`,
       tags: {
         deleteMany: {},
@@ -202,6 +208,7 @@ export async function loadDraft(articleId: string) {
       contentType: true,
       status: true,
       license: true,
+      destination: true,
       authorId: true,
       tags: { include: { tag: true } },
       revisions: {
@@ -220,6 +227,7 @@ export async function loadDraft(articleId: string) {
     contentType: article.contentType,
     status: article.status,
     license: article.license,
+    destination: article.destination,
     tags: article.tags.map((t) => t.tag.name),
     revisionNotes: article.revisions
       .filter((r) => r.note)

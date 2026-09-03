@@ -77,6 +77,16 @@ export const MARKETPLACE_DEFAULTS = {
   /** Minimum wallet balance before an author can withdraw (AUD). */
   payoutMinimum: 50,
 
+  /**
+   * Fee-bearing policy for author payouts (Stripe Connect): the author bears
+   * BOTH the MYHitch platform fee (already deducted before crediting the
+   * wallet — see `feeFor`) AND Stripe's own transfer/payout fee. MYHitch
+   * absorbs neither. When the Connect payout flow is built, structure the
+   * transfer so Stripe's fee comes out of the connected account, not the
+   * platform account — do not net it out of MYHitch's cut.
+   */
+  authorBearsStripeFee: true,
+
   /** Automatic refunds. */
   refundIfAuthorRejects: true,
   refundIfNotDelivered: true,
@@ -93,3 +103,6 @@ export const DONATION_DEFAULTS = {
 } as const;
 
 export type PlatformFeeType = keyof typeof PLATFORM_FEES;
+
+/** Country with a recognised tax-id field today (ABN) — everything else has none yet. */
+export const ABN_COUNTRY = "Australia";

@@ -22,7 +22,6 @@ import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
 import { licenseShort } from "@/lib/licenses";
 import { postComment, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
-import { SupportAuthorModal } from "./SupportAuthorModal";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -41,7 +40,7 @@ const actionButton =
 const widgetBox =
   "flex items-center justify-between gap-4 rounded-lg border border-line bg-bg-primary p-4 max-[560px]:flex-col max-[560px]:items-stretch max-[560px]:gap-3";
 
-function IntegrationWidget({ icon, title, desc, action }: { icon: ReactNode; title: string; desc: string; action: ReactNode }) {
+function IntegrationWidget({ icon, title, desc, action }: { icon: ReactNode; title: string; desc: string; action?: ReactNode }) {
   return (
     <div className={widgetBox}>
       <div className="flex min-w-0 items-center gap-3">
@@ -69,7 +68,6 @@ export function ArticleView({
   const [isPending, startTransition] = useTransition();
 
   const [draftComment, setDraftComment] = useState("");
-  const [showSupportModal, setShowSupportModal] = useState(false);
   const donationStatus = searchParams.get("donation");
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioPercent, setAudioPercent] = useState(0);
@@ -173,20 +171,12 @@ export function ArticleView({
   }
   if (integrations.donations && !article.isOwnArticle) {
     widgets.push(
-      <IntegrationWidget key="donations" icon={<HeartIcon className="size-5 text-primary" />} title={`Support ${article.author}'s Research`} desc="Send a one-time contribution directly to support ongoing work." action={<Button variant="secondary" size="sm" onClick={() => setShowSupportModal(true)}>Send Donation</Button>} />,
+      <IntegrationWidget key="donations" icon={<HeartIcon className="size-5 text-primary" />} title={`Support ${article.author}'s Research`} desc="Direct one-time contributions to authors now happen through MYHitch Impact, not Lens." />,
     );
   }
 
   return (
     <>
-      {showSupportModal && (
-        <SupportAuthorModal
-          articleId={article.id}
-          authorName={article.author}
-          onClose={() => setShowSupportModal(false)}
-        />
-      )}
-
       <button type="button" onClick={() => router.back()} className={buttonClasses("secondary", "sm", "mb-5")}>
         ← Back
       </button>

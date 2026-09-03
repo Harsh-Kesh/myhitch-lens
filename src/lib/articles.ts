@@ -71,6 +71,8 @@ export interface ReviewQueueItem {
   readability: string;
   sentiment: string;
   content: string;
+  /** Author's chosen destination — gates whether "Approve & Publish" applies. */
+  destination: "main_app" | "exchange_hub";
 }
 
 function scoreField(aiScores: unknown, key: string, fallback: string | number) {
@@ -106,6 +108,7 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     readability: String(scoreField(row.aiScores, "readability", "Good (Flesch: 65)")),
     sentiment: String(scoreField(row.aiScores, "sentiment", "Analytical")),
     content: row.content,
+    destination: row.destination,
   }));
 }
 

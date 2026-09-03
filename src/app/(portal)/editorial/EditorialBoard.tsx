@@ -152,6 +152,15 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                   <strong>Type:</strong> {selected.type}
                 </span>
               </div>
+
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                  selected.destination === "exchange_hub" ? "bg-warning/10 text-warning" : "bg-primary-glow text-primary",
+                )}
+              >
+                {selected.destination === "exchange_hub" ? "Destination: Exchange Hub" : "Destination: MYHitch Main App"}
+              </span>
             </div>
 
             {/* Article body — full-width reading area */}
@@ -220,15 +229,25 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                 </select>
               </div>
 
-              <div className="mb-5">
-                <label htmlFor="pubScheduleDate" className={formLabel}>Schedule Publication</label>
-                <input id="pubScheduleDate" type="datetime-local" className={formControlSm} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
-              </div>
+              {selected.destination === "exchange_hub" ? (
+                <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[12px] text-text-main">
+                  The author flagged this for the Exchange Hub, not direct publication. It&apos;ll leave this queue
+                  once they submit it there — resolve it from the Exchange Hub Opportunities section below instead of
+                  approving it here.
+                </div>
+              ) : (
+                <div className="mb-5">
+                  <label htmlFor="pubScheduleDate" className={formLabel}>Schedule Publication</label>
+                  <input id="pubScheduleDate" type="datetime-local" className={formControlSm} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                </div>
+              )}
 
               <div className="flex flex-col gap-2">
-                <Button disabled={isPending} onClick={() => doApprove(selected.id)} className="w-full">
-                  Approve &amp; Publish
-                </Button>
+                {selected.destination !== "exchange_hub" && (
+                  <Button disabled={isPending} onClick={() => doApprove(selected.id)} className="w-full">
+                    Approve &amp; Publish
+                  </Button>
+                )}
                 <Button variant="secondary" disabled={isPending} onClick={() => doRevise(selected.id)} className="w-full">
                   Request Revisions
                 </Button>
@@ -310,7 +329,7 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                   <span>{localTime(item.submittedAt)}</span>
                 </div>
                 <div className="mb-2 text-[14.5px] font-semibold">{item.title}</div>
-                <div className="flex items-center justify-between text-[11.5px]">
+                <div className="mb-2 flex items-center justify-between text-[11.5px]">
                   <span>By {item.author}</span>
                   <span
                     className={cn(
@@ -323,6 +342,11 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                     AI Score: {item.aiScore}
                   </span>
                 </div>
+                {item.destination === "exchange_hub" && (
+                  <span className="inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning uppercase">
+                    Exchange Hub
+                  </span>
+                )}
               </div>
             ))}
           </div>

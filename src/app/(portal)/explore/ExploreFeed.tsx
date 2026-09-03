@@ -26,6 +26,8 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const selectedCategory = pickedCategory ?? routeCategory ?? "All";
 
+  const hasActiveSearch = query.trim().length > 0 || selectedCategory !== "All" || verifiedOnly;
+
   const filtered = useMemo(() => {
     const search = query.toLowerCase();
     return articles.filter((article) => {
@@ -43,11 +45,14 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
     });
   }, [articles, selectedCategory, query, verifiedOnly]);
 
+  const RECENT_COUNT = 8;
+  const results = hasActiveSearch ? filtered : articles.slice(0, RECENT_COUNT);
+
   return (
     <>
       <ViewHeader
-        title="Knowledge Feed"
-        subtitle="Trusted research papers, reports, news, and blogs."
+        title="Search Articles"
+        subtitle="Find published research, reports, news, and blogs by title, author, or category."
         actions={
           <div className="max-[640px]:w-full">
             <input
@@ -94,13 +99,19 @@ export function ExploreFeed({ articles }: { articles: FeedArticle[] }) {
         </button>
       </div>
 
+      {!hasActiveSearch && articles.length > 0 && (
+        <p className="mb-4 text-[12.5px] text-text-muted">
+          Recently published — search above to find something specific.
+        </p>
+      )}
+
       <div className={articlesGrid}>
-        {filtered.length === 0 ? (
+        {results.length === 0 ? (
           <p className="col-[1/-1] p-10 text-center text-text-muted">
-            No verified articles match this search.
+            {hasActiveSearch ? "No articles match this search." : "No published articles yet."}
           </p>
         ) : (
-          filtered.map((article) => <ArticleCard key={article.id} article={article} />)
+          results.map((article) => <ArticleCard key={article.id} article={article} />)
         )}
       </div>
     </>

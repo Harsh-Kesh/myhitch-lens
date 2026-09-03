@@ -17,6 +17,12 @@ async function requireEditor() {
 /** Approve a submission and make it live (optionally at a chosen date). */
 export async function approveAndPublish(articleId: string, scheduleISO?: string): Promise<void> {
   await requireEditor();
+
+  const existing = await prisma.article.findUnique({ where: { id: articleId }, select: { destination: true } });
+  if (existing?.destination === "exchange_hub") {
+    throw new Error("This article is destined for the Exchange Hub — resolve it from there instead of publishing directly.");
+  }
+
   const when = scheduleISO ? new Date(scheduleISO) : new Date();
   const publishAt = Number.isNaN(when.getTime()) ? new Date() : when;
 

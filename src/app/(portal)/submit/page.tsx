@@ -10,6 +10,8 @@ import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import { LICENSE_OPTIONS } from "@/lib/licenses";
 
+import type { ArticleDestination } from "@prisma/client";
+
 import { createDraft, saveDraft, submitForReview, listTags, loadDraft, getMyProfileSummary } from "./actions";
 
 const CONTENT_TYPES = [
@@ -33,6 +35,7 @@ export default function SubmitPage() {
   const [content, setContent] = useState<string>("");
   const [contentType, setContentType] = useState("Blog");
   const [license, setLicense] = useState("all_rights_reserved");
+  const [destination, setDestination] = useState<ArticleDestination>("main_app");
   const [rightsAttested, setRightsAttested] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [draftLoading, setDraftLoading] = useState(!!editId);
@@ -74,6 +77,7 @@ export default function SubmitPage() {
         setContentType(draft.contentType);
         setSelectedTags(draft.tags);
         if (draft.license) setLicense(draft.license);
+        if (draft.destination) setDestination(draft.destination);
         setDraftStatus(draft.status);
         if (draft.revisionNotes && draft.revisionNotes.length > 0) {
           setRevisionNotes(draft.revisionNotes);
@@ -154,6 +158,7 @@ export default function SubmitPage() {
         tagNames: selectedTags,
         license,
         rightsAttested,
+        destination,
       });
       if (result?.error) {
         alert(result.error);
@@ -387,6 +392,56 @@ export default function SubmitPage() {
               </select>
               <p className="mt-1.5 text-[11px] text-text-muted">
                 Shown publicly on your article and recorded in its content credential.
+              </p>
+            </div>
+
+            {/* Destination */}
+            <div className="mb-5">
+              <label className={formLabel}>Where should this go once approved?</label>
+              <div className="flex flex-col gap-2">
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2 rounded-lg border p-3",
+                    destination === "main_app" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="destination"
+                    checked={destination === "main_app"}
+                    onChange={() => setDestination("main_app")}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span className="text-[12.5px] text-text-main">
+                    MYHitch Main App
+                    <span className="mt-0.5 block text-[11px] text-text-muted">
+                      Publish normally once approved — for your own marketing and reach.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2 rounded-lg border p-3",
+                    destination === "exchange_hub" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="destination"
+                    checked={destination === "exchange_hub"}
+                    onChange={() => setDestination("exchange_hub")}
+                    className="mt-0.5 size-4 accent-primary"
+                  />
+                  <span className="text-[12.5px] text-text-main">
+                    Exchange Hub
+                    <span className="mt-0.5 block text-[11px] text-text-muted">
+                      Hold for a sponsor before publishing — submit the opportunity from Exchange Hub after this is approved.
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <p className="mt-1.5 text-[11px] text-text-muted">
+                Your editor sees this choice — you can still switch to the Exchange Hub later from an unpublished article.
               </p>
             </div>
 

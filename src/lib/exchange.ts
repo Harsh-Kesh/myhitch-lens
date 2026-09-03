@@ -15,18 +15,45 @@ export interface ExchangeListableArticle {
   category: string;
 }
 
-/** The author's own articles eligible to submit as a new opportunity right now. */
-export async function listExchangeEligibleArticles(authorId: string): Promise<ExchangeListableArticle[]> {
-  const articles = await prisma.article.findMany({
-    where: {
-      authorId,
-      status: { in: [...EXCHANGE_ELIGIBLE_STATUSES] },
-      exchangeOpportunities: { none: { status: { in: EXCHANGE_OPEN_STATUSES } } },
-    },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true, category: { select: { name: true } } },
+/**
+ * Article ids with an unresolved copyright complaint against them right now.
+ * `DisputeTicket.subject` encodes the article as `"<id> — <title>"` — there's
+ * no direct FK, so this parses it rather than joining.
+ */
+async function articleIdsWithOpenCopyrightDispute(): Promise<Set<string>> {
+  const tickets = await prisma.disputeTicket.findMany({
+    where: { reason: "copyright", status: { in: ["open", "under_review"] } },
+    select: { subject: true },
   });
-  return articles.map((a) => ({ id: a.id, title: a.title, category: a.category.name }));
+  return new Set(tickets.map((t) => t.subject.split(" — ")[0]));
+}
+
+/** True if the article has confirmed original rights and no active copyright complaint. */
+export async function isCopyrightClear(articleId: string): Promise<boolean> {
+  const article = await prisma.article.findUnique({ where: { id: articleId }, select: { rightsAttested: true } });
+  if (!article?.rightsAttested) return false;
+  const disputed = await articleIdsWithOpenCopyrightDispute();
+  return !disputed.has(articleId);
+}
+
+/** The author's own articles eligible to submit as a new opportunity right now — copyright-clear only. */
+export async function listExchangeEligibleArticles(authorId: string): Promise<ExchangeListableArticle[]> {
+  const [articles, disputedIds] = await Promise.all([
+    prisma.article.findMany({
+      where: {
+        authorId,
+        status: { in: [...EXCHANGE_ELIGIBLE_STATUSES] },
+        rightsAttested: true,
+        exchangeOpportunities: { none: { status: { in: EXCHANGE_OPEN_STATUSES } } },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, title: true, category: { select: { name: true } } },
+    }),
+    articleIdsWithOpenCopyrightDispute(),
+  ]);
+  return articles
+    .filter((a) => !disputedIds.has(a.id))
+    .map((a) => ({ id: a.id, title: a.title, category: a.category.name }));
 }
 
 export interface AuthorOpportunity {

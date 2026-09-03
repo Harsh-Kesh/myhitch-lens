@@ -23,6 +23,7 @@ const PORTAL_PREFIXES = [
   "/panel",
   "/exchange",
   "/article",
+  "/profile",
 ];
 
 /**

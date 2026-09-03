@@ -149,6 +149,18 @@ export async function fileEditorialAppeal(input: {
   });
   if (existing) return { error: "You already have an open appeal of this type for this article." };
 
+  // Cap total editorial appeal attempts per article, regardless of reason —
+  // prevents indefinite re-filing after each rejection.
+  const priorAppealCount = await prisma.disputeTicket.count({
+    where: {
+      subject: { startsWith: `${input.articleId} — ` },
+      reason: { in: [...EDITORIAL_APPEAL_REASONS] },
+    },
+  });
+  if (priorAppealCount >= 2) {
+    return { error: "You've reached the maximum of 2 appeals for this article." };
+  }
+
   await prisma.$transaction([
     prisma.disputeTicket.create({
       data: {

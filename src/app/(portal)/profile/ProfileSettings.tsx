@@ -9,6 +9,7 @@ import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 
 import { ABN_COUNTRY } from "@/lib/platformConfig";
+import { startStripeConnectOnboarding, type ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { changePassword, updateProfile } from "./actions";
 
 const COUNTRIES = [
@@ -29,6 +30,7 @@ export function ProfileSettings({
   website,
   country,
   abn,
+  connectStatus,
 }: {
   displayName: string;
   email: string;
@@ -37,6 +39,7 @@ export function ProfileSettings({
   website: string;
   country: string;
   abn: string;
+  connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -53,6 +56,15 @@ export function ProfileSettings({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [isPasswordPending, startPasswordTransition] = useTransition();
+  const [isConnecting, startConnecting] = useTransition();
+
+  function doConnect() {
+    startConnecting(async () => {
+      const res = await startStripeConnectOnboarding();
+      if ("error" in res) alert(res.error);
+      else window.location.href = res.url;
+    });
+  }
 
   function saveProfile() {
     setProfileMsg(null);
@@ -147,6 +159,37 @@ export function ProfileSettings({
           {isPending ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+
+      {connectStatus && (
+        <div className={dashCard + " mt-6"}>
+          <h3 className={dashHeading}>Payouts</h3>
+          {!connectStatus.configured ? (
+            <p className="text-[12.5px] text-text-muted">Payouts aren&apos;t set up yet — check back soon.</p>
+          ) : !connectStatus.connected ? (
+            <>
+              <p className="mb-4 text-[12.5px] text-text-muted">
+                Connect a Stripe account to withdraw your earnings from the Author Dashboard.
+              </p>
+              <Button size="sm" disabled={isConnecting} onClick={doConnect}>
+                {isConnecting ? "Redirecting..." : "Connect Stripe Account"}
+              </Button>
+            </>
+          ) : !connectStatus.payoutsEnabled ? (
+            <>
+              <p className="mb-4 text-[12.5px] text-text-muted">
+                Your Stripe account needs a few more details before payouts can go out.
+              </p>
+              <Button size="sm" disabled={isConnecting} onClick={doConnect}>
+                {isConnecting ? "Redirecting..." : "Finish Connecting Stripe"}
+              </Button>
+            </>
+          ) : (
+            <p className="text-[12.5px] text-success">
+              Your Stripe account is connected and ready to receive payouts.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className={dashCard + " mt-6"}>
         <h3 className={dashHeading}>Change Password</h3>

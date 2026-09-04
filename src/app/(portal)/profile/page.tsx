@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { ProfileSettings } from "./ProfileSettings";
 
 /** Account settings — open to every signed-in role. */
@@ -20,6 +21,8 @@ export default async function ProfilePage() {
   });
   if (!user) redirect("/auth");
 
+  const connectStatus = session.user.role === "author" ? await getConnectStatus(session.user.id) : null;
+
   return (
     <ProfileSettings
       displayName={user.displayName}
@@ -29,6 +32,7 @@ export default async function ProfilePage() {
       website={user.profile?.website ?? ""}
       country={user.profile?.country ?? ""}
       abn={user.profile?.abn ?? ""}
+      connectStatus={connectStatus}
     />
   );
 }

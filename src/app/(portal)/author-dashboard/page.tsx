@@ -1,17 +1,17 @@
 import Link from "next/link";
 
 import { auth } from "@/auth";
-import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading, EmptyState, StatChip } from "@/components/ui/DashboardKit";
 import { BarChartIcon, BookIcon, ClockIcon, DollarSignIcon, HeartIcon, PencilIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { getMyVerification } from "@/lib/verification";
 import { cn } from "@/lib/cn";
-import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { VerificationStatus } from "./VerificationPanel";
 import { RemovedArticles } from "./RemovedArticles";
 import { DeleteDraftButton } from "./DeleteDraftButton";
+import { MonetizationPanel } from "./MonetizationPanel";
+import { getConnectStatus, getPayoutHistory } from "./payoutActions";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -27,6 +27,8 @@ export default async function AuthorDashboardPage() {
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
   const verification = await getMyVerification(session!.user.id);
+  const connectStatus = await getConnectStatus(session!.user.id);
+  const { totalWithdrawn } = await getPayoutHistory(session!.user.id);
   const { articles, drafts, pendingReview, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
@@ -169,38 +171,13 @@ export default async function AuthorDashboardPage() {
           </div>
         </div>
 
-        {/* Monetization */}
-        <div className={cn(dashCard, "self-start")}>
-          <h3 className={dashHeading}>
-            <DollarSignIcon className="size-[18px] text-primary" /> Monetization
-          </h3>
-          <div className="rounded-lg border border-line bg-bg-primary p-4">
-            <span className="text-[11px] font-medium text-text-muted uppercase">Available balance</span>
-            <span className="mt-1 block font-heading text-2xl font-extrabold text-success">{formatAUD(walletBalance)}</span>
-          </div>
-          {earningsBreakdown.length > 0 ? (
-            <div className="mt-4 flex flex-col gap-3">
-              {earningsBreakdown.map((row) => (
-                <div key={row.label} className="flex justify-between text-[13px]">
-                  <span className="text-text-muted">{row.label}</span>
-                  <span className="font-medium text-success">+{formatAUD(row.value)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between border-t border-line pt-3 text-[13px] font-semibold">
-                <span className="text-text-main">Total earned</span>
-                <span className="text-success">{formatAUD(totalEarnings)}</span>
-              </div>
-            </div>
-          ) : (
-            <p className="mt-4 text-center text-[12px] text-text-muted">No earnings yet — revenue appears as readers engage with your content.</p>
-          )}
-          <Button size="sm" className="mt-5 w-full" disabled={walletBalance < MARKETPLACE_DEFAULTS.payoutMinimum}>
-            Withdraw Funds
-          </Button>
-          <p className="mt-2 text-center text-[10.5px] text-text-muted">
-            Minimum payout A${MARKETPLACE_DEFAULTS.payoutMinimum} · paid via Stripe
-          </p>
-        </div>
+        <MonetizationPanel
+          walletBalance={walletBalance}
+          totalEarnings={totalEarnings}
+          totalWithdrawn={totalWithdrawn}
+          earningsBreakdown={earningsBreakdown}
+          connectStatus={connectStatus}
+        />
       </div>
     </>
   );

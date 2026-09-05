@@ -183,15 +183,43 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
 
   // Every rejection is one of two kinds: a resolved copyright takedown (its
   // own counter-notice flow via appealTakedown), or a plain editorial call —
-  // handled by the general fileEditorialAppeal flow instead.
-  const removedArticles: RemovedArticle[] = [];
-  for (const r of rejectedRows) {
-    const copyrightTicket = await prisma.disputeTicket.findFirst({
-      where: { subject: { startsWith: `${r.id} — ` }, reason: "copyright", status: "resolved" },
-      orderBy: { createdAt: "desc" },
-    });
+  // handled by the general fileEditorialAppeal flow instead. Batched into
+  // one query per ticket type instead of one round-trip per article.
+  const rejectedIds = rejectedRows.map((r) => r.id);
+  const subjectMatchesAny = rejectedIds.map((id) => ({ subject: { startsWith: `${id} — ` } }));
+  const [copyrightTickets, editorialTickets, revisions] = rejectedIds.length
+    ? await Promise.all([
+        prisma.disputeTicket.findMany({
+          where: { OR: subjectMatchesAny, reason: "copyright", status: "resolved" },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.disputeTicket.findMany({
+          where: { OR: subjectMatchesAny, reason: { in: ["plagiarism", "category", "editorial", "other"] } },
+          orderBy: { createdAt: "desc" },
+        }),
+        prisma.revision.findMany({ where: { articleId: { in: rejectedIds } }, orderBy: { createdAt: "desc" } }),
+      ])
+    : [[], [], []];
+
+  // Each list is ordered newest-first, so keeping only the first entry per
+  // article id yields the most recent one — same result as the old findFirst-per-row loop.
+  const articleIdFromSubject = (subject: string) => subject.split(" — ")[0];
+  const latestByArticle = <T extends { articleId?: string; subject?: string }>(rows: T[], keyOf: (r: T) => string) => {
+    const map = new Map<string, T>();
+    for (const row of rows) {
+      const key = keyOf(row);
+      if (!map.has(key)) map.set(key, row);
+    }
+    return map;
+  };
+  const copyrightByArticle = latestByArticle(copyrightTickets, (t) => articleIdFromSubject(t.subject));
+  const editorialByArticle = latestByArticle(editorialTickets, (t) => articleIdFromSubject(t.subject));
+  const revisionByArticle = latestByArticle(revisions, (r) => r.articleId);
+
+  const removedArticles: RemovedArticle[] = rejectedRows.map((r) => {
+    const copyrightTicket = copyrightByArticle.get(r.id);
     if (copyrightTicket) {
-      removedArticles.push({
+      return {
         id: r.id,
         title: r.title,
         kind: "copyright",
@@ -200,18 +228,12 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
         removedAt: copyrightTicket.createdAt.toISOString(),
         appealStatus: copyrightTicket.appealStatus,
         appealText: copyrightTicket.appealText,
-      });
-      continue;
+      };
     }
 
-    const [lastRevision, editorialTicket] = await Promise.all([
-      prisma.revision.findFirst({ where: { articleId: r.id }, orderBy: { createdAt: "desc" } }),
-      prisma.disputeTicket.findFirst({
-        where: { subject: { startsWith: `${r.id} — ` }, reason: { in: ["plagiarism", "category", "editorial", "other"] } },
-        orderBy: { createdAt: "desc" },
-      }),
-    ]);
-    removedArticles.push({
+    const lastRevision = revisionByArticle.get(r.id);
+    const editorialTicket = editorialByArticle.get(r.id);
+    return {
       id: r.id,
       title: r.title,
       kind: "editorial",
@@ -220,8 +242,8 @@ export async function getAuthorSpace(userId: string): Promise<AuthorSpace> {
       removedAt: (lastRevision?.createdAt ?? r.updatedAt).toISOString(),
       appealStatus: editorialTicket?.status ?? "none",
       appealText: editorialTicket?.justify ?? null,
-    });
-  }
+    };
+  });
 
   const authorRankPosition = rank
     ? await prisma.contributorRank.count({ where: { points: { gt: rank.points } } })

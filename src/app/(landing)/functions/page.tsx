@@ -155,7 +155,7 @@ const SPECS: Spec[] = [
       },
       {
         term: "Dynamic Filtering:",
-        text: "Allows readers to instantly filter the feed using sector tags or category grid cards.",
+        text: "Allows readers to instantly filter search results using sector tags or category grid cards.",
       },
     ],
   },

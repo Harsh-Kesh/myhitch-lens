@@ -1,16 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 
+import type { UserRole } from "@prisma/client";
+
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import { startStripeConnectOnboarding, type ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
-import { changePassword, updateProfile } from "./actions";
+import { becomeAuthor, changePassword, updateAvatar, updateProfile } from "./actions";
 
 const COUNTRIES = [
   "Australia",
@@ -30,6 +32,8 @@ export function ProfileSettings({
   website,
   country,
   abn,
+  avatarUrl,
+  role,
   connectStatus,
 }: {
   displayName: string;
@@ -39,10 +43,47 @@ export function ProfileSettings({
   website: string;
   country: string;
   abn: string;
+  avatarUrl: string | null;
+  role: UserRole;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarPreview, setAvatarPreview] = useState(avatarUrl);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+
+  async function handleAvatarSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setAvatarMsg(null);
+    setIsUploadingAvatar(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) {
+        setAvatarMsg(uploadJson.error || "Upload failed.");
+        return;
+      }
+
+      const res = await updateAvatar(uploadJson.url);
+      if ("error" in res) {
+        setAvatarMsg(res.error);
+        return;
+      }
+      setAvatarPreview(uploadJson.url);
+      router.refresh();
+    } catch {
+      setAvatarMsg("Upload failed — please try again.");
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
 
   const [nameVal, setNameVal] = useState(displayName);
   const [bioVal, setBioVal] = useState(bio);
@@ -57,6 +98,17 @@ export function ProfileSettings({
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [isPasswordPending, startPasswordTransition] = useTransition();
   const [isConnecting, startConnecting] = useTransition();
+  const [isBecomingAuthor, startBecomingAuthor] = useTransition();
+  const [becomeAuthorMsg, setBecomeAuthorMsg] = useState<string | null>(null);
+
+  function doBecomeAuthor() {
+    setBecomeAuthorMsg(null);
+    startBecomingAuthor(async () => {
+      const res = await becomeAuthor();
+      if ("error" in res) setBecomeAuthorMsg(res.error);
+      else window.location.href = "/author-dashboard";
+    });
+  }
 
   function doConnect() {
     startConnecting(async () => {
@@ -78,7 +130,7 @@ export function ProfileSettings({
       });
       if ("error" in res) setProfileMsg(res.error);
       else {
-        setProfileMsg("Saved.");
+        setProfileMsg(res.abnEntityName ? `Saved — ABN verified: ${res.abnEntityName}.` : "Saved.");
         router.refresh();
       }
     });
@@ -108,6 +160,40 @@ export function ProfileSettings({
 
       <div className={dashCard}>
         <h3 className={dashHeading}>Account Details</h3>
+
+        <div className="mb-5 flex items-center gap-4">
+          {avatarPreview ? (
+            // eslint-disable-next-line @next/next/no-img-element -- user-uploaded content, may be an external Supabase Storage URL
+            <img
+              src={avatarPreview}
+              alt={displayName}
+              className="size-16 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-bg-tertiary text-xl font-bold text-text-muted">
+              {displayName.charAt(0).toUpperCase() || "?"}
+            </div>
+          )}
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="hidden"
+              onChange={handleAvatarSelected}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={isUploadingAvatar}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {isUploadingAvatar ? "Uploading..." : "Change Photo"}
+            </Button>
+            {avatarMsg && <p className="mt-1.5 text-[11.5px] text-text-muted">{avatarMsg}</p>}
+          </div>
+        </div>
 
         <div className="mb-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
           <div>
@@ -159,6 +245,20 @@ export function ProfileSettings({
           {isPending ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+
+      {role === "reader" && (
+        <div className={dashCard + " mt-6"}>
+          <h3 className={dashHeading}>Become an Author</h3>
+          <p className="mb-4 text-[12.5px] text-text-muted">
+            Want to publish your own articles on MYHitch Lens? Switch your account to an author account —
+            it&apos;s free, instant, and you keep your existing profile and history.
+          </p>
+          {becomeAuthorMsg && <p className="mb-4 text-[12.5px] text-text-muted">{becomeAuthorMsg}</p>}
+          <Button size="sm" disabled={isBecomingAuthor} onClick={doBecomeAuthor}>
+            {isBecomingAuthor ? "Switching..." : "Become an Author"}
+          </Button>
+        </div>
+      )}
 
       {connectStatus && (
         <div className={dashCard + " mt-6"}>

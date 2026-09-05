@@ -82,10 +82,15 @@ function scoreField(aiScores: unknown, key: string, fallback: string | number) {
   return fallback;
 }
 
-/** Articles awaiting editorial review (status = in_review), newest first. */
+/**
+ * Articles awaiting editorial review (status = in_review), newest first.
+ * Excludes company-authored articles — those are reviewed by their own
+ * company's editor sub-account (see listCompanyReviewQueue in
+ * src/app/(portal)/company/actions.ts), never by platform staff.
+ */
 export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
   const rows = await prisma.article.findMany({
-    where: { status: "in_review" },
+    where: { status: "in_review", author: { role: { not: "corporate" } } },
     orderBy: { createdAt: "asc" },
     include: {
       category: { select: { name: true } },
@@ -137,6 +142,7 @@ export interface ArticleDetail {
   likes: number;
   liked: boolean;
   bookmarked: boolean;
+  shares: number;
   comments: ArticleComment[];
 }
 
@@ -184,6 +190,7 @@ export async function getArticle(
     likes: row.likesCount,
     liked: Array.isArray(row.likes) && row.likes.length > 0,
     bookmarked: Array.isArray(row.bookmarks) && row.bookmarks.length > 0,
+    shares: row.sharesCount,
     comments: row.comments.map((comment) => ({
       id: comment.id,
       author: `${comment.user.displayName} (${comment.user.role.toUpperCase()})`,

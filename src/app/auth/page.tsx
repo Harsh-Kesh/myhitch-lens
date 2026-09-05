@@ -17,16 +17,21 @@ type AuthTab = "signin" | "signup";
 const PRESETS: { role: UserRole; label: string; username: string; password: string; dotColor: string }[] = [
   { role: "reader", label: "Sign in as Markus Green (Reader)", username: "markus_green", password: "password99", dotColor: "var(--primary-color)" },
   { role: "author", label: "Sign in as Dr. Sarah Chen (Author)", username: "sarah_chen", password: "password123", dotColor: "#2da4df" },
+  { role: "author", label: "Sign in as Dr. Elena Rostova (Author)", username: "dr_elena_rostova", password: "password456", dotColor: "#7c5cff" },
   { role: "editor", label: "Sign in as Chief Editor Vance (Editor)", username: "editor_vance", password: "boss_editor", dotColor: "#e28743" },
+  { role: "admin", label: "Sign in as Admin Reyes (Admin)", username: "admin_reyes", password: "platform_admin1", dotColor: "#1e293b" },
 ];
 
-// "editor" (and admin/corporate) are deliberately absent — those roles carry
-// moderation/publishing/suspension powers and are never self-assignable at
-// signup; they're granted internally. Keep in sync with the server-side
-// allow-list in `parseRole` (src/app/auth/actions.ts).
+// "editor" and "admin" are deliberately absent — those roles carry
+// moderation/platform-operation powers and are never self-assignable at
+// signup; they're granted internally. "corporate" IS self-assignable — it's
+// how a business signs up to run its own company account; its sub-accounts
+// are then created internally by that company's owner. Keep in sync with the
+// server-side allow-list in `parseRole` (src/app/auth/actions.ts).
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "reader", label: "Reader Profile" },
   { value: "author", label: "Author (Premium)" },
+  { value: "corporate", label: "Company Account" },
 ];
 
 const presetButton =
@@ -37,7 +42,7 @@ const tabButton =
   "flex-1 cursor-pointer rounded-md border-none px-4 py-2 text-[13.5px] font-semibold transition-all duration-200";
 
 function parseRole(value: string | null): UserRole | null {
-  return value === "reader" || value === "author" ? value : null;
+  return value === "reader" || value === "author" || value === "corporate" ? value : null;
 }
 
 const COUNTRIES = ["Australia", "New Zealand", "United Kingdom", "United States", "Canada", "Singapore", "Other"];
@@ -50,6 +55,7 @@ function AuthCard() {
   const [password, setPassword] = useState("");
   const [country, setCountry] = useState("");
   const [abn, setAbn] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -65,7 +71,7 @@ function AuthCard() {
     startTransition(async () => {
       const result =
         tab === "signup"
-          ? await registerUser({ username, email, password, role, country, abn })
+          ? await registerUser({ username, email, password, role, country, abn, companyName })
           : await loginUser({ username, password });
       // A successful auth redirects server-side; only errors return here.
       if (result?.error) setError(result.error);
@@ -109,7 +115,7 @@ function AuthCard() {
           <p className="mt-1 text-[13px] text-text-muted">
             {tab === "signin"
               ? "Sign in to your vetted MYHitch Lens account."
-              : "Join as a reader or author."}
+              : "Join as a reader, author, or company."}
           </p>
         </div>
 
@@ -182,7 +188,14 @@ function AuthCard() {
             </div>
           )}
 
-          {tab === "signup" && (
+          {tab === "signup" && role === "corporate" && (
+            <div>
+              <label htmlFor="authCompanyName" className={formLabel}>Company name</label>
+              <input id="authCompanyName" type="text" className={formControl} placeholder="e.g. Acme Logistics" value={companyName} onChange={(e) => setCompanyName(e.target.value)} required />
+            </div>
+          )}
+
+          {tab === "signup" && role !== "corporate" && (
             <div>
               <label htmlFor="authCountry" className={formLabel}>Country</label>
               <select id="authCountry" className={formControl} value={country} onChange={(e) => setCountry(e.target.value)}>
@@ -194,7 +207,7 @@ function AuthCard() {
             </div>
           )}
 
-          {tab === "signup" && country === ABN_COUNTRY && (
+          {tab === "signup" && role !== "corporate" && country === ABN_COUNTRY && (
             <div>
               <label htmlFor="authAbn" className={formLabel}>ABN (optional)</label>
               <input id="authAbn" type="text" className={formControl} placeholder="11 digit ABN" value={abn} onChange={(e) => setAbn(e.target.value)} />

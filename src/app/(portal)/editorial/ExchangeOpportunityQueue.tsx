@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
+import { Modal } from "@/components/ui/Modal";
 import { BriefcaseIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
 import type { EditorOpportunity } from "@/lib/exchange";
@@ -173,9 +174,7 @@ function AgreementModal({
   const [agreedTerms, setAgreedTerms] = useState("");
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-[min(460px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-line bg-bg-secondary p-6 shadow-card">
+    <Modal onClose={onClose} className="w-[min(460px,92vw)]">
         <h3 className="mb-1 font-heading text-lg font-bold text-text-main">Record Agreement</h3>
         <p className="mb-4 text-[12.5px] text-text-muted">
           “{opportunity.articleTitle}” — enter the deal the business and author struck. Approving afterward publishes
@@ -213,7 +212,6 @@ function AgreementModal({
             {pending ? "Saving..." : "Save Agreement"}
           </Button>
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }

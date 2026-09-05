@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { auth, signIn, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ABN_COUNTRY } from "@/lib/platformConfig";
+import { lookupAbn, normalizeAbn } from "@/lib/abn";
 import type { UserRole } from "@prisma/client";
 
 export type AuthResult = { error: string } | undefined;
@@ -15,18 +16,20 @@ const ROLE_HOME: Record<UserRole, string> = {
   reader: "/reader-dashboard",
   author: "/author-dashboard",
   editor: "/editorial",
-  corporate: "/author-dashboard",
+  corporate: "/company",
   admin: "/editorial",
 };
 
 /**
- * Roles a visitor can self-assign at signup. Deliberately excludes "editor",
- * "admin", and "corporate" — those carry moderation/publishing/suspension
- * powers and must only be granted by an existing editor/admin (or seeded
- * directly), never chosen by the signing-up user themselves.
+ * Roles a visitor can self-assign at signup. Deliberately excludes "editor"
+ * and "admin" — those carry moderation/platform-operation powers and must
+ * only be granted internally, never chosen by the signing-up user. "corporate"
+ * IS self-assignable: it's how a business signs up to run its own company
+ * account (see companyName below) — every sub-account under it is still
+ * created internally by that company's owner, never self-signed-up.
  */
 function parseRole(value: unknown): UserRole {
-  return value === "reader" || value === "author" ? value : "reader";
+  return value === "reader" || value === "author" || value === "corporate" ? value : "reader";
 }
 
 export async function registerUser(input: {
@@ -36,19 +39,31 @@ export async function registerUser(input: {
   role: string;
   country?: string;
   abn?: string;
+  companyName?: string;
 }): Promise<AuthResult> {
   const username = input.username.trim().toLowerCase();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
   const role = parseRole(input.role);
   const country = input.country?.trim() || null;
-  const abn = country === ABN_COUNTRY ? input.abn?.trim() || null : null;
+  const abnInput = country === ABN_COUNTRY ? input.abn?.trim() || null : null;
+  const companyName = input.companyName?.trim() || "";
 
   if (!username || !email || !password) {
     return { error: "Please fill in username, email, and password." };
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters." };
+  }
+  if (role === "corporate" && !companyName) {
+    return { error: "Enter your company name." };
+  }
+
+  let abn: string | null = null;
+  if (abnInput) {
+    const check = await lookupAbn(abnInput);
+    if (!check.valid) return { error: check.error ?? "That ABN doesn't look valid." };
+    abn = normalizeAbn(abnInput);
   }
 
   const existing = await prisma.user.findFirst({
@@ -62,6 +77,9 @@ export async function registerUser(input: {
   const displayName = input.username.trim();
 
   // Create the account plus its profile, wallet, and starting rank together.
+  // A "corporate" signup additionally stands up the Organization itself, with
+  // this account as its owner (isAdmin) — sub-accounts are created later from
+  // the company dashboard, never self-signed-up.
   await prisma.user.create({
     data: {
       username,
@@ -72,6 +90,17 @@ export async function registerUser(input: {
       profile: { create: { country, abn } },
       wallet: { create: {} },
       rank: { create: {} },
+      ...(role === "corporate"
+        ? {
+            memberships: {
+              create: {
+                isAdmin: true,
+                orgRole: "owner",
+                org: { create: { name: companyName } },
+              },
+            },
+          }
+        : {}),
     },
   });
 

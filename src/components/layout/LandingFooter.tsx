@@ -24,7 +24,7 @@ const FOOTER_COLUMNS: { heading: string; links: { href: string; label: string }[
     heading: "For Readers",
     links: [
       { href: "/explore", label: "How to read" },
-      { href: "/explore", label: "Explore Feed" },
+      { href: "/explore", label: "Search Articles" },
       { href: "/pricing", label: "Subscription Plans" },
       { href: "/categories", label: "Content Categories" },
       { href: "/explore", label: "Premium Access" },

@@ -24,6 +24,7 @@ const PORTAL_PREFIXES = [
   "/exchange",
   "/article",
   "/profile",
+  "/company",
 ];
 
 /**
@@ -54,8 +55,14 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   { prefix: "/governance", roles: ["reader", "author", "corporate"] },
   // Pre-publication Exchange Hub submissions — an authoring action, same
   // reasoning as /submit. Editors handle the resulting queue from /editorial,
-  // where they already work, rather than getting a second route.
-  { prefix: "/exchange", roles: ["author"] },
+  // where they already work, rather than getting a second route. Admin is
+  // additionally allowed here to manage MYHitch Mart / partner opportunity
+  // listings (see ExternalOpportunitiesAdmin) — a platform-operations task,
+  // not something company editors touch.
+  { prefix: "/exchange", roles: ["author", "admin"] },
+  // Company account owners and their sub-accounts — everyone else has no
+  // reason to be here.
+  { prefix: "/company", roles: ["corporate"] },
 ];
 
 export const authConfig = {
@@ -84,10 +91,16 @@ export const authConfig = {
       }
       return true;
     },
-    jwt({ token, user }) {
+    jwt({ token, user, trigger, session }) {
       if (user) {
         token.uid = user.id as string;
         token.role = (user as { role: UserRole }).role;
+      }
+      // Lets a server action push a role change into the live session
+      // (e.g. becomeAuthor()) without forcing the user to log back in —
+      // see updateSession() in auth.ts.
+      if (trigger === "update" && session?.user?.role) {
+        token.role = session.user.role as UserRole;
       }
       return token;
     },

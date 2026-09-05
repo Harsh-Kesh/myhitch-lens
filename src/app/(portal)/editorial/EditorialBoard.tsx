@@ -271,10 +271,6 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
             content={selected.content}
             author={selected.author}
             category={selected.category}
-            contentType={selected.type}
-            authorVerified={selected.authorVerified}
-            authorRank={selected.authorRank}
-            license={selected.license}
             articleId={selected.id}
             onClose={() => setShowPreview(false)}
           />

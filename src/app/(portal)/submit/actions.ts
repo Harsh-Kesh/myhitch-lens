@@ -7,6 +7,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
+import { isSuspended } from "@/lib/authGuards";
+import { isEligibleToSubmit } from "@/lib/verification";
 import type { ArticleDestination } from "@prisma/client";
 
 export type ActionResult = { error: string } | undefined;
@@ -27,8 +29,7 @@ function requireAuthorSession() {
 }
 
 async function checkNotSuspended(userId: string): Promise<{ error: string } | undefined> {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { suspended: true } });
-  if (user?.suspended) {
+  if (await isSuspended(userId)) {
     return { error: "Your account is suspended following repeated copyright violations. Contact support to appeal." };
   }
   return undefined;
@@ -105,6 +106,11 @@ export async function submitForReview(input: {
   const session = await requireAuthorSession();
   const suspendedError = await checkNotSuspended(session.user.id);
   if (suspendedError) return suspendedError;
+
+  const { eligible, missing } = await isEligibleToSubmit(session.user.id);
+  if (!eligible) {
+    return { error: `Get verified before submitting — complete your profile: ${missing.join(", ")}.` };
+  }
 
   if (input.tagNames.length === 0) return { error: "Select at least one tag." };
   if (input.tagNames.length > MAX_TAGS) return { error: `Maximum ${MAX_TAGS} tags.` };

@@ -38,7 +38,7 @@ const STEPS = [
   {
     number: "07",
     title: "Reader Engagement",
-    text: "Subscribed readers access publications in the explore feed. They follow verified authors, save articles to bookmarks lists, play audio narration guides, and post comments under strict double-blind guidelines.",
+    text: "Subscribed readers find publications through search. They follow verified authors, save articles to bookmarks lists, play audio narration guides, and post comments under strict double-blind guidelines.",
   },
   {
     number: "08",

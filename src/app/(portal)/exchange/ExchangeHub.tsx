@@ -6,13 +6,14 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading, StatChip } from "@/components/ui/DashboardKit";
+import { Modal } from "@/components/ui/Modal";
 import { BriefcaseIcon, ClockIcon, CheckCircleIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
 import type { AuthorOpportunity, ExchangeListableArticle } from "@/lib/exchange";
 import type { ExchangeOpportunityType } from "@prisma/client";
 
-import { cancelExchangeSubmission, submitToExchangeHub } from "./actions";
+import { cancelExchangeSubmission, revertToMainApp, submitToExchangeHub } from "./actions";
 
 const TYPE_LABEL: Record<ExchangeOpportunityType, string> = {
   sponsorship: "Sponsorship",
@@ -59,6 +60,15 @@ export function ExchangeHub({
     if (!confirm("Withdraw this submission? The article returns to the normal editorial queue.")) return;
     startTransition(async () => {
       const res = await cancelExchangeSubmission(id);
+      if ("error" in res) alert(res.error);
+      else refresh();
+    });
+  }
+
+  function doRevert(id: string) {
+    if (!confirm("Revert this article to the regular MYHitch Lens feed? It stays published, just no longer marked as an Exchange Hub sponsorship.")) return;
+    startTransition(async () => {
+      const res = await revertToMainApp(id);
       if ("error" in res) alert(res.error);
       else refresh();
     });
@@ -146,6 +156,17 @@ export function ExchangeHub({
                     </Button>
                   </div>
                 )}
+
+                {o.status === "published" && (
+                  <div className="mt-3">
+                    <Button size="sm" variant="secondary" disabled={isPending} onClick={() => doRevert(o.id)}>
+                      Revert to Main App
+                    </Button>
+                    <p className="mt-1.5 text-[11px] text-text-muted">
+                      Stays published — just no longer marked as an Exchange Hub sponsorship.
+                    </p>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -203,9 +224,7 @@ function SubmitModal({
   const [commercialConditions, setCommercialConditions] = useState("");
 
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-[min(520px,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-line bg-bg-secondary p-6 shadow-card">
+    <Modal onClose={onClose} className="w-[min(520px,92vw)]">
         <h3 className="mb-1 font-heading text-lg font-bold text-text-main">Submit to Exchange Hub</h3>
         <p className="mb-4 text-[12.5px] text-text-muted">
           The article is held back from publication while MYHitch matches it with a business. It publishes
@@ -288,7 +307,6 @@ function SubmitModal({
             {pending ? "Submitting..." : "Submit"}
           </Button>
         </div>
-      </div>
-    </>
+    </Modal>
   );
 }

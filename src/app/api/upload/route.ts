@@ -8,12 +8,13 @@ import { isSupabaseStorageConfigured, uploadToStorage } from "@/lib/storage";
 import { averageHash, hammingDistance, NEAR_DUPLICATE_THRESHOLD } from "@/lib/imageHash";
 import { applyWatermark, embedCopyrightMetadata } from "@/lib/copyrightMedia";
 
+// SVG deliberately excluded: it can embed <script>, and the local-disk
+// fallback below serves uploads same-origin, making it a stored-XSS vector.
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/gif",
   "image/webp",
-  "image/svg+xml",
   "video/mp4",
   "video/webm",
   "video/ogg",
@@ -31,7 +32,6 @@ const EXT_MAP: Record<string, string> = {
   "image/png": ".png",
   "image/gif": ".gif",
   "image/webp": ".webp",
-  "image/svg+xml": ".svg",
   "video/mp4": ".mp4",
   "video/webm": ".webm",
   "video/ogg": ".ogv",

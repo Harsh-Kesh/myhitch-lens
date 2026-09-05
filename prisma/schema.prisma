@@ -201,6 +201,7 @@ model User {
   exchangeOpportunities ExchangeOpportunity[]      @relation("ExchangeAuthor")
   exchangeResolutions   ExchangeOpportunity[]      @relation("ExchangeResolvedBy")
   exchangeEvents        ExchangeOpportunityEvent[]
+  externalOpportunitiesPosted ExternalOpportunity[]
 
   @@index([role])
 }
@@ -241,6 +242,18 @@ model ContributorRank {
   updatedAt DateTime        @updatedAt
 }
 
+/**
+ * A sub-account's role WITHIN its company — distinct from the platform-wide
+ * User.role (which is just "corporate" for every company-affiliated account).
+ * "editor" here means "reviews this company's own authors" — a company-scoped
+ * relationship, not the platform's global editorial staff.
+ */
+enum OrgRole {
+  owner
+  editor
+  author
+}
+
 model Organization {
   id        String          @id @default(cuid())
   name      String
@@ -256,8 +269,10 @@ model OrgMembership {
   userId  String
   user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   isAdmin Boolean      @default(false)
+  orgRole OrgRole      @default(author)
 
   @@unique([orgId, userId])
+  @@index([orgId, orgRole])
 }
 
 model Subscription {
@@ -316,6 +331,7 @@ model Article {
 
   likesCount  Int           @default(0)
   viewsCount  Int           @default(0)
+  sharesCount Int           @default(0)
 
   aiScores    Json?         // plagiarism, readability, seo, sentiment
   publishedAt DateTime?
@@ -430,6 +446,8 @@ model Comment {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   text      String
   createdAt DateTime @default(now())
+
+  @@index([articleId])
 }
 
 model Like {
@@ -518,7 +536,10 @@ model PlatformFeeConfig {
 model Wallet {
   id        String   @id @default(cuid())
   userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // No cascade: a user with wallet/balance history should never be silently
+  // deletable — deletion must be blocked (matches every other financial
+  // model below) rather than quietly destroying real balance records.
+  user      User     @relation(fields: [userId], references: [id])
   balance   Decimal  @db.Decimal(12, 2) @default(0)
   escrowHeld Decimal @db.Decimal(12, 2) @default(0)
   currency  String   @default("AUD")
@@ -535,6 +556,8 @@ model Payout {
   status    String   // pending | paid | failed
   stripeTransferId String?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
@@ -610,6 +633,28 @@ model Campaign {
 // accounts resolve opportunities directly here as a stand-in for that inbound
 // call, so the pipeline is real and usable today and swappable later.
 // ---------------------------------------------------------------------------
+
+/**
+ * The reverse direction of ExchangeOpportunity: instead of an author offering
+ * an article for sponsorship, an external platform (MYHitch Mart, or any
+ * future MYHitch product) posts a brief — "write something for this" — that
+ * authors can browse and pick up. Admin-curated for now since there's no real
+ * integration with those platforms yet.
+ */
+model ExternalOpportunity {
+  id            String   @id @default(cuid())
+  platform      String // e.g. "MYHitch Mart"
+  title         String
+  description   String
+  category      String?
+  expectedValue Decimal? @db.Decimal(12, 2)
+  isActive      Boolean  @default(true)
+  createdById   String
+  createdBy     User     @relation(fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+
+  @@index([isActive])
+}
 
 model ExchangeOpportunity {
   id          String                    @id @default(cuid())
@@ -696,6 +741,10 @@ model DisputeTicket {
   appealText   String?
   appealStatus String    @default("none") // none | pending | upheld | denied
   appealedAt   DateTime?
+
+  @@index([status])
+  @@index([reason])
+  @@index([subject])
 }
 
 model ModerationFlag {

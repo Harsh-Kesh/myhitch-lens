@@ -1,37 +1,32 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import Link from "next/link";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/Button";
-import { formControl, formLabel } from "@/components/ui/Form";
+import { Modal } from "@/components/ui/Modal";
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
+import { CheckIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
-import { requestVerification } from "../verifications/actions";
+import type { VerificationChecklistItem } from "@/lib/verification";
 
-type State = "none" | "pending" | "approved" | "rejected";
-
+/**
+ * Verification is fully automatic — no application, no editor review. This
+ * just shows whether the author is verified, and if not, exactly which
+ * profile fields still need filling in (see src/lib/verification.ts).
+ */
 export function VerificationStatus({
-  state,
-  reviewerNote,
+  isVerified,
+  items,
 }: {
-  state: State;
-  reviewerNote: string | null;
+  isVerified: boolean;
+  items: VerificationChecklistItem[];
 }) {
   const [open, setOpen] = useState(false);
 
-  if (state === "approved") {
+  if (isVerified) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-primary-glow px-2 py-0.5 text-[11px] font-semibold text-primary">
         <VerifiedBadge size="xs" /> Verified
-      </span>
-    );
-  }
-
-  if (state === "pending") {
-    return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-semibold text-warning">
-        Verification pending
       </span>
     );
   }
@@ -43,84 +38,55 @@ export function VerificationStatus({
         onClick={() => setOpen(true)}
         className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary-glow"
       >
-        {state === "rejected" ? "Re-apply for verification" : "Get verified"}
+        Get verified
       </button>
-      {state === "rejected" && reviewerNote && (
-        <span className="ml-2 text-[11px] text-danger">Declined: {reviewerNote}</span>
-      )}
-      {open && <VerificationModal onClose={() => setOpen(false)} />}
+      {open && <ChecklistModal items={items} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function VerificationModal({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [organisation, setOrganisation] = useState("");
-  const [links, setLinks] = useState("");
-
+function ChecklistModal({
+  items,
+  onClose,
+}: {
+  items: VerificationChecklistItem[];
+  onClose: () => void;
+}) {
   return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="fixed top-1/2 left-1/2 z-50 w-[min(460px,92vw)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-line bg-bg-secondary p-6 shadow-card">
-        <h3 className="mb-1 flex items-center gap-2 font-heading text-lg font-bold text-text-main">
-          <VerifiedBadge size="md" /> Apply for the Verified badge
-        </h3>
-        <p className="mb-4 text-[12.5px] text-text-muted">
-          Verification confirms you are a real, credible voice. An editor reviews your details; if
-          your email domain matches your organisation it strengthens your application.
-        </p>
+    <Modal onClose={onClose} className="w-[min(420px,92vw)]">
+      <h3 className="mb-1 flex items-center gap-2 font-heading text-lg font-bold text-text-main">
+        <VerifiedBadge size="md" /> Get the Verified badge
+      </h3>
+      <p className="mb-4 text-[12.5px] text-text-muted">
+        Verification is automatic — no application, no waiting. Complete every item below on your
+        profile and the blue mark appears immediately.
+      </p>
 
-        <div className="mb-4">
-          <label className={formLabel}>Organisation / affiliation</label>
-          <input
-            type="text"
-            className={formControl}
-            placeholder="e.g. chenlabs.org or Chen Logistics Institute"
-            value={organisation}
-            onChange={(e) => setOrganisation(e.target.value)}
-          />
-        </div>
+      <ul className="mb-5 flex flex-col gap-2">
+        {items.map((item) => (
+          <li key={item.key} className="flex items-center gap-2 text-[13px]">
+            <span
+              className={cn(
+                "flex size-5 shrink-0 items-center justify-center rounded-full",
+                item.met ? "bg-success/15 text-success" : "bg-bg-tertiary text-text-muted",
+              )}
+            >
+              {item.met && <CheckIcon className="size-3" strokeWidth={3} />}
+            </span>
+            <span className={item.met ? "text-text-muted line-through" : "text-text-main"}>
+              {item.label}
+            </span>
+          </li>
+        ))}
+      </ul>
 
-        <div className="mb-5">
-          <label className={formLabel}>Professional links (one per line)</label>
-          <textarea
-            rows={3}
-            className={formControl}
-            placeholder={"https://linkedin.com/in/...\nhttps://orcid.org/..."}
-            value={links}
-            onChange={(e) => setLinks(e.target.value)}
-          />
-          <p className="mt-1 text-[11px] text-text-muted">
-            LinkedIn, ORCID, a university/company profile, or published work.
-          </p>
-        </div>
-
-        <div className="flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            className={cn("flex-1")}
-            disabled={isPending}
-            onClick={() =>
-              startTransition(async () => {
-                const res = await requestVerification({
-                  organisation,
-                  links: links.split("\n").map((l) => l.trim()).filter(Boolean),
-                });
-                if ("error" in res) alert(res.error);
-                else {
-                  onClose();
-                  router.refresh();
-                }
-              })
-            }
-          >
-            {isPending ? "Submitting..." : "Submit application"}
-          </Button>
-        </div>
-      </div>
-    </>
+      <Link
+        href="/profile"
+        onClick={onClose}
+        className="flex w-full items-center justify-center rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-text-inverse shadow-[0_4px_14px_var(--primary-glow)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-hover"
+      >
+        Go to My Profile
+      </Link>
+    </Modal>
   );
 }

@@ -16,12 +16,12 @@ export default async function ProfilePage() {
       displayName: true,
       email: true,
       username: true,
-      profile: { select: { bio: true, website: true, country: true, abn: true } },
+      profile: { select: { bio: true, website: true, country: true, abn: true, avatarUrl: true } },
     },
   });
   if (!user) redirect("/auth");
 
-  const connectStatus = session.user.role === "author" ? await getConnectStatus(session.user.id) : null;
+  const connectStatus = session.user.role === "author" ? await getConnectStatus() : null;
 
   return (
     <ProfileSettings
@@ -32,6 +32,8 @@ export default async function ProfilePage() {
       website={user.profile?.website ?? ""}
       country={user.profile?.country ?? ""}
       abn={user.profile?.abn ?? ""}
+      avatarUrl={user.profile?.avatarUrl ?? null}
+      role={session.user.role}
       connectStatus={connectStatus}
     />
   );

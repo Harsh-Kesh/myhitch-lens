@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { listVerificationQueue } from "@/lib/verification";
 import { TrustSafetyHub } from "./TrustSafetyHub";
 
 const EDITORIAL_REASONS = ["plagiarism", "category", "editorial", "other"];
@@ -13,8 +12,7 @@ export default async function TrustSafetyPage() {
   if (!session?.user) return null;
   if (!["editor", "admin"].includes(session.user.role)) redirect("/explore");
 
-  const [verificationQueue, rows, appealRows, editorialAppealRows, categories] = await Promise.all([
-    listVerificationQueue(),
+  const [rows, appealRows, editorialAppealRows, categories] = await Promise.all([
     prisma.disputeTicket.findMany({
       where: { reason: "copyright", status: { in: ["open", "under_review"] } },
       orderBy: { createdAt: "asc" },
@@ -104,7 +102,6 @@ export default async function TrustSafetyPage() {
 
   return (
     <TrustSafetyHub
-      verificationQueue={verificationQueue}
       reports={reports}
       appeals={appeals}
       editorialAppeals={editorialAppeals}

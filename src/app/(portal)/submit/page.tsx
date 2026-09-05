@@ -55,6 +55,16 @@ export default function SubmitPage() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialLoadRef = useRef(false);
 
+  // Escape closes the submit panel, matching the app's other modals/panels.
+  useEffect(() => {
+    if (!showSubmitPanel) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowSubmitPanel(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showSubmitPanel]);
+
   // Load available tags
   useEffect(() => {
     listTags().then(setAvailableTags);
@@ -287,10 +297,6 @@ export default function SubmitPage() {
           content={content}
           author={profile.name}
           category={contentType}
-          contentType={contentType}
-          tags={selectedTags}
-          authorVerified={profile.verified}
-          license={license}
           articleId={articleId ?? undefined}
           onClose={() => setShowPreview(false)}
         />
@@ -303,7 +309,12 @@ export default function SubmitPage() {
             className="fixed inset-0 z-40 bg-black/40"
             onClick={() => setShowSubmitPanel(false)}
           />
-          <div className="fixed inset-y-0 right-0 z-50 flex w-[min(420px,90vw)] flex-col overflow-y-auto border-l border-line bg-bg-secondary p-6 shadow-card">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={draftStatus === "changes_requested" ? "Resubmit for Editorial Review" : "Submit for Editorial Review"}
+            className="fixed inset-y-0 right-0 z-50 flex w-[min(420px,90vw)] flex-col overflow-y-auto border-l border-line bg-bg-secondary p-6 shadow-card"
+          >
             <h3 className="mb-6 font-heading text-lg font-bold text-text-main">
               {draftStatus === "changes_requested" ? "Resubmit for Editorial Review" : "Submit for Editorial Review"}
             </h3>

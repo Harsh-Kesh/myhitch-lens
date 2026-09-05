@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { appBaseUrl, getStripe, isStripeConfigured } from "@/lib/stripe";
 import { CURRENCY, DONATION_DEFAULTS } from "@/lib/platformConfig";
+import { syncContributorRank } from "@/lib/ranking";
 
 /**
  * Record a read: increment the article's view counter and log an analytics
@@ -28,6 +29,29 @@ export async function recordArticleView(articleId: string): Promise<void> {
       data: { articleId, userId: session?.user?.id ?? null, kind: "view" },
     }),
   ]);
+}
+
+/**
+ * Record a share (Web Share API completed, or the link was copied). Same
+ * anti-gaming exclusion as recordArticleView — the author can't inflate their
+ * own count — and it counts toward the author's contributor ranking.
+ */
+export async function recordArticleShare(articleId: string): Promise<void> {
+  const session = await auth();
+  const article = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { authorId: true, status: true },
+  });
+  if (!article || article.status !== "published") return;
+  if (session?.user && session.user.id === article.authorId) return;
+
+  await prisma.$transaction([
+    prisma.article.update({ where: { id: articleId }, data: { sharesCount: { increment: 1 } } }),
+    prisma.analyticsEvent.create({
+      data: { articleId, userId: session?.user?.id ?? null, kind: "share" },
+    }),
+  ]);
+  await syncContributorRank(article.authorId);
 }
 
 /** File a copyright/infringement report against an article → moderation queue. */
@@ -206,31 +230,35 @@ export async function createDonationCheckout(
   if (article.authorId === session.user.id) return { error: "You can't donate to your own article." };
 
   const base = appBaseUrl();
-  const stripe = getStripe();
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: "payment",
-    line_items: [
-      {
-        price_data: {
-          currency: CURRENCY.toLowerCase(),
-          product_data: { name: `Support: ${article.title}` },
-          unit_amount: Math.round(amount * 100),
+  try {
+    const checkoutSession = await getStripe().checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: CURRENCY.toLowerCase(),
+            product_data: { name: `Support: ${article.title}` },
+            unit_amount: Math.round(amount * 100),
+          },
+          quantity: 1,
         },
-        quantity: 1,
+      ],
+      metadata: {
+        kind: "donation",
+        articleId,
+        authorId: article.authorId,
+        donorId: session.user.id,
       },
-    ],
-    metadata: {
-      kind: "donation",
-      articleId,
-      authorId: article.authorId,
-      donorId: session.user.id,
-    },
-    success_url: `${base}/article?id=${articleId}&donation=success`,
-    cancel_url: `${base}/article?id=${articleId}&donation=cancelled`,
-  });
+      success_url: `${base}/article?id=${articleId}&donation=success`,
+      cancel_url: `${base}/article?id=${articleId}&donation=cancelled`,
+    });
 
-  if (!checkoutSession.url) return { error: "Could not start checkout. Please try again." };
-  return { url: checkoutSession.url };
+    if (!checkoutSession.url) return { error: "Could not start checkout. Please try again." };
+    return { url: checkoutSession.url };
+  } catch (err) {
+    console.error("createDonationCheckout failed:", err);
+    return { error: "Couldn't reach Stripe right now — please try again shortly." };
+  }
 }
 
 /** Toggle the current user's like on an article and keep the counter in sync. */
@@ -239,9 +267,11 @@ export async function toggleLike(articleId: string): Promise<void> {
   if (!session?.user) return;
   const userId = session.user.id;
 
-  const existing = await prisma.like.findUnique({
-    where: { userId_articleId: { userId, articleId } },
-  });
+  const [existing, article] = await Promise.all([
+    prisma.like.findUnique({ where: { userId_articleId: { userId, articleId } } }),
+    prisma.article.findUnique({ where: { id: articleId }, select: { authorId: true } }),
+  ]);
+  if (!article) return;
 
   if (existing) {
     await prisma.$transaction([
@@ -254,6 +284,7 @@ export async function toggleLike(articleId: string): Promise<void> {
       prisma.article.update({ where: { id: articleId }, data: { likesCount: { increment: 1 } } }),
     ]);
   }
+  await syncContributorRank(article.authorId);
 
   revalidatePath("/article");
   revalidatePath("/explore");
@@ -316,5 +347,6 @@ export async function postComment(articleId: string, text: string): Promise<{ er
   await prisma.comment.create({
     data: { articleId, userId: session.user.id, text: body },
   });
+  await syncContributorRank(article.authorId);
   revalidatePath("/article");
 }

@@ -57,6 +57,7 @@ export function issueOffsetFrom(date: Date, weekOffset: number): MagazineIssue {
 interface PlacementRow {
   id: string;
   title: string;
+  summary: string;
   author: string;
   magazineFeatured: boolean;
   magazineFeatureOrder: number | null;
@@ -80,6 +81,7 @@ async function articlesInIssue(issue: MagazineIssue): Promise<PlacementRow[]> {
     select: {
       id: true,
       title: true,
+      summary: true,
       magazineFeatured: true,
       magazineFeatureOrder: true,
       publishedAt: true,
@@ -89,6 +91,7 @@ async function articlesInIssue(issue: MagazineIssue): Promise<PlacementRow[]> {
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
+    summary: r.summary,
     author: r.author.displayName,
     magazineFeatured: r.magazineFeatured,
     magazineFeatureOrder: r.magazineFeatureOrder,
@@ -115,6 +118,7 @@ export async function getMagazinePlacement(articleId: string): Promise<MagazineP
       magazineFeatured: true,
       magazineFeatureOrder: true,
       title: true,
+      summary: true,
       author: { select: { displayName: true } },
     },
   });
@@ -135,6 +139,7 @@ export async function getMagazinePlacement(articleId: string): Promise<MagazineP
       {
         id: articleId,
         title: article.title,
+        summary: article.summary,
         author: article.author.displayName,
         magazineFeatured: article.magazineFeatured,
         magazineFeatureOrder: article.magazineFeatureOrder,
@@ -156,6 +161,7 @@ export async function getMagazinePlacement(articleId: string): Promise<MagazineP
 export interface IssueArticleRow {
   id: string;
   title: string;
+  summary: string;
   author: string;
   page: number;
   isFeatured: boolean;
@@ -163,17 +169,39 @@ export interface IssueArticleRow {
   publishedAt: string;
 }
 
-/** Full page-by-page listing for a given issue — for the editor curation screen. */
+/** Full page-by-page listing for a given issue — for the editor curation screen and neighbouring-page previews. */
 export async function listIssueArticles(issue: MagazineIssue): Promise<IssueArticleRow[]> {
   const rows = await articlesInIssue(issue);
   const ordered = orderPlacements(rows);
   return ordered.map((r, i) => ({
     id: r.id,
     title: r.title,
+    summary: r.summary,
     author: r.author,
     page: i + 1,
     isFeatured: r.magazineFeatured,
     featureOrder: r.magazineFeatureOrder,
     publishedAt: r.publishedAt.toISOString(),
   }));
+}
+
+export interface NextIssueSummary {
+  currentIssueLabel: string;
+  nextIssueReleaseDate: string; // ISO
+  /** The page an article would land on if published right now. */
+  currentAvailablePage: number;
+}
+
+/** For the author dashboard: when the next weekly issue drops, and what page is open right now. */
+export async function getNextIssueSummary(): Promise<NextIssueSummary> {
+  const now = new Date();
+  const currentIssue = isoWeekOf(now);
+  const nextIssue = issueOffsetFrom(now, 1);
+  const rows = await articlesInIssue(currentIssue);
+
+  return {
+    currentIssueLabel: currentIssue.weekLabel,
+    nextIssueReleaseDate: nextIssue.weekStart.toISOString(),
+    currentAvailablePage: rows.length + 1,
+  };
 }

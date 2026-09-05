@@ -6,7 +6,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { feeFor, round2 } from "@/lib/marketplace";
-import type { Prisma } from "@prisma/client";
 
 export type ActionResult = { error: string } | { ok: true };
 
@@ -200,87 +199,109 @@ interface SettleArgs {
   listingFloorPrice: number;
 }
 
-/** Shared settlement: ownership transfer, first-price funds, placement, notifications. */
-async function settleSale(a: SettleArgs): Promise<void> {
+/** Thrown inside settleSale's transaction to abort and roll back everything — returning a value from an interactive transaction commits it, only throwing rolls back. */
+class SettlementAbort extends Error {}
+
+/**
+ * Shared settlement: ownership transfer, first-price funds, placement,
+ * notifications. Retired from the UI (see panel/page.tsx) but left intact —
+ * still fixed for correctness in case it's ever revived.
+ */
+async function settleSale(a: SettleArgs): Promise<ActionResult> {
   const price = Math.max(a.listingFloorPrice, a.amount);
-  const fee = feeFor("sponsorship", price); // 20% marketplace fee
+  const fee = feeFor("reportSale", price); // matches the "report_sale" ledger type recorded below
   const net = round2(price - fee);
   const brandName = a.brandName ?? a.bidderName;
 
   const stripped = a.removeMedia ? stripMediaFromContent(a.articleContent) : null;
   const mediaRemoved = stripped?.removed ?? 0;
 
-  const ops: Prisma.PrismaPromise<unknown>[] = [
-    prisma.bid.update({ where: { id: a.bidId }, data: { status: "won" } }),
-    prisma.bid.updateMany({
-      where: { auctionId: a.auctionId, id: { not: a.bidId }, status: { in: ["active", "outbid"] } },
-      data: { status: "lost" },
-    }),
-    prisma.article.update({
-      where: { id: a.articleId },
-      data: {
-        ownerId: a.bidderId,
-        lane: "hybrid",
-        ...(stripped ? { content: stripped.content } : {}),
-      },
-    }),
-    prisma.brandingPlacement.create({
-      data: {
-        articleId: a.articleId,
-        auctionId: a.auctionId,
-        brandId: a.bidderId,
-        status: "live",
-        liveFrom: new Date(),
-        creativeAsset: {
-          brandName,
-          changeRequest: a.changeRequest,
-          category: a.articleCategoryName,
-          amount: price,
-          mediaRemoved,
-        },
-      },
-    }),
-    prisma.auction.update({ where: { id: a.auctionId }, data: { status: "settled" } }),
-    prisma.wallet.upsert({
-      where: { userId: a.articleAuthorId },
-      update: { balance: { increment: net } },
-      create: { userId: a.articleAuthorId, balance: net },
-    }),
-    prisma.wallet.upsert({
-      where: { userId: a.bidderId },
-      update: { balance: { decrement: price } },
-      create: { userId: a.bidderId, balance: -price },
-    }),
-    prisma.revenueLedger.create({
-      data: {
-        userId: a.articleAuthorId,
-        articleId: a.articleId,
-        type: "report_sale",
-        gross: price,
-        feeApplied: fee,
-        net,
-        meta: { kind: "ownership_sale", buyer: brandName, auctionId: a.auctionId },
-      },
-    }),
-    prisma.notification.createMany({
-      data: [
-        {
-          userId: a.bidderId,
-          type: "bid_won",
-          text: `Your purchase of "${a.articleTitle}" is complete — you now own this article.${
-            mediaRemoved > 0 ? ` ${mediaRemoved} media item(s) were removed as agreed.` : ""
-          }`,
-        },
-        {
-          userId: a.articleAuthorId,
-          type: "sale",
-          text: `Ownership of "${a.articleTitle}" sold: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
-        },
-      ],
-    }),
-  ];
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Conditional claims on the auction and the buyer's wallet, both
+      // checked and applied before any other write — a failure here throws
+      // to roll back the whole transaction, so two concurrent settlements
+      // (or a buyer without enough funds) can never leave a partial state.
+      const claim = await tx.auction.updateMany({
+        where: { id: a.auctionId, status: { in: ["open", "closed"] } },
+        data: { status: "settled" },
+      });
+      if (claim.count !== 1) throw new SettlementAbort("This article has already been sold.");
 
-  await prisma.$transaction(ops);
+      const debit = await tx.wallet.updateMany({
+        where: { userId: a.bidderId, balance: { gte: price } },
+        data: { balance: { decrement: price } },
+      });
+      if (debit.count !== 1) throw new SettlementAbort("Insufficient wallet balance to complete this purchase.");
+
+      await tx.bid.update({ where: { id: a.bidId }, data: { status: "won" } });
+      await tx.bid.updateMany({
+        where: { auctionId: a.auctionId, id: { not: a.bidId }, status: { in: ["active", "outbid"] } },
+        data: { status: "lost" },
+      });
+      await tx.article.update({
+        where: { id: a.articleId },
+        data: {
+          ownerId: a.bidderId,
+          lane: "hybrid",
+          ...(stripped ? { content: stripped.content } : {}),
+        },
+      });
+      await tx.brandingPlacement.create({
+        data: {
+          articleId: a.articleId,
+          auctionId: a.auctionId,
+          brandId: a.bidderId,
+          status: "live",
+          liveFrom: new Date(),
+          creativeAsset: {
+            brandName,
+            changeRequest: a.changeRequest,
+            category: a.articleCategoryName,
+            amount: price,
+            mediaRemoved,
+          },
+        },
+      });
+      await tx.wallet.upsert({
+        where: { userId: a.articleAuthorId },
+        update: { balance: { increment: net } },
+        create: { userId: a.articleAuthorId, balance: net },
+      });
+      await tx.revenueLedger.create({
+        data: {
+          userId: a.articleAuthorId,
+          articleId: a.articleId,
+          type: "report_sale",
+          gross: price,
+          feeApplied: fee,
+          net,
+          meta: { kind: "ownership_sale", buyer: brandName, auctionId: a.auctionId },
+        },
+      });
+      await tx.notification.createMany({
+        data: [
+          {
+            userId: a.bidderId,
+            type: "bid_won",
+            text: `Your purchase of "${a.articleTitle}" is complete — you now own this article.${
+              mediaRemoved > 0 ? ` ${mediaRemoved} media item(s) were removed as agreed.` : ""
+            }`,
+          },
+          {
+            userId: a.articleAuthorId,
+            type: "sale",
+            text: `Ownership of "${a.articleTitle}" sold: A$${net.toFixed(2)} added to your wallet (A$${price.toFixed(2)} less fees).`,
+          },
+        ],
+      });
+    });
+  } catch (err) {
+    if (err instanceof SettlementAbort) return { error: err.message };
+    throw err;
+  }
+
+  return { ok: true };
 }
 
 /**
@@ -319,7 +340,7 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
   }
   if (auction.placement) return { error: "This article has already been sold." };
 
-  await settleSale({
+  const result = await settleSale({
     bidId: bid.id,
     bidderId: bid.bidder.id,
     bidderName: bid.bidder.displayName,
@@ -335,6 +356,7 @@ export async function acceptBid(input: { bidId: string }): Promise<ActionResult>
     articleCategoryName: article.category.name,
     listingFloorPrice: Number(auction.listing!.floorPrice),
   });
+  if ("error" in result) return result;
 
   revalidatePath("/panel");
   revalidatePath("/author-dashboard");
@@ -386,7 +408,7 @@ export async function buyFixedPrice(input: {
     },
   });
 
-  await settleSale({
+  const result = await settleSale({
     bidId: bid.id,
     bidderId: user.id,
     bidderName: user.name ?? "Buyer",
@@ -402,6 +424,7 @@ export async function buyFixedPrice(input: {
     articleCategoryName: article.category.name,
     listingFloorPrice: price,
   });
+  if ("error" in result) return result;
 
   revalidatePath("/panel");
   revalidatePath("/author-dashboard");

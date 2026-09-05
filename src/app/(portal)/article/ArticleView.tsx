@@ -9,10 +9,11 @@ import {
   BookmarkIcon,
   BriefcaseIcon,
   HeartIcon,
+  LinkIcon,
   SendIcon,
   ShoppingCartIcon,
 } from "@/components/ui/icons";
-import { RichContentRenderer } from "@/components/ui/RichEditor";
+import { MagazinePage } from "@/components/ui/MagazinePage";
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { useLensValue } from "@/hooks/useLensValue";
 import { getIntegrations } from "@/lib/lensStore";
@@ -21,7 +22,7 @@ import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
 import { licenseShort } from "@/lib/licenses";
-import { postComment, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
+import { postComment, recordArticleShare, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
 const AUDIO_TICK_MS = 300;
@@ -126,6 +127,23 @@ export function ArticleView({
       router.refresh();
     });
   }
+  async function runShare() {
+    const url = `${window.location.origin}/article?id=${article.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: article.title, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        alert("Link copied to clipboard!");
+      }
+    } catch {
+      return; // native share sheet was cancelled — don't count it
+    }
+    startTransition(async () => {
+      await recordArticleShare(article.id);
+      router.refresh();
+    });
+  }
   function runReport() {
     const details = window.prompt(
       "Report this article for copyright infringement. Describe the issue (e.g. where the original was published):",
@@ -192,28 +210,33 @@ export function ArticleView({
         </div>
       )}
 
-      <div className="min-h-[400px] rounded-xl border border-line bg-bg-secondary p-8 max-[640px]:p-5">
-        <div className="mb-6">
-          <span className="text-[11px] font-bold tracking-[0.5px] text-primary uppercase">{article.category}</span>
+      {ownership && (
+        <div className="mx-auto mb-5 flex max-w-[600px] flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-bg-tertiary px-4 py-3">
+          <span className="rounded bg-text-muted/10 px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide text-text-muted uppercase">
+            Owned by
+          </span>
+          <span className="text-[12.5px] text-text-muted">
+            <strong className="text-text-main">{ownership.brandName}</strong>
+            {ownership.tagline && <span> — “{ownership.tagline}”</span>}
+            <span> · Written by {article.author} (Verified)</span>
+          </span>
         </div>
+      )}
 
-        {ownership && (
-          <div className="mb-6 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-bg-tertiary px-4 py-3">
-            <span className="rounded bg-text-muted/10 px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide text-text-muted uppercase">
-              Owned by
-            </span>
-            <span className="text-[12.5px] text-text-muted">
-              <strong className="text-text-main">{ownership.brandName}</strong>
-              {ownership.tagline && <span> — “{ownership.tagline}”</span>}
-              <span> · Written by {article.author} (Verified)</span>
-            </span>
-          </div>
-        )}
+      {/* The magazine page IS the article — same design and pagination the
+          author saw in their submit-flow preview, minus the masthead logo
+          (already shown throughout the app's own chrome) but keeping the
+          watermark. */}
+      <MagazinePage
+        title={article.title}
+        content={article.content}
+        author={article.author}
+        category={article.category}
+        articleId={article.id}
+        showMasthead={false}
+      />
 
-        <h1 className="mb-4 font-heading text-[28px] leading-[1.3] font-bold text-text-main max-[640px]:text-[23px] max-[480px]:text-[20px]">
-          {article.title}
-        </h1>
-
+      <div className="mx-auto mt-6 max-w-[600px] rounded-xl border border-line bg-bg-secondary p-6 max-[640px]:p-5">
         <div className="mb-6 flex flex-wrap items-center gap-y-3 rounded-lg border border-line bg-bg-primary px-[18px] py-3 max-[480px]:px-4">
           <div className="mr-3 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-bold text-text-inverse">
             {article.author.charAt(0)}
@@ -250,6 +273,10 @@ export function ArticleView({
               <HeartIcon className="size-3.5" />
               <span>{article.likes}</span>
             </button>
+            <button type="button" aria-label="Share article" disabled={isPending} onClick={runShare} className={cn(actionButton, "border-line bg-bg-secondary text-text-muted hover:border-line-hover hover:text-text-main")}>
+              <LinkIcon className="size-3.5" />
+              <span>{article.shares}</span>
+            </button>
           </div>
         </div>
 
@@ -263,20 +290,6 @@ export function ArticleView({
           <div className="h-1 overflow-hidden rounded-sm bg-bg-tertiary">
             <div className="h-full bg-primary transition-[width] duration-100 ease-linear" style={{ width: `${audioPercent}%` }} />
           </div>
-        </div>
-
-        <div className="mb-8 text-[15.5px] leading-[1.8] text-text-main">
-          {isRichContent(article.content) ? (
-            <RichContentRenderer content={article.content} />
-          ) : (
-            <div className="whitespace-pre-wrap">
-              {article.content.split("\n").map((paragraph, index) => {
-                const trimmed = paragraph.trim();
-                const isListItem = trimmed.startsWith("•") || trimmed.startsWith("1.");
-                return <p key={index} className={isListItem ? "ml-5 font-medium" : "mb-4"}>{paragraph}</p>;
-              })}
-            </div>
-          )}
         </div>
 
         {widgets.length > 0 && <div className="mb-8 flex flex-col gap-4 border-y border-line py-6">{widgets}</div>}
@@ -334,13 +347,4 @@ export function ArticleView({
       </div>
     </>
   );
-}
-
-function isRichContent(content: string): boolean {
-  try {
-    const parsed = JSON.parse(content);
-    return parsed && typeof parsed === "object" && parsed.type === "doc";
-  } catch {
-    return false;
-  }
 }

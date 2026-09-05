@@ -6,6 +6,7 @@ import { BarChartIcon, BookIcon, ClockIcon, DollarSignIcon, HeartIcon, PencilIco
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { getMyVerification } from "@/lib/verification";
+import { getNextIssueSummary } from "@/lib/magazine";
 import { cn } from "@/lib/cn";
 import { VerificationStatus } from "./VerificationPanel";
 import { RemovedArticles } from "./RemovedArticles";
@@ -27,8 +28,9 @@ export default async function AuthorDashboardPage() {
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
   const verification = await getMyVerification(session!.user.id);
-  const connectStatus = await getConnectStatus(session!.user.id);
-  const { totalWithdrawn } = await getPayoutHistory(session!.user.id);
+  const nextIssue = await getNextIssueSummary();
+  const connectStatus = await getConnectStatus();
+  const { totalWithdrawn } = await getPayoutHistory();
   const { articles, drafts, pendingReview, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
@@ -42,7 +44,7 @@ export default async function AuthorDashboardPage() {
           <div className="min-w-0">
             <h3 className="flex flex-wrap items-center gap-2 font-heading text-lg font-bold text-text-main max-[480px]:text-base">
               {name}
-              <VerificationStatus state={verification.state} reviewerNote={verification.reviewerNote} />
+              <VerificationStatus isVerified={verification.isVerified} items={verification.items} />
             </h3>
             <p className="mt-0.5 text-xs text-text-muted">
               {rankPosition != null ? (
@@ -64,6 +66,26 @@ export default async function AuthorDashboardPage() {
         <StatChip icon={<BarChartIcon className="size-4" />} value={totalViews.toLocaleString()} label="Total views" />
         <StatChip icon={<HeartIcon className="size-4" />} value={totalLikes.toLocaleString()} label="Total likes" />
         <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
+      </div>
+
+      {/* Magazine issue */}
+      <div className={cn(dashCard, "mb-6")}>
+        <h3 className={dashHeading}>
+          <BookIcon className="size-[18px] text-primary" /> MYHitch Lens Magazine
+        </h3>
+        <div className="grid grid-cols-2 gap-4 max-[480px]:grid-cols-1">
+          <div className="rounded-lg border border-line bg-bg-primary p-4">
+            <p className="text-[11px] font-medium text-text-muted uppercase">Next issue releases</p>
+            <p className="mt-1 font-heading text-lg font-bold text-text-main">
+              {new Date(nextIssue.nextIssueReleaseDate).toLocaleDateString("en-AU", { weekday: "long", month: "short", day: "numeric" })}
+            </p>
+          </div>
+          <div className="rounded-lg border border-line bg-bg-primary p-4">
+            <p className="text-[11px] font-medium text-text-muted uppercase">If you published today</p>
+            <p className="mt-1 font-heading text-lg font-bold text-text-main">Page {nextIssue.currentAvailablePage}</p>
+            <p className="text-[11px] text-text-muted">of the {nextIssue.currentIssueLabel} issue</p>
+          </div>
+        </div>
       </div>
 
       {/* Drafts + New article */}

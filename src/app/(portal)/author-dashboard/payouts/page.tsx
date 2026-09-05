@@ -23,7 +23,7 @@ export default async function PayoutHistoryPage() {
   if (!session?.user) redirect("/auth");
   if (session.user.role !== "author") redirect("/author-dashboard");
 
-  const { payouts, totalWithdrawn } = await getPayoutHistory(session.user.id);
+  const { payouts, totalWithdrawn } = await getPayoutHistory();
 
   return (
     <>

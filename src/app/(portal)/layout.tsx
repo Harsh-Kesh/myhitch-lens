@@ -19,11 +19,12 @@ export default async function PortalLayout({ children }: { children: ReactNode }
 
   const role = session.user.role as UserRole;
   const name = session.user.name ?? "";
-  const [pendingReviewCount, { items: notifications, unreadCount }] = await Promise.all([
+  const [pendingReviewCount, { items: notifications, unreadCount }, profile] = await Promise.all([
     ["editor", "admin"].includes(role)
-      ? prisma.article.count({ where: { status: "in_review" } })
+      ? prisma.article.count({ where: { status: "in_review", author: { role: { not: "corporate" } } } })
       : Promise.resolve(0),
     getMyNotifications(session.user.id),
+    prisma.profile.findUnique({ where: { userId: session.user.id }, select: { avatarUrl: true } }),
   ]);
 
   return (
@@ -32,6 +33,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <AppSidebar
         role={role}
         name={name}
+        avatarUrl={profile?.avatarUrl ?? null}
         pendingReviewCount={pendingReviewCount}
         notifications={notifications}
         unreadCount={unreadCount}

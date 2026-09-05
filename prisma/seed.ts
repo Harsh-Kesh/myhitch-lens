@@ -53,6 +53,7 @@ const DEMO_USERS: {
   { username: "markus_green", email: "markus@lens.demo", password: "password99", role: "reader", displayName: "Markus Green" },
   { username: "sarah_chen", email: "sarah@lens.demo", password: "password123", role: "author", displayName: "Dr. Sarah Chen" },
   { username: "editor_vance", email: "vance@lens.demo", password: "boss_editor", role: "editor", displayName: "Chief Editor Vance" },
+  { username: "admin_reyes", email: "reyes@lens.demo", password: "platform_admin1", role: "admin", displayName: "Admin Reyes" },
 ];
 
 async function main() {
@@ -83,6 +84,29 @@ async function main() {
     });
   }
   console.log(`Seeded ${DEMO_USERS.length} demo users.`);
+
+  // Retrofit real login credentials onto Dr. Elena Rostova — she otherwise
+  // only exists as an article-attribution identity (created password-less by
+  // `ensureAuthor` below, from her byline on the defaultArticles seed data).
+  // Uses an explicit `update` (unlike the DEMO_USERS loop's no-op `update: {}`)
+  // so this retrofits a passwordHash onto her existing row even on a database
+  // that was already seeded before this account was login-capable.
+  const elenaPasswordHash = await bcrypt.hash("password456", 10);
+  await prisma.user.upsert({
+    where: { username: "dr_elena_rostova" },
+    update: { email: "elena@lens.demo", passwordHash: elenaPasswordHash, role: "author" },
+    create: {
+      username: "dr_elena_rostova",
+      email: "elena@lens.demo",
+      passwordHash: elenaPasswordHash,
+      role: "author",
+      displayName: "Dr. Elena Rostova",
+      profile: { create: {} },
+      wallet: { create: {} },
+      rank: { create: {} },
+    },
+  });
+  console.log("Seeded login credentials for dr_elena_rostova.");
 
   // --- Articles (same art-N ids as the localStorage defaults) ---
   const categoryBySlug = new Map(
@@ -237,6 +261,41 @@ async function main() {
       create: { userId: sarah.id, tier: "gold", points: 4200 },
     });
     console.log("Seeded wallet + rank for sarah_chen.");
+  }
+
+  // --- Demo payout scenario for dr_elena_rostova: a real reader donation on
+  // her real published article (art-4), so the wallet balance is provably
+  // sum(ledger.net) rather than an arbitrary number — and no stripeConnectId
+  // / Payout rows are seeded, so her payouts page demos the real first-time
+  // "Connect your Stripe account" onboarding flow, not an already-connected one.
+  if (elena && markus) {
+    const existingElenaLedger = await prisma.revenueLedger.count({ where: { userId: elena.id, type: "donation" } });
+    if (existingElenaLedger === 0) {
+      await prisma.revenueLedger.create({
+        data: {
+          userId: elena.id,
+          articleId: "art-4",
+          type: "donation",
+          gross: "250.00",
+          feeApplied: "12.50", // 5% donation fee, per PLATFORM_FEES.donation
+          net: "237.50",
+          meta: { donorId: markus.id, demoSeed: true },
+        },
+      });
+      await prisma.wallet.upsert({
+        where: { userId: elena.id },
+        update: { balance: "237.50" },
+        create: { userId: elena.id, balance: "237.50" },
+      });
+      await prisma.notification.create({
+        data: {
+          userId: elena.id,
+          type: "donation",
+          text: 'Markus Green sent $250.00 to support "Sustainable Flight Operations: Reimagining Jet Fuel Alternatives".',
+        },
+      });
+      console.log("Seeded a demo donation + wallet balance for dr_elena_rostova.");
+    }
   }
 }
 

@@ -54,6 +54,12 @@ const NAV_LINKS: NavLink[] = [
     icon: <UsersIcon className={navIcon} />,
     roles: ["author"],
   },
+  {
+    href: "/company",
+    label: "Company Dashboard",
+    icon: <BriefcaseIcon className={navIcon} />,
+    roles: ["corporate"],
+  },
   { href: "/explore", label: "Search Articles", icon: <BookIcon className={navIcon} /> },
   { href: "/categories", label: "Categories", icon: <FolderIcon className={navIcon} /> },
   {
@@ -85,7 +91,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/exchange",
     label: "Exchange Hub",
     icon: <BriefcaseIcon className={navIcon} />,
-    roles: ["author"],
+    roles: ["author", "admin"],
   },
   {
     href: "/analytics",
@@ -132,6 +138,11 @@ const ROLE_PRESENTATION: Record<
     avatarBg: "linear-gradient(135deg, #1e293b 0%, #0f2b5c 100%)",
     badge: "Admin Console",
   },
+  corporate: {
+    avatarChar: "C",
+    avatarBg: "linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)",
+    badge: "Company Account",
+  },
 };
 
 /**
@@ -155,12 +166,15 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
 export function AppSidebar({
   role: sessionRole,
   name: sessionName,
+  avatarUrl = null,
   pendingReviewCount = 0,
   notifications = [],
   unreadCount = 0,
 }: {
   role: UserRole;
   name: string;
+  /** Real uploaded profile photo, if the user has set one — see /profile. */
+  avatarUrl?: string | null;
   /** Real count of articles awaiting editorial review — editor/admin only. */
   pendingReviewCount?: number;
   notifications?: NotificationView[];
@@ -276,12 +290,17 @@ export function AppSidebar({
 
         {/* `.user-profile-widget` */}
         <div className="mb-5 flex items-center gap-3 rounded-lg border border-line bg-bg-primary p-3">
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-base font-bold text-white"
-            style={{ background: presentation.avatarBg }}
-          >
-            {presentation.avatarChar}
-          </div>
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- user-uploaded content, may be an external Supabase Storage URL
+            <img src={avatarUrl} alt={name} className="size-9 shrink-0 rounded-full object-cover" />
+          ) : (
+            <div
+              className="flex size-9 shrink-0 items-center justify-center rounded-full text-base font-bold text-white"
+              style={{ background: presentation.avatarBg }}
+            >
+              {presentation.avatarChar}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h5 className="truncate font-heading text-[13.5px] font-semibold text-text-main">
               {name}

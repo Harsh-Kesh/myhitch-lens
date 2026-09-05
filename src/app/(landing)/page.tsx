@@ -121,7 +121,7 @@ const TIMELINE = [
   },
   {
     title: "5. Publishing Payout",
-    desc: "Article goes live on the feed with direct Mart commerce linking and payouts.",
+    desc: "Article goes live and becomes searchable, with direct Mart commerce linking and payouts.",
   },
 ];
 

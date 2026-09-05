@@ -84,7 +84,7 @@ export default function IntegrationsPage() {
     <>
       <ViewHeader
         title="MYHitch Ecosystem Integrations"
-        subtitle="Platform-wide switches — toggling a module appends its widget to every article on the site, for every reader."
+        subtitle="Local preview switches — toggling a module shows its widget on articles in your own browser, so you can preview how it looks before it's rolled out platform-wide."
       />
 
       {/* Integrations Deck Grid */}

@@ -2,43 +2,38 @@
 
 import { useState, type ComponentProps } from "react";
 
-import { ClockIcon, ShieldIcon, UsersIcon } from "@/components/ui/icons";
+import { ClockIcon, ShieldIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
-import type { VerificationRequestView } from "@/lib/verification";
-import { VerificationQueue } from "../verifications/VerificationQueue";
 import { ModerationQueue } from "../moderation/ModerationQueue";
 import { EditorialAppealsQueue, type EditorialAppealRow } from "./EditorialAppealsQueue";
 
 type ModerationProps = ComponentProps<typeof ModerationQueue>;
 
 export function TrustSafetyHub({
-  verificationQueue,
   reports,
   appeals,
   editorialAppeals,
   categories,
 }: {
-  verificationQueue: VerificationRequestView[];
   reports: ModerationProps["reports"];
   appeals: ModerationProps["appeals"];
   editorialAppeals: EditorialAppealRow[];
   categories: { id: string; name: string }[];
 }) {
-  const [tab, setTab] = useState<"verifications" | "moderation" | "appeals">("verifications");
+  const [tab, setTab] = useState<"moderation" | "appeals">("moderation");
   const openReportsAndAppeals = reports.length + appeals.length;
 
   return (
     <>
       <ViewHeader
         title="Trust & Safety"
-        subtitle="Author verification, copyright moderation, and editorial appeals, in one place."
+        subtitle="Copyright moderation and editorial appeals, in one place. Author verification is now automatic — see each author's profile completeness instead."
       />
 
       <div className="mb-5 flex gap-1 border-b border-line">
         {(
           [
-            ["verifications", "Verifications", UsersIcon, verificationQueue.length],
             ["moderation", "Copyright Moderation", ShieldIcon, openReportsAndAppeals],
             ["appeals", "Editorial Appeals", ClockIcon, editorialAppeals.length],
           ] as const
@@ -70,7 +65,6 @@ export function TrustSafetyHub({
         ))}
       </div>
 
-      {tab === "verifications" && <VerificationQueue queue={verificationQueue} hideHeader />}
       {tab === "moderation" && <ModerationQueue reports={reports} appeals={appeals} hideHeader />}
       {tab === "appeals" && <EditorialAppealsQueue appeals={editorialAppeals} categories={categories} />}
     </>

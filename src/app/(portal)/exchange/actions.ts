@@ -7,6 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { mintProvenance } from "@/lib/provenance";
 import { feeFor, round2 } from "@/lib/marketplace";
 import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES, isCopyrightClear } from "@/lib/exchange";
+import { isSuspended } from "@/lib/authGuards";
+import { isEligibleToSubmit } from "@/lib/verification";
+import { syncContributorRank } from "@/lib/ranking";
+import { isValidAbnChecksum } from "@/lib/abn";
+import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ExchangeOpportunityType } from "@prisma/client";
 
 export type ActionResult = { error: string } | { ok: true };
@@ -14,6 +19,7 @@ export type ActionResult = { error: string } | { ok: true };
 async function requireAuthor() {
   const session = await auth();
   if (!session?.user || session.user.role !== "author") throw new Error("Not authorized");
+  if (await isSuspended(session.user.id)) throw new Error("Your account is suspended.");
   return session.user;
 }
 
@@ -43,6 +49,19 @@ export async function submitToExchangeHub(input: {
   commercialConditions?: string;
 }): Promise<ActionResult> {
   const user = await requireAuthor();
+
+  const { eligible, missing } = await isEligibleToSubmit(user.id);
+  if (!eligible) {
+    return { error: `Get verified before submitting — complete your profile: ${missing.join(", ")}.` };
+  }
+
+  // Real sponsorship money changes hands here, so — for Australian authors —
+  // a valid ABN must be on file, checked directly rather than only relying on
+  // the general verification gate above (which is a broader, evolving rule).
+  const profile = await prisma.profile.findUnique({ where: { userId: user.id }, select: { country: true, abn: true } });
+  if (profile?.country === ABN_COUNTRY && !(profile.abn && isValidAbnChecksum(profile.abn))) {
+    return { error: "Add a valid ABN to your profile before submitting to the Exchange Hub." };
+  }
 
   const description = input.description.trim();
   if (!description) return { error: "Describe the opportunity for reviewing businesses." };
@@ -128,6 +147,47 @@ export async function cancelExchangeSubmission(opportunityId: string): Promise<A
 }
 
 /**
+ * Once a sponsorship is live, the author can still pull the article back to
+ * the ordinary main-app feed — the deal already struck and the money already
+ * paid both stand; this only changes where the article is routed going
+ * forward. An article is always exactly one of exchange_hub / main_app,
+ * never both — this is the one documented path back from exchange_hub.
+ */
+export async function revertToMainApp(opportunityId: string): Promise<ActionResult> {
+  const user = await requireAuthor();
+
+  const opportunity = await prisma.exchangeOpportunity.findUnique({ where: { id: opportunityId } });
+  if (!opportunity) return { error: "Opportunity not found." };
+  if (opportunity.authorId !== user.id) return { error: "Not your submission." };
+  if (opportunity.status !== "published") return { error: "Only a published Exchange Hub agreement can be reverted." };
+
+  const article = await prisma.article.findUnique({
+    where: { id: opportunity.articleId },
+    select: { destination: true, title: true },
+  });
+  if (article?.destination !== "exchange_hub") {
+    return { error: "This article isn't currently routed through the Exchange Hub." };
+  }
+
+  await prisma.$transaction([
+    prisma.article.update({ where: { id: opportunity.articleId }, data: { destination: "main_app" } }),
+    prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: "exchange_reverted",
+        text: `"${article.title}" is no longer marked as an Exchange Hub sponsorship — it now shows as a regular MYHitch Lens article.`,
+      },
+    }),
+  ]);
+  await logEvent(opportunityId, user.id, "reverted_to_main_app");
+
+  revalidatePath("/exchange");
+  revalidatePath("/explore");
+  revalidatePath("/article");
+  return { ok: true };
+}
+
+/**
  * Records the outcome of negotiation — stands in for what MYHitch Connect will
  * eventually report back once a real Exchange Hub exists. Moves the
  * opportunity to `agreement_pending`, awaiting the separate approval step.
@@ -188,21 +248,30 @@ export async function approveExchangeOpportunity(opportunityId: string): Promise
   const fee = feeFor("sponsorship", value);
   const net = round2(value - fee);
 
-  await prisma.$transaction([
-    prisma.article.update({
+  // Guard the status transition inside the transaction itself (not just the
+  // read above) — updateMany's `where` re-checks the current status at write
+  // time, so two concurrent approve clicks can't both credit the wallet for
+  // the same deal. Only the first to commit succeeds; the second sees the
+  // already-updated status and gets a clean "already resolved" error.
+  const result = await prisma.$transaction(async (tx) => {
+    const claim = await tx.exchangeOpportunity.updateMany({
+      where: { id: opportunityId, status: "agreement_pending" },
+      data: { status: "published", resolvedById: editor.id, resolvedAt: new Date() },
+    });
+    if (claim.count !== 1) {
+      return { error: "This opportunity was already resolved." } as const;
+    }
+
+    await tx.article.update({
       where: { id: opportunity.articleId },
       data: { status: "published", verified: true, publishedAt: new Date() },
-    }),
-    prisma.exchangeOpportunity.update({
-      where: { id: opportunityId },
-      data: { status: "published", resolvedById: editor.id, resolvedAt: new Date() },
-    }),
-    prisma.wallet.upsert({
+    });
+    await tx.wallet.upsert({
       where: { userId: opportunity.authorId },
       update: { balance: { increment: net } },
       create: { userId: opportunity.authorId, balance: net },
-    }),
-    prisma.revenueLedger.create({
+    });
+    await tx.revenueLedger.create({
       data: {
         userId: opportunity.authorId,
         articleId: opportunity.articleId,
@@ -212,18 +281,22 @@ export async function approveExchangeOpportunity(opportunityId: string): Promise
         net,
         meta: { kind: "exchange_opportunity", opportunityId, brand: opportunity.agreedBrandName },
       },
-    }),
-    prisma.notification.create({
+    });
+    await tx.notification.create({
       data: {
         userId: opportunity.authorId,
         type: "exchange_approved",
         text: `Your Exchange Hub agreement with ${opportunity.agreedBrandName} was approved — "${opportunity.article.title}" is now published (A$${net.toFixed(2)} added to your wallet).`,
       },
-    }),
-  ]);
+    });
+    return { ok: true } as const;
+  });
+
+  if ("error" in result) return result;
 
   await mintProvenance(opportunity.articleId);
   await logEvent(opportunityId, editor.id, "approved_and_published");
+  await syncContributorRank(opportunity.authorId);
 
   revalidatePath("/editorial");
   revalidatePath("/exchange");

@@ -117,6 +117,7 @@ export function MagazinePage({
   category,
   articleId,
   showMasthead,
+  allowIssueBrowsing = true,
 }: {
   title: string;
   content: string;
@@ -126,6 +127,15 @@ export function MagazinePage({
   articleId?: string;
   /** True in the submit-flow preview (shows the MYHitch Lens logo masthead); false on the real published page. */
   showMasthead: boolean;
+  /**
+   * True in the submit-flow preview (an author browsing the issue rail to
+   * see where neighbouring pieces land is useful context). False on the
+   * real published reading view — a reader who opened one article should
+   * only ever see that article, never page-flip into someone else's piece.
+   * This still lets a single long article page through its OWN continuation
+   * pages either way; it only turns off crossing into other articles.
+   */
+  allowIssueBrowsing?: boolean;
 }) {
   const [view, setView] = useState<Awaited<ReturnType<typeof getMagazineView>> | null | undefined>(undefined);
   const [viewPage, setViewPage] = useState<number | null>(null);
@@ -182,18 +192,23 @@ export function MagazinePage({
   const isFirstPageOfArticle = currentPage === startPage;
   const isLastPageOfArticle = currentPage === endPage;
 
-  const minNav = Math.max(1, startPage - 2);
-  const maxNav = endPage + 2;
-  const railPages = rangeArray(Math.max(1, startPage - 1), endPage + 1);
+  const minNav = allowIssueBrowsing ? Math.max(1, startPage - 2) : startPage;
+  const maxNav = allowIssueBrowsing ? endPage + 2 : endPage;
+  const railPages = allowIssueBrowsing
+    ? rangeArray(Math.max(1, startPage - 1), endPage + 1)
+    : rangeArray(startPage, endPage);
 
   let trailingNeighbour: IssueArticleRow | undefined;
-  if (withinArticle && isLastPageOfArticle) {
+  if (allowIssueBrowsing && withinArticle && isLastPageOfArticle) {
     const lastChunk = articlePages[articlePages.length - 1];
     const budget = articlePages.length === 1 ? FIRST_PAGE_BUDGET : CONTINUATION_BUDGET;
     if (lastChunk.length < budget * 0.65) {
       trailingNeighbour = issueArticles.find((a) => a.page === endPage + 1 && a.id !== articleId);
     }
   }
+  // With issue browsing off, currentPage is clamped to [startPage, endPage]
+  // above, so this can never actually resolve — kept only so the branch
+  // below stays well-typed rather than needing a second code path.
   const currentNeighbour = !withinArticle ? issueArticles.find((a) => a.page === currentPage) : undefined;
 
   return (
@@ -205,49 +220,55 @@ export function MagazinePage({
         </div>
       )}
 
-      {/* Page navigation */}
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setViewPage(Math.max(minNav, currentPage - 1))}
-          disabled={currentPage <= minNav}
-          className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ← Prev
-        </button>
-        <div className="flex items-center gap-1.5">
-          {railPages.map((p) => {
-            const isThisArticle = p >= startPage && p <= endPage;
-            const isActive = p === currentPage;
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setViewPage(p)}
-                title={isThisArticle ? `Page ${p} — this article` : `Page ${p} — another article`}
-                className={cn(
-                  pagePillBase,
-                  isActive
-                    ? "bg-primary text-text-inverse"
-                    : isThisArticle
-                      ? "bg-primary-glow text-primary hover:bg-primary/20"
-                      : "bg-bg-tertiary text-text-muted hover:text-text-main",
-                )}
-              >
-                {p}
-              </button>
-            );
-          })}
+      {/* Page navigation — hidden entirely on the reading view for a
+          single-page article (the common case): with issue browsing off and
+          nothing of this article's own to page through, there's nothing to
+          navigate. A long article still gets Prev/Next through its own
+          continuation pages, just never into a neighbouring article. */}
+      {(allowIssueBrowsing || spansMultiplePages) && (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setViewPage(Math.max(minNav, currentPage - 1))}
+            disabled={currentPage <= minNav}
+            className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ← Prev
+          </button>
+          <div className="flex items-center gap-1.5">
+            {railPages.map((p) => {
+              const isThisArticle = p >= startPage && p <= endPage;
+              const isActive = p === currentPage;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setViewPage(p)}
+                  title={isThisArticle ? `Page ${p} — this article` : `Page ${p} — another article`}
+                  className={cn(
+                    pagePillBase,
+                    isActive
+                      ? "bg-primary text-text-inverse"
+                      : isThisArticle
+                        ? "bg-primary-glow text-primary hover:bg-primary/20"
+                        : "bg-bg-tertiary text-text-muted hover:text-text-main",
+                  )}
+                >
+                  {p}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewPage(Math.min(maxNav, currentPage + 1))}
+            disabled={currentPage >= maxNav}
+            className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next →
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setViewPage(Math.min(maxNav, currentPage + 1))}
-          disabled={currentPage >= maxNav}
-          className="rounded-md border border-line px-2.5 py-1.5 text-[11.5px] font-semibold text-text-muted hover:border-line-hover hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Next →
-        </button>
-      </div>
+      )}
       {spansMultiplePages && (
         <p className="mb-3 text-center text-[11px] text-text-muted">
           This piece runs {articlePages.length} pages at its current length — pages {startPage}–{endPage}.
@@ -257,9 +278,14 @@ export function MagazinePage({
       {/* The physical page — blue-and-white print typography, deliberately
           distinct from the app's own chrome. */}
       <div
-        className="relative mx-auto overflow-hidden rounded-[2px] bg-white text-[#0f2340] shadow-[0_1px_2px_rgba(15,43,92,0.10),0_18px_38px_rgba(15,43,92,0.16)] ring-1 ring-[#0f2b5c]/10"
+        className="relative mx-auto overflow-hidden rounded-[3px] bg-gradient-to-b from-[#eef4ff] via-white to-white text-[#0f2340] shadow-[0_1px_2px_rgba(15,43,92,0.10),0_18px_38px_rgba(15,43,92,0.18)] ring-1 ring-[#0f2b5c]/12"
         style={{ fontFamily: "Georgia, 'Iowan Old Style', 'Times New Roman', serif" }}
       >
+        {/* Spine accent — a solid band of MYHitch blue at the very top of
+            every page, so the reading view still reads as "the blue and
+            white magazine" even without the full masthead. */}
+        <div className="h-[7px] w-full bg-gradient-to-r from-[#0f2b5c] via-[#0056b3] to-[#0f2b5c]" aria-hidden />
+
         {/* Watermark — faint, behind everything */}
         <div
           className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center select-none"
@@ -269,12 +295,12 @@ export function MagazinePage({
           <img src="/images/myhitch-logo.jpeg" alt="" className="w-[95%] max-w-[480px] opacity-[0.06] mix-blend-multiply" />
         </div>
 
-        <div className="relative z-10 px-9 pt-7 pb-5 max-[480px]:px-6">
+        <div className="relative z-10 px-9 pt-6 pb-5 max-[480px]:px-6">
           {showMasthead && (
-            <div className="mb-5 flex items-center justify-between gap-3 border-b border-[#0f2b5c]/70 pb-3">
+            <div className="mb-5 -mx-9 flex items-center justify-between gap-3 bg-[#0f2b5c] px-9 py-3 max-[480px]:-mx-6 max-[480px]:px-6">
               {/* eslint-disable-next-line @next/next/no-img-element -- masthead logo, preview only */}
-              <img src="/images/logo.png" alt="MYHitch Lens Magazine" className="h-9 w-auto" />
-              <span className="font-sans text-[10px] tracking-[0.1em] text-[#0f2b5c]/60 uppercase">{placement.issue.weekLabel}</span>
+              <img src="/images/logo.png" alt="MYHitch Lens Magazine" className="h-8 w-auto brightness-0 invert" />
+              <span className="font-sans text-[10px] tracking-[0.14em] text-white/70 uppercase">{placement.issue.weekLabel}</span>
             </div>
           )}
 
@@ -287,12 +313,14 @@ export function MagazinePage({
                   </div>
                 )}
                 {category && (
-                  <div className="mb-1.5 text-[10.5px] font-sans font-bold tracking-[0.16em] text-[#0056b3] uppercase">{category}</div>
+                  <div className="mb-2 inline-block rounded-sm bg-[#0056b3] px-2 py-[3px] font-sans text-[10px] font-bold tracking-[0.16em] text-white uppercase">
+                    {category}
+                  </div>
                 )}
                 <h2 className="mb-3 text-[32px] leading-[1.08] font-bold tracking-[-0.01em] text-balance">
                   {title || "Untitled Article"}
                 </h2>
-                <div className="mb-5 flex items-center gap-3 border-y border-[#0f2b5c]/15 py-2 text-[12px] tracking-[0.02em] italic text-[#0f2340]/70">
+                <div className="mb-5 flex items-center gap-3 border-y-2 border-[#0f2b5c]/20 py-2 text-[12px] tracking-[0.02em] italic text-[#0f2340]/70">
                   By {author || "Author"}
                 </div>
               </>
@@ -313,14 +341,20 @@ export function MagazinePage({
                 className="relative text-[13.5px] leading-[1.65] [column-gap:26px] [column-rule:1px_solid_rgba(15,43,92,0.14)] [hyphens:auto] [text-align:justify] max-[480px]:columns-1"
                 style={{
                   columns: 2,
-                  maxHeight: isFirstPageOfArticle ? FIRST_PAGE_COLUMN_HEIGHT : CONTINUATION_COLUMN_HEIGHT,
-                  overflow: "hidden",
+                  // A minimum, not a cap: gives short chunks a proper
+                  // print-page feel without ever clipping a longer one. The
+                  // character-count page split above is an estimate, not a
+                  // pixel-exact measurement of rendered height — capping
+                  // this box with overflow:hidden would silently cut off
+                  // real article text whenever that estimate ran a little
+                  // long, which is exactly the wrong failure mode here.
+                  minHeight: isFirstPageOfArticle ? FIRST_PAGE_COLUMN_HEIGHT : CONTINUATION_COLUMN_HEIGHT,
                 }}
               >
                 <p
                   className={
                     isFirstPageOfArticle
-                      ? "first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[52px] first-letter:leading-[38px]"
+                      ? "first-letter:float-left first-letter:mr-2 first-letter:mt-0.5 first-letter:font-bold first-letter:text-[52px] first-letter:leading-[38px] first-letter:text-[#0056b3]"
                       : undefined
                   }
                 >
@@ -342,7 +376,7 @@ export function MagazinePage({
         </div>
 
         {/* Folio */}
-        <div className="relative z-10 flex items-center justify-between border-t border-[#0f2b5c]/70 px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-[#0f2340]/60 uppercase max-[480px]:px-6">
+        <div className="relative z-10 flex items-center justify-between bg-[#0f2b5c] px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-white/80 uppercase max-[480px]:px-6">
           <span>MYHitch Weekly</span>
           <span>Page {currentPage} of {placement.totalArticlesThisIssue}</span>
         </div>

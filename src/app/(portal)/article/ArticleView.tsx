@@ -234,6 +234,7 @@ export function ArticleView({
         category={article.category}
         articleId={article.id}
         showMasthead={false}
+        allowIssueBrowsing={false}
       />
 
       <div className="mx-auto mt-6 max-w-[600px] rounded-xl border border-line bg-bg-secondary p-6 max-[640px]:p-5">

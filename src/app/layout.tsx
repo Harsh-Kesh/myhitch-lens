@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Outfit } from "next/font/google";
 
-import { DevelopmentNotice } from "@/components/layout/DevelopmentNotice";
 import { StoreProvider } from "@/components/providers/StoreProvider";
 
 import "./globals.css";
@@ -52,7 +51,6 @@ export default function RootLayout({
     >
       <body suppressHydrationWarning>
         <StoreProvider>{children}</StoreProvider>
-        <DevelopmentNotice />
       </body>
     </html>
   );

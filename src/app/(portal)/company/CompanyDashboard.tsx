@@ -88,6 +88,12 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
           Using <span className="font-semibold text-text-main">{overview.members.length}</span> of{" "}
           <span className="font-semibold text-text-main">{overview.seats}</span> seats.
         </p>
+        <p className="mt-2 text-[13px] text-text-muted">
+          ABN:{" "}
+          <span className="font-semibold text-text-main">
+            {overview.abn || "Not on file"}
+          </span>
+        </p>
       </div>
 
       <div className={dashCard}>

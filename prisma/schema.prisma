@@ -257,6 +257,10 @@ enum OrgRole {
 model Organization {
   id        String          @id @default(cuid())
   name      String
+  // The company's own ABN — belongs here, not on the owner's personal
+  // Profile, since the registered business is the org, not the individual
+  // who happens to own the account.
+  abn       String?
   seats     Int             @default(10)
   createdAt DateTime        @default(now())
   members   OrgMembership[]

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
+import { AbnField } from "@/components/ui/AbnField";
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
@@ -232,10 +233,7 @@ export function ProfileSettings({
             </select>
           </div>
           {countryVal === ABN_COUNTRY && (
-            <div>
-              <label className={formLabel}>ABN (optional)</label>
-              <input type="text" className={formControl} placeholder="11 digit ABN" value={abnVal} onChange={(e) => setAbnVal(e.target.value)} />
-            </div>
+            <AbnField value={abnVal} onChange={setAbnVal} label="ABN (optional)" />
           )}
         </div>
 

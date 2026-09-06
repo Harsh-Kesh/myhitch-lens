@@ -46,7 +46,11 @@ export async function registerUser(input: {
   const password = input.password;
   const role = parseRole(input.role);
   const country = input.country?.trim() || null;
-  const abnInput = country === ABN_COUNTRY ? input.abn?.trim() || null : null;
+  // Corporate signup collects no country field at all (a company's ABN
+  // implies Australia already), so its ABN isn't gated on country the way an
+  // individual's is.
+  const abnInput =
+    role === "corporate" ? input.abn?.trim() || null : country === ABN_COUNTRY ? input.abn?.trim() || null : null;
   const companyName = input.companyName?.trim() || "";
 
   if (!username || !email || !password) {
@@ -87,7 +91,9 @@ export async function registerUser(input: {
       passwordHash,
       role,
       displayName,
-      profile: { create: { country, abn } },
+      // The ABN belongs to the Organization for a corporate signup — the
+      // business being registered — not to the owner's personal Profile.
+      profile: { create: { country, abn: role === "corporate" ? null : abn } },
       wallet: { create: {} },
       rank: { create: {} },
       ...(role === "corporate"
@@ -96,7 +102,7 @@ export async function registerUser(input: {
               create: {
                 isAdmin: true,
                 orgRole: "owner",
-                org: { create: { name: companyName } },
+                org: { create: { name: companyName, abn } },
               },
             },
           }

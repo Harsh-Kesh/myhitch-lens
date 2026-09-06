@@ -32,6 +32,15 @@ export interface AbnLookupResult {
   error?: string;
 }
 
+export interface AbnNameMatch {
+  abn: string;
+  name: string;
+  /** "Entity Name" | "Business Name" | "Trading Name", as returned by the ABR. */
+  nameType: string;
+  state?: string;
+  postcode?: string;
+}
+
 /**
  * Validates an ABN: checksum first (rejects malformed input immediately),
  * then a live ABR lookup confirming the ABN actually exists and is Active.
@@ -74,5 +83,50 @@ export async function lookupAbn(rawAbn: string): Promise<AbnLookupResult> {
   } catch (err) {
     console.error("ABN Lookup request failed, falling back to checksum-only:", err);
     return { valid: true };
+  }
+}
+
+/**
+ * Searches the ABR by business/entity name — the reverse direction of
+ * `lookupAbn`, for a "search by company name instead" input. Returns
+ * candidates the caller lets the user pick from; picking one resolves the
+ * real ABN, so the two fields always end up referring to the same business.
+ *
+ * Read-only public registry data — like `lookupAbn`, degrades to an empty
+ * result rather than throwing if the service is unreachable or unconfigured,
+ * so a flaky government API never blocks the form around it.
+ */
+export async function searchAbnByName(rawQuery: string, maxResults = 8): Promise<AbnNameMatch[]> {
+  const query = rawQuery.trim();
+  if (query.length < 3 || !ABN_LOOKUP_GUID) return [];
+
+  try {
+    const url = `https://abr.business.gov.au/json/MatchingNames.aspx?name=${encodeURIComponent(query)}&maxResults=${maxResults}&guid=${ABN_LOOKUP_GUID}`;
+    const res = await fetch(url);
+    const raw = await res.text();
+
+    const match = raw.match(/^\w+\(([\s\S]*)\)$/);
+    const json = JSON.parse(match ? match[1] : raw);
+    const names: Array<{
+      Abn?: string;
+      Name?: string;
+      NameType?: string;
+      State?: string;
+      Postcode?: string;
+      IsCurrent?: boolean;
+    }> = json.Names || [];
+
+    return names
+      .filter((n) => n.IsCurrent && n.Abn && n.Name)
+      .map((n) => ({
+        abn: n.Abn!,
+        name: n.Name!,
+        nameType: n.NameType || "Entity Name",
+        state: n.State || undefined,
+        postcode: n.Postcode || undefined,
+      }));
+  } catch (err) {
+    console.error("ABN name search failed:", err);
+    return [];
   }
 }

@@ -52,6 +52,7 @@ export interface CompanyMember {
 export interface CompanyOverview {
   orgId: string;
   orgName: string;
+  abn: string | null;
   seats: number;
   myRole: OrgRole;
   isOwner: boolean;
@@ -71,6 +72,7 @@ export async function getCompanyOverview(): Promise<CompanyOverview> {
   return {
     orgId: membership.orgId,
     orgName: membership.org.name,
+    abn: membership.org.abn,
     seats: membership.org.seats,
     myRole: membership.orgRole,
     isOwner: membership.isAdmin,

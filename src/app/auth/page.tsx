@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState, useTransition, type FormEvent } from "react";
 
+import { AbnField } from "@/components/ui/AbnField";
 import { Button } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { loginUser, registerUser } from "@/app/auth/actions";
@@ -195,6 +196,10 @@ function AuthCard() {
             </div>
           )}
 
+          {tab === "signup" && role === "corporate" && (
+            <AbnField value={abn} onChange={setAbn} label="Company ABN (optional)" compareName={companyName} />
+          )}
+
           {tab === "signup" && role !== "corporate" && (
             <div>
               <label htmlFor="authCountry" className={formLabel}>Country</label>
@@ -208,10 +213,7 @@ function AuthCard() {
           )}
 
           {tab === "signup" && role !== "corporate" && country === ABN_COUNTRY && (
-            <div>
-              <label htmlFor="authAbn" className={formLabel}>ABN (optional)</label>
-              <input id="authAbn" type="text" className={formControl} placeholder="11 digit ABN" value={abn} onChange={(e) => setAbn(e.target.value)} />
-            </div>
+            <AbnField value={abn} onChange={setAbn} label="ABN (optional)" />
           )}
 
           {error && (

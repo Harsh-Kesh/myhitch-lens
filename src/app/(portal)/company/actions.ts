@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { lookupAbn, normalizeAbn } from "@/lib/abn";
 import { mintProvenance } from "@/lib/provenance";
 import type { OrgRole } from "@prisma/client";
 
@@ -132,6 +133,28 @@ export async function createSubAccount(input: {
       },
     },
   });
+
+  revalidatePath("/company");
+  return { ok: true };
+}
+
+/** Owner-only: correct the company's own name and/or ABN after signup — the
+ *  only two fields captured once and never otherwise editable. */
+export async function updateCompanyDetails(input: { name: string; abn: string }): Promise<ActionResult> {
+  const { membership } = await requireOwner();
+
+  const name = input.name.trim();
+  if (!name) return { error: "Company name can't be empty." };
+
+  const abnInput = input.abn.trim();
+  let abn: string | null = null;
+  if (abnInput) {
+    const check = await lookupAbn(abnInput);
+    if (!check.valid) return { error: check.error ?? "That ABN doesn't look valid." };
+    abn = normalizeAbn(abnInput);
+  }
+
+  await prisma.organization.update({ where: { id: membership.orgId }, data: { name, abn } });
 
   revalidatePath("/company");
   return { ok: true };

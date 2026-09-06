@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { AbnField } from "@/components/ui/AbnField";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { formControl, formLabel } from "@/components/ui/Form";
@@ -16,6 +17,7 @@ import {
   rejectCompanyArticle,
   removeSubAccount,
   submitCompanyArticle,
+  updateCompanyDetails,
   type CompanyArticle,
   type CompanyMember,
   type CompanyOverview,
@@ -69,6 +71,7 @@ export function CompanyDashboard({
 function OwnerPanel({ overview }: { overview: CompanyOverview }) {
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function doRemove(member: CompanyMember) {
@@ -83,7 +86,12 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
   return (
     <>
       <div className={cn(dashCard, "mb-6")}>
-        <h3 className={dashHeading}>Seats</h3>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className={dashHeading}>Company Details</h3>
+          <Button size="sm" variant="secondary" onClick={() => setShowEdit(true)}>
+            Edit
+          </Button>
+        </div>
         <p className="text-[13px] text-text-muted">
           Using <span className="font-semibold text-text-main">{overview.members.length}</span> of{" "}
           <span className="font-semibold text-text-main">{overview.seats}</span> seats.
@@ -133,7 +141,62 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
       </div>
 
       {showAdd && <AddSubAccountModal onClose={() => setShowAdd(false)} />}
+      {showEdit && (
+        <EditCompanyModal orgName={overview.orgName} abn={overview.abn} onClose={() => setShowEdit(false)} />
+      )}
     </>
+  );
+}
+
+function EditCompanyModal({
+  orgName,
+  abn,
+  onClose,
+}: {
+  orgName: string;
+  abn: string | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [name, setName] = useState(orgName);
+  const [abnVal, setAbnVal] = useState(abn ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      const res = await updateCompanyDetails({ name, abn: abnVal });
+      if ("error" in res) setError(res.error);
+      else {
+        onClose();
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <Modal onClose={onClose} className="w-[min(420px,92vw)]">
+      <h3 className="mb-4 font-heading text-lg font-bold text-text-main">Edit company details</h3>
+
+      <div className="mb-3">
+        <label className={formLabel}>Company name</label>
+        <input className={formControl} value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
+
+      <div className="mb-5">
+        <AbnField value={abnVal} onChange={setAbnVal} label="Company ABN" compareName={name} />
+      </div>
+
+      {error && <p className="mb-4 text-[12.5px] text-danger">{error}</p>}
+
+      <div className="flex gap-3">
+        <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
+        <Button className="flex-1" disabled={isPending} onClick={submit}>
+          {isPending ? "Saving..." : "Save changes"}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

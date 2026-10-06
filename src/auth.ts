@@ -22,17 +22,11 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
       const token = ((await authConfig.callbacks.jwt(params)) ?? params.token) as JWT;
 
       // A session UPDATE can be triggered with arbitrary data by any signed-in
-      // browser (POST /api/auth/session), so the payload is never trusted. The
-      // role always comes from the database. The ONLY thing a caller may pick is,
-      // for a real admin, whether to VIEW the app as "author" or "admin".
+      // browser (POST /api/auth/session), so the payload is never trusted: the
+      // role is always re-read from the database.
       if (params.trigger === "update" && token.uid) {
         const row = await prisma.user.findUnique({ where: { id: token.uid }, select: { role: true } });
-        if (row) {
-          const requested = (params.session as { user?: { role?: string } } | undefined)?.user?.role;
-          token.canAdmin = row.role === "admin";
-          token.role =
-            row.role === "admin" && (requested === "author" || requested === "admin") ? requested : row.role;
-        }
+        if (row) token.role = row.role;
       }
       return token;
     },

@@ -25,6 +25,7 @@ const PORTAL_PREFIXES = [
   "/article",
   "/profile",
   "/company",
+  "/promote",
 ];
 
 /**
@@ -95,7 +96,6 @@ export const authConfig = {
       if (user) {
         token.uid = user.id as string;
         token.role = (user as { role: UserRole }).role;
-        token.canAdmin = token.role === "admin";
       }
       // Session UPDATES are deliberately not handled here: the update payload
       // can be sent by any signed-in browser, so it must never be trusted. The
@@ -106,7 +106,6 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.uid as string;
         session.user.role = token.role as UserRole;
-        session.user.canAdmin = token.canAdmin === true;
       }
       return session;
     },

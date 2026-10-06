@@ -3,8 +3,7 @@
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 
-import { auth, signIn, signOut, updateSession } from "@/auth";
-import { ROLE_HOME } from "@/lib/roleHome";
+import { auth, signIn, signOut } from "@/auth";
 
 export type AuthResult = { error: string } | undefined;
 
@@ -41,18 +40,6 @@ export async function logoutUser(): Promise<void> {
   await signOut({ redirect: false });
   const portal = process.env.NEXT_PUBLIC_PORTAL_URL;
   redirect(portal ? new URL("/api/sso/lens/logout", portal).toString() : "/");
-}
-
-/**
- * Let an admin flip between the Admin and Author views of the app. The session
- * callback re-checks the database, so a non-admin calling this changes nothing.
- */
-export async function switchView(view: "author" | "admin"): Promise<void> {
-  const session = await auth();
-  if (!session?.user) redirect("/auth/login");
-  if (view !== "author" && view !== "admin") redirect(ROLE_HOME[session.user.role]);
-  await updateSession({ user: { role: view } });
-  redirect(ROLE_HOME[view]);
 }
 
 /** Current authenticated user's role + display name, or null. */

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
@@ -14,7 +15,7 @@ import type { UserRole } from "@prisma/client";
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { updateAvatar, updateProfile } from "./actions";
-import { switchView } from "@/app/auth/actions";
+import { ADMIN_MODE_LABEL, ADMIN_MODE_PATH } from "@/lib/adminMode";
 
 const COUNTRIES = [
   "Australia",
@@ -36,7 +37,6 @@ export function ProfileSettings({
   abn,
   avatarUrl,
   role,
-  canAdmin,
   connectStatus,
 }: {
   displayName: string;
@@ -48,8 +48,6 @@ export function ProfileSettings({
   abn: string;
   avatarUrl: string | null;
   role: UserRole;
-  /** A real admin account: shows the Admin / Author view switch. */
-  canAdmin: boolean;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
@@ -208,19 +206,16 @@ export function ProfileSettings({
         </Button>
       </div>
 
-      {canAdmin && (
+      {role !== "corporate" && (
         <div className={dashCard + " mt-6"}>
-          <h3 className={dashHeading}>View mode</h3>
+          <h3 className={dashHeading}>Dashboard mode</h3>
           <p className="mb-4 text-[12.5px] text-text-muted">
-            You are an admin. You are currently using Lens in{" "}
-            <span className="font-semibold text-text-main">{role === "admin" ? "Admin" : "Author"}</span> mode.
-            Switch any time; your account stays the same.
+            You sign in to your Author dashboard by default. Switch to the {ADMIN_MODE_LABEL} dashboard to promote
+            a subscription package, then come back any time.
           </p>
-          <form action={switchView.bind(null, role === "admin" ? "author" : "admin")}>
-            <Button type="submit" size="sm">
-              {role === "admin" ? "Switch to Author mode" : "Switch to Admin mode"}
-            </Button>
-          </form>
+          <Link href={ADMIN_MODE_PATH} className={buttonClasses("primary", "sm")}>
+            Switch to {ADMIN_MODE_LABEL}
+          </Link>
         </div>
       )}
 

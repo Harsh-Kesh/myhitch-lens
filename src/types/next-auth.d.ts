@@ -7,8 +7,6 @@ declare module "next-auth" {
     user: {
       id: string;
       role: UserRole;
-      /** True for a real admin account (may switch between Admin and Author view). */
-      canAdmin: boolean;
     } & DefaultSession["user"];
   }
 
@@ -21,6 +19,5 @@ declare module "next-auth/jwt" {
   interface JWT {
     uid: string;
     role: UserRole;
-    canAdmin?: boolean;
   }
 }

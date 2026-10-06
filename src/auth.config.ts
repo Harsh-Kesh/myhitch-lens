@@ -91,23 +91,22 @@ export const authConfig = {
       }
       return true;
     },
-    jwt({ token, user, trigger, session }) {
+    jwt({ token, user }) {
       if (user) {
         token.uid = user.id as string;
         token.role = (user as { role: UserRole }).role;
+        token.canAdmin = token.role === "admin";
       }
-      // Lets a server action push a role change into the live session
-      // (e.g. becomeAuthor()) without forcing the user to log back in —
-      // see updateSession() in auth.ts.
-      if (trigger === "update" && session?.user?.role) {
-        token.role = session.user.role as UserRole;
-      }
+      // Session UPDATES are deliberately not handled here: the update payload
+      // can be sent by any signed-in browser, so it must never be trusted. The
+      // Node-runtime config in auth.ts re-derives the role from the database.
       return token;
     },
     session({ session, token }) {
       if (session.user) {
         session.user.id = token.uid as string;
         session.user.role = token.role as UserRole;
+        session.user.canAdmin = token.canAdmin === true;
       }
       return session;
     },

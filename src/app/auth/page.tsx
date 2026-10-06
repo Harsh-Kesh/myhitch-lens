@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 
-const HINTABLE_ROLES = new Set(["reader", "author", "corporate"]);
+const HINTABLE_ROLES = new Set(["author", "corporate"]);
 
 /**
  * Legacy entry point. Every old link and bookmark to `/auth` (and

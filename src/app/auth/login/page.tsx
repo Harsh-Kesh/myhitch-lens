@@ -9,7 +9,7 @@ const STATE_KEY = "portal_sso_state";
 const INTENT_KEY = "lens_sso_intent";
 
 /** Roles the browser may hint at. A UI convenience only; the server re-validates on first sign-in. */
-const HINTABLE_ROLES = new Set(["reader", "author", "corporate"]);
+const HINTABLE_ROLES = new Set(["author", "corporate"]);
 
 function newState(): string {
   const bytes = new Uint8Array(32); // 256-bit CSPRNG; base64url matches the portal's ^[A-Za-z0-9_-]{16,128}$

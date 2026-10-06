@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/icons";
 import { useLensValue } from "@/hooks/useLensValue";
 import { getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
-import { logoutUser } from "@/app/auth/actions";
+import { logoutUser, switchView } from "@/app/auth/actions";
 import { cn } from "@/lib/cn";
 import type { UserRole } from "@/lib/types";
 import type { NotificationView } from "@/lib/notifications";
@@ -165,6 +165,7 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
  */
 export function AppSidebar({
   role: sessionRole,
+  canAdmin = false,
   name: sessionName,
   avatarUrl = null,
   pendingReviewCount = 0,
@@ -172,6 +173,8 @@ export function AppSidebar({
   unreadCount = 0,
 }: {
   role: UserRole;
+  /** A real admin account: shows the Admin / Author view switch. */
+  canAdmin?: boolean;
   name: string;
   /** Real uploaded profile photo, if the user has set one — see /profile. */
   avatarUrl?: string | null;
@@ -341,6 +344,13 @@ export function AppSidebar({
 
         {/* `.sidebar-footer` — account + navigation actions grouped at the bottom */}
         <div className="mt-auto flex flex-col gap-2 border-t border-line pt-4">
+          {canAdmin && (
+            <form action={switchView.bind(null, sessionRole === "admin" ? "author" : "admin")}>
+              <button type="submit" className={buttonClasses("secondary", "md", "w-full")}>
+                {sessionRole === "admin" ? "Switch to Author view" : "Switch to Admin view"}
+              </button>
+            </form>
+          )}
           <form action={logoutUser}>
             <button
               type="submit"

@@ -20,13 +20,11 @@ export type PortalSignedInUser = {
 };
 
 /**
- * Roles a visitor's browser may ask for on FIRST sign-in. This is only a UI
- * hint. "corporate" is deliberately not here: it is granted only when the
- * portal says the business is approved (see `resolveNewUserRole`). "editor" and
- * "admin" are never assignable through SSO — staff are promoted internally
- * (scripts/grantRole.ts).
+ * New accounts start as "author". "corporate" is granted only when the portal
+ * says the business is approved (see `resolveNewUserRole`); the browser's role
+ * hint can never raise it. "editor" and "admin" are never assignable through
+ * SSO: staff are promoted internally (scripts/grantRole.ts).
  */
-const SELF_ASSIGNABLE = new Set<string>(["reader", "author"]);
 
 const MAX_USERNAME_ATTEMPTS = 8;
 
@@ -65,8 +63,8 @@ async function uniqueUsername(email: string, displayName: string | null): Promis
  * Decide the role of a brand-new Lens user.
  *  - "corporate" is NEVER taken from the browser. It requires an APPROVED
  *    portal business with a legal name; that business becomes the Organization.
- *  - "author" is self-assignable (it is today, at signup).
- *  - Everything else is a reader.
+ *  - Everyone else starts as an author (Lens no longer creates new reader
+ *    accounts). Existing accounts keep whatever role they already have.
  */
 async function resolveNewUserRole(
   profile: PortalProfile,
@@ -78,9 +76,9 @@ async function resolveNewUserRole(
     if (business?.reviewStatus === "approved" && name) {
       return { role: "corporate", org: { name, abn: business.abn ? normalizeAbn(business.abn) : null } };
     }
-    return { role: "reader" }; // not an approved business yet; Lens shows a notice
+    return { role: "author" }; // not an approved business yet
   }
-  return { role: SELF_ASSIGNABLE.has(intent) ? (intent as UserRole) : "reader" };
+  return { role: "author" };
 }
 
 /**

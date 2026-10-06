@@ -1,7 +1,9 @@
 import NextAuth from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
 
 import { authConfig } from "@/auth.config";
+import { prisma } from "@/lib/prisma";
 import { consumeTicket } from "@/lib/portalDb";
 import { signInPortalUser } from "@/lib/portalSignIn";
 
@@ -14,6 +16,27 @@ import { signInPortalUser } from "@/lib/portalSignIn";
  */
 export const { handlers, auth, signIn, signOut, unstable_update: updateSession } = NextAuth({
   ...authConfig,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt(params) {
+      const token = ((await authConfig.callbacks.jwt(params)) ?? params.token) as JWT;
+
+      // A session UPDATE can be triggered with arbitrary data by any signed-in
+      // browser (POST /api/auth/session), so the payload is never trusted. The
+      // role always comes from the database. The ONLY thing a caller may pick is,
+      // for a real admin, whether to VIEW the app as "author" or "admin".
+      if (params.trigger === "update" && token.uid) {
+        const row = await prisma.user.findUnique({ where: { id: token.uid }, select: { role: true } });
+        if (row) {
+          const requested = (params.session as { user?: { role?: string } } | undefined)?.user?.role;
+          token.canAdmin = row.role === "admin";
+          token.role =
+            row.role === "admin" && (requested === "author" || requested === "admin") ? requested : row.role;
+        }
+      }
+      return token;
+    },
+  },
   providers: [
     // MYHitch Business portal SSO. The ONLY credential is a one-time ticket the
     // portal minted for "lens"; it is redeemed atomically against the portal DB

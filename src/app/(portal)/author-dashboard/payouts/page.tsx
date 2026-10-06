@@ -20,14 +20,14 @@ const STATUS_LABEL: Record<string, string> = {
 /** Full withdrawal history for the signed-in author. */
 export default async function PayoutHistoryPage() {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
   if (session.user.role !== "author") redirect("/author-dashboard");
 
   const { payouts, totalWithdrawn } = await getPayoutHistory();
 
   return (
     <>
-      <ViewHeader title="Payout History" subtitle="Every withdrawal sent to your connected Stripe account." />
+      <ViewHeader title="Payout History" subtitle="Withdrawals made from Lens before payouts moved to MYHitch Business." />
 
       <div className="mb-6 grid grid-cols-2 gap-4 max-[480px]:grid-cols-1">
         <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalWithdrawn)} label="Total withdrawn" accent />

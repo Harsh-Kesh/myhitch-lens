@@ -264,6 +264,7 @@ model Organization {
   seats     Int             @default(10)
   createdAt DateTime        @default(now())
   members   OrgMembership[]
+  invites   OrgInvite[]
 }
 
 model OrgMembership {
@@ -277,6 +278,27 @@ model OrgMembership {
 
   @@unique([orgId, userId])
   @@index([orgId, orgRole])
+}
+
+/**
+ * A pending invitation for someone to join a company as a sub-account. Company
+ * sub-accounts no longer get passwords: the owner invites an email address, and
+ * the invite is activated the first time that person signs in through the
+ * MYHitch Business portal with the SAME verified email (see signInPortalUser).
+ */
+model OrgInvite {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  email       String // lower-case
+  displayName String
+  orgRole     OrgRole      @default(author) // never "owner": owners come from an approved portal business
+  invitedById String?
+  createdAt   DateTime     @default(now())
+  acceptedAt  DateTime?
+
+  @@unique([orgId, email])
+  @@index([email])
 }
 
 model Subscription {

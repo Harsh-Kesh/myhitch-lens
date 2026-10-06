@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { AbnField } from "@/components/ui/AbnField";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { formControl, formLabel } from "@/components/ui/Form";
@@ -13,12 +12,13 @@ import { cn } from "@/lib/cn";
 
 import {
   approveCompanyArticle,
-  createSubAccount,
+  inviteSubAccount,
   rejectCompanyArticle,
   removeSubAccount,
+  revokeInvite,
   submitCompanyArticle,
-  updateCompanyDetails,
   type CompanyArticle,
+  type CompanyInvite,
   type CompanyMember,
   type CompanyOverview,
   type CompanyReviewItem,
@@ -70,8 +70,8 @@ export function CompanyDashboard({
 
 function OwnerPanel({ overview }: { overview: CompanyOverview }) {
   const router = useRouter();
+  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL; // inlined at build time
   const [showAdd, setShowAdd] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   function doRemove(member: CompanyMember) {
@@ -83,24 +83,51 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
     });
   }
 
+  function doRevoke(invite: CompanyInvite) {
+    if (!confirm(`Cancel the invitation for ${invite.email}?`)) return;
+    startTransition(async () => {
+      const res = await revokeInvite(invite.id);
+      if ("error" in res) alert(res.error);
+      else router.refresh();
+    });
+  }
+
+  const seatsUsed = overview.members.length + overview.invites.length;
+
   return (
     <>
       <div className={cn(dashCard, "mb-6")}>
         <div className="mb-2 flex items-center justify-between">
           <h3 className={dashHeading}>Company Details</h3>
-          <Button size="sm" variant="secondary" onClick={() => setShowEdit(true)}>
-            Edit
-          </Button>
+          {portalUrl && (
+            <a
+              href={`${portalUrl}/onboarding/business`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[12.5px] font-semibold text-primary hover:underline"
+            >
+              Edit in MYHitch Business
+            </a>
+          )}
         </div>
         <p className="text-[13px] text-text-muted">
-          Using <span className="font-semibold text-text-main">{overview.members.length}</span> of{" "}
+          Using <span className="font-semibold text-text-main">{seatsUsed}</span> of{" "}
           <span className="font-semibold text-text-main">{overview.seats}</span> seats.
+        </p>
+        <p className="mt-2 text-[13px] text-text-muted">
+          Legal name:{" "}
+          <span className="font-semibold text-text-main">{overview.orgName}</span>
         </p>
         <p className="mt-2 text-[13px] text-text-muted">
           ABN:{" "}
           <span className="font-semibold text-text-main">
             {overview.abn || "Not on file"}
           </span>
+        </p>
+        <p className="mt-2 text-[11.5px] text-text-muted">
+          {overview.fromPortal
+            ? "These details come from your MYHitch Business profile and can only be changed there."
+            : "Showing the details we have on file. Once your business is approved in MYHitch Business, they are kept in sync with it."}
         </p>
       </div>
 
@@ -109,10 +136,10 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
           <h3 className={dashHeading}>Team</h3>
           <Button
             size="sm"
-            disabled={overview.members.length >= overview.seats}
+            disabled={seatsUsed >= overview.seats}
             onClick={() => setShowAdd(true)}
           >
-            Add sub-account
+            Invite team member
           </Button>
         </div>
 
@@ -137,75 +164,36 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
               </div>
             </div>
           ))}
+          {overview.invites.map((i) => (
+            <div key={i.id} className="flex items-center justify-between rounded-lg border border-dashed border-line bg-bg-primary p-3">
+              <div>
+                <p className="text-[13.5px] font-semibold text-text-main">{i.displayName}</p>
+                <p className="text-[11.5px] text-text-muted">
+                  {i.email} · invited {formatDate(i.createdAt)} · joins when they sign in with this email
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="rounded bg-bg-tertiary px-2 py-0.5 text-[10.5px] font-bold text-text-muted uppercase">
+                  Pending · {i.orgRole}
+                </span>
+                <Button size="sm" variant="secondary" disabled={isPending} onClick={() => doRevoke(i)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {showAdd && <AddSubAccountModal onClose={() => setShowAdd(false)} />}
-      {showEdit && (
-        <EditCompanyModal orgName={overview.orgName} abn={overview.abn} onClose={() => setShowEdit(false)} />
-      )}
+      {showAdd && <InviteModal onClose={() => setShowAdd(false)} />}
     </>
   );
 }
 
-function EditCompanyModal({
-  orgName,
-  abn,
-  onClose,
-}: {
-  orgName: string;
-  abn: string | null;
-  onClose: () => void;
-}) {
+function InviteModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [name, setName] = useState(orgName);
-  const [abnVal, setAbnVal] = useState(abn ?? "");
-  const [error, setError] = useState<string | null>(null);
-
-  function submit() {
-    setError(null);
-    startTransition(async () => {
-      const res = await updateCompanyDetails({ name, abn: abnVal });
-      if ("error" in res) setError(res.error);
-      else {
-        onClose();
-        router.refresh();
-      }
-    });
-  }
-
-  return (
-    <Modal onClose={onClose} className="w-[min(420px,92vw)]">
-      <h3 className="mb-4 font-heading text-lg font-bold text-text-main">Edit company details</h3>
-
-      <div className="mb-3">
-        <label className={formLabel}>Company name</label>
-        <input className={formControl} value={name} onChange={(e) => setName(e.target.value)} />
-      </div>
-
-      <div className="mb-5">
-        <AbnField value={abnVal} onChange={setAbnVal} label="Company ABN" compareName={name} />
-      </div>
-
-      {error && <p className="mb-4 text-[12.5px] text-danger">{error}</p>}
-
-      <div className="flex gap-3">
-        <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
-        <Button className="flex-1" disabled={isPending} onClick={submit}>
-          {isPending ? "Saving..." : "Save changes"}
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
-function AddSubAccountModal({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [orgRole, setOrgRole] = useState<"author" | "editor">("author");
   const [error, setError] = useState<string | null>(null);
@@ -213,7 +201,7 @@ function AddSubAccountModal({ onClose }: { onClose: () => void }) {
   function submit() {
     setError(null);
     startTransition(async () => {
-      const res = await createSubAccount({ username, email, password, displayName, orgRole });
+      const res = await inviteSubAccount({ email, displayName, orgRole });
       if ("error" in res) setError(res.error);
       else {
         onClose();
@@ -224,23 +212,18 @@ function AddSubAccountModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal onClose={onClose} className="w-[min(420px,92vw)]">
-      <h3 className="mb-4 font-heading text-lg font-bold text-text-main">Add a sub-account</h3>
+      <h3 className="mb-1 font-heading text-lg font-bold text-text-main">Invite a team member</h3>
+      <p className="mb-4 text-[12.5px] text-text-muted">
+        They sign in with MYHitch using this email address and join your company automatically.
+      </p>
 
       <div className="mb-3">
         <label className={formLabel}>Display name</label>
         <input className={formControl} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
       </div>
       <div className="mb-3">
-        <label className={formLabel}>Username</label>
-        <input className={formControl} value={username} onChange={(e) => setUsername(e.target.value)} />
-      </div>
-      <div className="mb-3">
         <label className={formLabel}>Email</label>
         <input type="email" className={formControl} value={email} onChange={(e) => setEmail(e.target.value)} />
-      </div>
-      <div className="mb-3">
-        <label className={formLabel}>Temporary password</label>
-        <input type="password" className={formControl} placeholder="At least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} />
       </div>
       <div className="mb-5">
         <label className={formLabel}>Role</label>
@@ -255,7 +238,7 @@ function AddSubAccountModal({ onClose }: { onClose: () => void }) {
       <div className="flex gap-3">
         <Button variant="secondary" className="flex-1" onClick={onClose}>Cancel</Button>
         <Button className="flex-1" disabled={isPending} onClick={submit}>
-          {isPending ? "Creating..." : "Create account"}
+          {isPending ? "Inviting..." : "Send invite"}
         </Button>
       </div>
     </Modal>

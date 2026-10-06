@@ -1,9 +1,11 @@
+import { cookies } from "next/headers";
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SessionSync } from "@/components/providers/SessionSync";
 import { auth } from "@/auth";
+import { ADMIN_MODE_COOKIE } from "@/lib/adminMode";
 import { prisma } from "@/lib/prisma";
 import { getMyNotifications } from "@/lib/notifications";
 import type { UserRole } from "@/lib/types";
@@ -19,6 +21,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
 
   const role = session.user.role as UserRole;
   const name = session.user.name ?? "";
+  const adminMode = role !== "corporate" && (await cookies()).get(ADMIN_MODE_COOKIE)?.value === "1";
   const [pendingReviewCount, { items: notifications, unreadCount }, profile] = await Promise.all([
     ["editor", "admin"].includes(role)
       ? prisma.article.count({ where: { status: "in_review", author: { role: { not: "corporate" } } } })
@@ -32,6 +35,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <SessionSync role={role} name={name} />
       <AppSidebar
         role={role}
+        adminMode={adminMode}
         name={name}
         avatarUrl={profile?.avatarUrl ?? null}
         pendingReviewCount={pendingReviewCount}

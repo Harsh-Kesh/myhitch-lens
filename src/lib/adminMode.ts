@@ -7,13 +7,24 @@
 export const ADMIN_MODE_LABEL = "Admin";
 export const ADMIN_MODE_PATH = "/promote";
 
-/** Sidebar links shown while in Admin mode (every page under ADMIN_MODE_PATH). */
+/**
+ * Whether the user is currently in Admin mode is a UI preference kept in this
+ * cookie. Nothing is authorised by it: every page and action still checks the
+ * user's real role.
+ */
+export const ADMIN_MODE_COOKIE = "lens_mode";
+
+/** Sidebar links for the Admin pages themselves. */
 export const ADMIN_MODE_LINKS = [
   { href: ADMIN_MODE_PATH, label: `${ADMIN_MODE_LABEL} Home` },
   { href: `${ADMIN_MODE_PATH}/packages`, label: "Subscription Packages" },
   { href: `${ADMIN_MODE_PATH}/promotions`, label: "Promotions" },
 ] as const;
 
-export function isAdminModePath(pathname: string): boolean {
-  return pathname === ADMIN_MODE_PATH || pathname.startsWith(`${ADMIN_MODE_PATH}/`);
-}
+/**
+ * Existing tools that Admin mode keeps in its menu, in the order of the Admin
+ * Console. Only ones every author already has; the staff-only sections
+ * (Editorial Queue, Trust & Safety, Magazine Curation, Integrations API) are
+ * deliberately not here because they can change other people's content.
+ */
+export const ADMIN_MODE_SHARED_HREFS = ["/explore", "/categories", "/exchange", "/analytics", "/profile"] as const;

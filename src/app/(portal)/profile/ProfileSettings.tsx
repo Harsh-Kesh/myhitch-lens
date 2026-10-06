@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
@@ -15,7 +14,8 @@ import type { UserRole } from "@prisma/client";
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { updateAvatar, updateProfile } from "./actions";
-import { ADMIN_MODE_LABEL, ADMIN_MODE_PATH } from "@/lib/adminMode";
+import { enterAdminMode } from "@/app/auth/actions";
+import { ADMIN_MODE_LABEL } from "@/lib/adminMode";
 
 const COUNTRIES = [
   "Australia",
@@ -213,9 +213,11 @@ export function ProfileSettings({
             You sign in to your Author dashboard by default. Switch to the {ADMIN_MODE_LABEL} dashboard to promote
             a subscription package, then come back any time.
           </p>
-          <Link href={ADMIN_MODE_PATH} className={buttonClasses("primary", "sm")}>
-            Switch to {ADMIN_MODE_LABEL}
-          </Link>
+          <form action={enterAdminMode}>
+            <Button type="submit" size="sm">
+              Switch to {ADMIN_MODE_LABEL}
+            </Button>
+          </form>
         </div>
       )}
 

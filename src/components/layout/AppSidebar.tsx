@@ -23,9 +23,8 @@ import {
 } from "@/components/ui/icons";
 import { useLensValue } from "@/hooks/useLensValue";
 import { getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
-import { logoutUser } from "@/app/auth/actions";
-import { ADMIN_MODE_LABEL, ADMIN_MODE_LINKS, isAdminModePath } from "@/lib/adminMode";
-import { ROLE_HOME } from "@/lib/roleHome";
+import { leaveAdminMode, logoutUser } from "@/app/auth/actions";
+import { ADMIN_MODE_LABEL, ADMIN_MODE_LINKS, ADMIN_MODE_SHARED_HREFS } from "@/lib/adminMode";
 import { cn } from "@/lib/cn";
 import type { UserRole } from "@/lib/types";
 import type { NotificationView } from "@/lib/notifications";
@@ -167,6 +166,7 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
  */
 export function AppSidebar({
   role: sessionRole,
+  adminMode = false,
   name: sessionName,
   avatarUrl = null,
   pendingReviewCount = 0,
@@ -174,6 +174,8 @@ export function AppSidebar({
   unreadCount = 0,
 }: {
   role: UserRole;
+  /** Show the Admin menu (a separate dashboard; not the platform admin role). */
+  adminMode?: boolean;
   name: string;
   /** Real uploaded profile photo, if the user has set one — see /profile. */
   avatarUrl?: string | null;
@@ -217,9 +219,9 @@ export function AppSidebar({
   }, [isDrawerOpen]);
 
   const presentation = ROLE_PRESENTATION[role];
-  // Admin mode swaps the whole menu for the Admin pages (a separate dashboard,
-  // not the platform admin role) with a way back to the user's own dashboard.
-  const inAdminMode = isAdminModePath(pathname);
+  // Admin mode swaps the menu for the Admin pages plus the shared tools the user
+  // already has. It is navigation only; the staff-only sections are not in it.
+  const inAdminMode = adminMode;
   const adminIcons = [
     <ColumnsIcon key="home" className={navIcon} />,
     <BriefcaseIcon key="packages" className={navIcon} />,
@@ -228,11 +230,9 @@ export function AppSidebar({
   const visibleLinks: NavLink[] = inAdminMode
     ? [
         ...ADMIN_MODE_LINKS.map((link, i) => ({ ...link, icon: adminIcons[i] })),
-        {
-          href: ROLE_HOME[role],
-          label: role === "author" ? "Switch to Author" : "Back to my dashboard",
-          icon: <ArrowLeftIcon className={navIcon} />,
-        },
+        ...ADMIN_MODE_SHARED_HREFS.flatMap((href) =>
+          NAV_LINKS.filter((link) => link.href === href && (!link.roles || link.roles.includes(role))),
+        ),
       ]
     : NAV_LINKS.filter((link) => !link.roles || link.roles.includes(role));
 
@@ -354,6 +354,17 @@ export function AppSidebar({
               </Link>
             );
           })}
+          {inAdminMode && (
+            <form action={leaveAdminMode}>
+              <button
+                type="submit"
+                className="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium text-text-muted transition-all duration-200 hover:bg-surface-hover hover:text-text-main"
+              >
+                <ArrowLeftIcon className={navIcon} />
+                <span>{role === "author" ? "Switch to Author" : "Back to my dashboard"}</span>
+              </button>
+            </form>
+          )}
         </nav>
 
         {/* `.sidebar-footer` — account + navigation actions grouped at the bottom */}

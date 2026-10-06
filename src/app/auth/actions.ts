@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import bcrypt from "bcryptjs";
 
@@ -164,8 +165,18 @@ export async function completePortalSignIn(ticket: string, intent?: string): Pro
   }
 }
 
+/**
+ * Sign out of Lens AND of the MYHitch Business portal. Ending only the Lens
+ * session would leave the portal logged in, so the next Login would bounce
+ * straight back in (on a shared computer, as the previous person). After the
+ * Lens session is cleared we send the browser through the portal's logout leg,
+ * which returns to the Lens home page. Falls back to "/" if the portal URL isn't
+ * configured (password-login rollback accounts have no portal session anyway).
+ */
 export async function logoutUser(): Promise<void> {
-  await signOut({ redirectTo: "/" });
+  await signOut({ redirect: false });
+  const portal = process.env.NEXT_PUBLIC_PORTAL_URL;
+  redirect(portal ? new URL("/api/sso/lens/logout", portal).toString() : "/");
 }
 
 /** Current authenticated user's role + display name, or null. */

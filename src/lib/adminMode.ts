@@ -6,3 +6,14 @@
  */
 export const ADMIN_MODE_LABEL = "Admin";
 export const ADMIN_MODE_PATH = "/promote";
+
+/** Sidebar links shown while in Admin mode (every page under ADMIN_MODE_PATH). */
+export const ADMIN_MODE_LINKS = [
+  { href: ADMIN_MODE_PATH, label: `${ADMIN_MODE_LABEL} Home` },
+  { href: `${ADMIN_MODE_PATH}/packages`, label: "Subscription Packages" },
+  { href: `${ADMIN_MODE_PATH}/promotions`, label: "Promotions" },
+] as const;
+
+export function isAdminModePath(pathname: string): boolean {
+  return pathname === ADMIN_MODE_PATH || pathname.startsWith(`${ADMIN_MODE_PATH}/`);
+}

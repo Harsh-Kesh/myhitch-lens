@@ -24,6 +24,8 @@ import {
 import { useLensValue } from "@/hooks/useLensValue";
 import { getUserName, getUserRole, ROLE_NAMES } from "@/lib/lensStore";
 import { logoutUser } from "@/app/auth/actions";
+import { ADMIN_MODE_LABEL, ADMIN_MODE_LINKS, isAdminModePath } from "@/lib/adminMode";
+import { ROLE_HOME } from "@/lib/roleHome";
 import { cn } from "@/lib/cn";
 import type { UserRole } from "@/lib/types";
 import type { NotificationView } from "@/lib/notifications";
@@ -215,9 +217,24 @@ export function AppSidebar({
   }, [isDrawerOpen]);
 
   const presentation = ROLE_PRESENTATION[role];
-  const visibleLinks = NAV_LINKS.filter(
-    (link) => !link.roles || link.roles.includes(role),
-  );
+  // Admin mode swaps the whole menu for the Admin pages (a separate dashboard,
+  // not the platform admin role) with a way back to the user's own dashboard.
+  const inAdminMode = isAdminModePath(pathname);
+  const adminIcons = [
+    <ColumnsIcon key="home" className={navIcon} />,
+    <BriefcaseIcon key="packages" className={navIcon} />,
+    <BarChartIcon key="promotions" className={navIcon} />,
+  ];
+  const visibleLinks: NavLink[] = inAdminMode
+    ? [
+        ...ADMIN_MODE_LINKS.map((link, i) => ({ ...link, icon: adminIcons[i] })),
+        {
+          href: ROLE_HOME[role],
+          label: role === "author" ? "Switch to Author" : "Back to my dashboard",
+          icon: <ArrowLeftIcon className={navIcon} />,
+        },
+      ]
+    : NAV_LINKS.filter((link) => !link.roles || link.roles.includes(role));
 
   return (
     <>
@@ -306,7 +323,7 @@ export function AppSidebar({
               {name}
             </h5>
             <span className="text-[10px] font-bold text-primary uppercase">
-              {presentation.badge}
+              {inAdminMode ? `${ADMIN_MODE_LABEL} Mode` : presentation.badge}
             </span>
           </div>
           <NotificationBell notifications={notifications} unreadCount={unreadCount} />

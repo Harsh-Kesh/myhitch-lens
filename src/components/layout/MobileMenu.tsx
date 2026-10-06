@@ -111,14 +111,14 @@ export function MobileMenu() {
 
         <div className="flex w-full flex-col gap-3">
           <Link
-            href="/auth?mode=signin"
+            href="/auth/login?mode=signin"
             onClick={close}
             className={buttonClasses("secondary", "md", "w-full text-center")}
           >
             Sign In
           </Link>
           <Link
-            href="/auth?mode=signup"
+            href="/auth/login?mode=signup"
             onClick={close}
             className={buttonClasses("primary", "md", "w-full text-center")}
           >

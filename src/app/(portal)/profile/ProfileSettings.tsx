@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
 import { AbnField } from "@/components/ui/AbnField";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
@@ -12,7 +12,7 @@ import { ViewHeader } from "@/components/ui/ViewHeader";
 import type { UserRole } from "@prisma/client";
 
 import { ABN_COUNTRY } from "@/lib/platformConfig";
-import { startStripeConnectOnboarding, type ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
+import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { becomeAuthor, changePassword, updateAvatar, updateProfile } from "./actions";
 
 const COUNTRIES = [
@@ -35,6 +35,7 @@ export function ProfileSettings({
   abn,
   avatarUrl,
   role,
+  hasPassword,
   connectStatus,
 }: {
   displayName: string;
@@ -46,6 +47,8 @@ export function ProfileSettings({
   abn: string;
   avatarUrl: string | null;
   role: UserRole;
+  /** False for portal-SSO accounts: Lens holds no password for them. */
+  hasPassword: boolean;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
@@ -98,7 +101,6 @@ export function ProfileSettings({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
   const [isPasswordPending, startPasswordTransition] = useTransition();
-  const [isConnecting, startConnecting] = useTransition();
   const [isBecomingAuthor, startBecomingAuthor] = useTransition();
   const [becomeAuthorMsg, setBecomeAuthorMsg] = useState<string | null>(null);
 
@@ -111,13 +113,9 @@ export function ProfileSettings({
     });
   }
 
-  function doConnect() {
-    startConnecting(async () => {
-      const res = await startStripeConnectOnboarding();
-      if ("error" in res) alert(res.error);
-      else window.location.href = res.url;
-    });
-  }
+  // Payout accounts live in MYHitch Business; Lens only links there. Inlined at build time.
+  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
+  const payoutSetupHref = portalUrl ? `${portalUrl}/onboarding/business` : null;
 
   function saveProfile() {
     setProfileMsg(null);
@@ -262,33 +260,41 @@ export function ProfileSettings({
         <div className={dashCard + " mt-6"}>
           <h3 className={dashHeading}>Payouts</h3>
           {!connectStatus.configured ? (
-            <p className="text-[12.5px] text-text-muted">Payouts aren&apos;t set up yet — check back soon.</p>
-          ) : !connectStatus.connected ? (
+            <p className="text-[12.5px] text-text-muted">Payout status is temporarily unavailable — please try again shortly.</p>
+          ) : !connectStatus.connected || !connectStatus.payoutsEnabled ? (
             <>
               <p className="mb-4 text-[12.5px] text-text-muted">
-                Connect a Stripe account to withdraw your earnings from the Author Dashboard.
+                {connectStatus.connected
+                  ? "Your payout account needs a few more details before it can receive funds."
+                  : "Set up payouts once in MYHitch Business to receive your earnings."}
               </p>
-              <Button size="sm" disabled={isConnecting} onClick={doConnect}>
-                {isConnecting ? "Redirecting..." : "Connect Stripe Account"}
-              </Button>
-            </>
-          ) : !connectStatus.payoutsEnabled ? (
-            <>
-              <p className="mb-4 text-[12.5px] text-text-muted">
-                Your Stripe account needs a few more details before payouts can go out.
-              </p>
-              <Button size="sm" disabled={isConnecting} onClick={doConnect}>
-                {isConnecting ? "Redirecting..." : "Finish Connecting Stripe"}
-              </Button>
+              {payoutSetupHref && (
+                <a
+                  href={payoutSetupHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonClasses("primary", "sm")}
+                >
+                  {connectStatus.connected ? "Finish payout setup" : "Set up payouts in MYHitch Business"}
+                </a>
+              )}
             </>
           ) : (
             <p className="text-[12.5px] text-success">
-              Your Stripe account is connected and ready to receive payouts.
+              Your payout account is active. Payouts and bank details are managed in MYHitch Business.
             </p>
           )}
         </div>
       )}
 
+      {!hasPassword ? (
+        <div className={dashCard + " mt-6"}>
+          <h3 className={dashHeading}>Password &amp; security</h3>
+          <p className="text-[13px] text-text-muted">
+            You sign in with your MYHitch account, so your password and sign-in security are managed there, not in Lens.
+          </p>
+        </div>
+      ) : (
       <div className={dashCard + " mt-6"}>
         <h3 className={dashHeading}>Change Password</h3>
 
@@ -317,6 +323,7 @@ export function ProfileSettings({
           {isPasswordPending ? "Updating..." : "Update Password"}
         </Button>
       </div>
+      )}
     </>
   );
 }

@@ -61,10 +61,10 @@ export function LandingHeader() {
       </nav>
 
       <div className="flex items-center gap-4 max-[1280px]:gap-2.5 max-[1024px]:hidden">
-        <ButtonLink href="/auth?mode=signin" variant="secondary" className="whitespace-nowrap">
+        <ButtonLink href="/auth/login?mode=signin" variant="secondary" className="whitespace-nowrap">
           Sign In
         </ButtonLink>
-        <ButtonLink href="/auth?mode=signup" className="whitespace-nowrap">
+        <ButtonLink href="/auth/login?mode=signup" className="whitespace-nowrap">
           Launch App
         </ButtonLink>
       </div>

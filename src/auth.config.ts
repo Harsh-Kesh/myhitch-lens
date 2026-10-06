@@ -67,7 +67,7 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
 
 export const authConfig = {
   session: { strategy: "jwt" },
-  pages: { signIn: "/auth" },
+  pages: { signIn: "/auth/login" },
   trustHost: true,
   providers: [], // real provider added in auth.ts
   callbacks: {

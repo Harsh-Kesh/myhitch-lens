@@ -14,7 +14,7 @@ import { ExternalOpportunitiesAdmin } from "./ExternalOpportunitiesAdmin";
  */
 export default async function ExchangePage() {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
 
   if (session.user.role === "admin") {
     const opportunities = await listAllExternalOpportunities();

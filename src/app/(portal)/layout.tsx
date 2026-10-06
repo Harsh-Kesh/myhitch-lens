@@ -15,7 +15,7 @@ import type { UserRole } from "@/lib/types";
  */
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
 
   const role = session.user.role as UserRole;
   const name = session.user.name ?? "";

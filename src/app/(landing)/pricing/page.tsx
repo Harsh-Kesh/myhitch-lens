@@ -36,7 +36,7 @@ const PLANS: Plan[] = [
       "Custom notifications feed",
     ],
     cta: "Subscribe as Reader",
-    href: "/auth?mode=signup&role=reader",
+    href: "/auth/login?mode=signup&role=reader",
     variant: "secondary",
   },
   {
@@ -54,7 +54,7 @@ const PLANS: Plan[] = [
       "Direct subscriber revenue sharing",
     ],
     cta: "Start Writing",
-    href: "/auth?mode=signup&role=author",
+    href: "/auth/login?mode=signup&role=author",
     variant: "primary",
     featured: true,
   },
@@ -73,7 +73,7 @@ const PLANS: Plan[] = [
       "API access to reader metrics",
     ],
     cta: "Launch Team Account",
-    href: "/auth?mode=signup&role=editor",
+    href: "/auth/login?mode=signup&role=corporate",
     variant: "secondary",
   },
 ];

@@ -8,7 +8,7 @@ import { ProfileSettings } from "./ProfileSettings";
 /** Account settings — open to every signed-in role. */
 export default async function ProfilePage() {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -16,10 +16,11 @@ export default async function ProfilePage() {
       displayName: true,
       email: true,
       username: true,
+      passwordHash: true,
       profile: { select: { bio: true, website: true, country: true, abn: true, avatarUrl: true } },
     },
   });
-  if (!user) redirect("/auth");
+  if (!user) redirect("/auth/login");
 
   const connectStatus = session.user.role === "author" ? await getConnectStatus() : null;
 
@@ -34,6 +35,7 @@ export default async function ProfilePage() {
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
       role={session.user.role}
+      hasPassword={!!user.passwordHash}
       connectStatus={connectStatus}
     />
   );

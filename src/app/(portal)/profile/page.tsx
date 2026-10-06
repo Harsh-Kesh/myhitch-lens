@@ -16,7 +16,6 @@ export default async function ProfilePage() {
       displayName: true,
       email: true,
       username: true,
-      passwordHash: true,
       profile: { select: { bio: true, website: true, country: true, abn: true, avatarUrl: true } },
     },
   });
@@ -35,7 +34,6 @@ export default async function ProfilePage() {
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
       role={session.user.role}
-      hasPassword={!!user.passwordHash}
       connectStatus={connectStatus}
     />
   );

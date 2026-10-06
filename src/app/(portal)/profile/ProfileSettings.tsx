@@ -13,7 +13,7 @@ import type { UserRole } from "@prisma/client";
 
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
-import { becomeAuthor, changePassword, updateAvatar, updateProfile } from "./actions";
+import { becomeAuthor, updateAvatar, updateProfile } from "./actions";
 
 const COUNTRIES = [
   "Australia",
@@ -35,7 +35,6 @@ export function ProfileSettings({
   abn,
   avatarUrl,
   role,
-  hasPassword,
   connectStatus,
 }: {
   displayName: string;
@@ -47,8 +46,6 @@ export function ProfileSettings({
   abn: string;
   avatarUrl: string | null;
   role: UserRole;
-  /** False for portal-SSO accounts: Lens holds no password for them. */
-  hasPassword: boolean;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
@@ -96,11 +93,6 @@ export function ProfileSettings({
   const [abnVal, setAbnVal] = useState(abn);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
 
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordMsg, setPasswordMsg] = useState<string | null>(null);
-  const [isPasswordPending, startPasswordTransition] = useTransition();
   const [isBecomingAuthor, startBecomingAuthor] = useTransition();
   const [becomeAuthorMsg, setBecomeAuthorMsg] = useState<string | null>(null);
 
@@ -135,27 +127,9 @@ export function ProfileSettings({
     });
   }
 
-  function savePassword() {
-    setPasswordMsg(null);
-    if (newPassword !== confirmPassword) {
-      setPasswordMsg("New passwords don't match.");
-      return;
-    }
-    startPasswordTransition(async () => {
-      const res = await changePassword({ currentPassword, newPassword });
-      if ("error" in res) setPasswordMsg(res.error);
-      else {
-        setPasswordMsg("Password updated.");
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      }
-    });
-  }
-
   return (
     <>
-      <ViewHeader title="My Profile" subtitle="Manage your account details, tax information, and password." />
+      <ViewHeader title="My Profile" subtitle="Manage your account details and tax information." />
 
       <div className={dashCard}>
         <h3 className={dashHeading}>Account Details</h3>
@@ -287,43 +261,12 @@ export function ProfileSettings({
         </div>
       )}
 
-      {!hasPassword ? (
-        <div className={dashCard + " mt-6"}>
-          <h3 className={dashHeading}>Password &amp; security</h3>
-          <p className="text-[13px] text-text-muted">
-            You sign in with your MYHitch account, so your password and sign-in security are managed there, not in Lens.
-          </p>
-        </div>
-      ) : (
       <div className={dashCard + " mt-6"}>
-        <h3 className={dashHeading}>Change Password</h3>
-
-        <div className="mb-4">
-          <label className={formLabel}>Current password</label>
-          <input type="password" className={formControl} value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
-        </div>
-
-        <div className="mb-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
-          <div>
-            <label className={formLabel}>New password</label>
-            <input type="password" className={formControl} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-          </div>
-          <div>
-            <label className={formLabel}>Confirm new password</label>
-            <input type="password" className={formControl} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-          </div>
-        </div>
-
-        {passwordMsg && <p className="mb-4 text-[12.5px] text-text-muted">{passwordMsg}</p>}
-
-        <Button
-          disabled={isPasswordPending || !currentPassword || !newPassword}
-          onClick={savePassword}
-        >
-          {isPasswordPending ? "Updating..." : "Update Password"}
-        </Button>
+        <h3 className={dashHeading}>Password &amp; security</h3>
+        <p className="text-[13px] text-text-muted">
+          You sign in with your MYHitch account, so your password and sign-in security are managed there, not in Lens.
+        </p>
       </div>
-      )}
     </>
   );
 }

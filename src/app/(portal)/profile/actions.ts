@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import bcrypt from "bcryptjs";
 
 import { auth, updateSession } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -103,27 +102,5 @@ export async function becomeAuthor(): Promise<ActionResult> {
   await updateSession({ user: { role: "author" } });
 
   revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-export async function changePassword(input: {
-  currentPassword: string;
-  newPassword: string;
-}): Promise<ActionResult> {
-  const user = await requireUser();
-
-  if (input.newPassword.length < 8) {
-    return { error: "New password must be at least 8 characters." };
-  }
-
-  const record = await prisma.user.findUnique({ where: { id: user.id }, select: { passwordHash: true } });
-  if (!record?.passwordHash) return { error: "Account not found." };
-
-  const valid = await bcrypt.compare(input.currentPassword, record.passwordHash);
-  if (!valid) return { error: "Current password is incorrect." };
-
-  const passwordHash = await bcrypt.hash(input.newPassword, 10);
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
-
   return { ok: true };
 }

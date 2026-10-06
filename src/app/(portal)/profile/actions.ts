@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { auth, updateSession } from "@/auth";
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import { lookupAbn, normalizeAbn } from "@/lib/abn";
@@ -77,29 +77,6 @@ export async function updateAvatar(avatarUrl: string): Promise<ActionResult> {
     create: { userId: user.id, avatarUrl },
   });
   await syncVerification(user.id);
-
-  revalidatePath("/", "layout");
-  return { ok: true };
-}
-
-/**
- * Self-service reader → author upgrade. No approval needed — anyone can
- * write; verification (a separate step) is what gates actually publishing.
- * Deliberately one-way here: stepping back to reader would orphan an
- * author's articles/wallet, so that's not offered.
- */
-export async function becomeAuthor(): Promise<ActionResult> {
-  const user = await requireUser();
-  if (user.role !== "reader") {
-    return { error: "Only reader accounts can switch to an author account." };
-  }
-
-  await prisma.user.update({ where: { id: user.id }, data: { role: "author" } });
-  await syncVerification(user.id);
-
-  // Push the new role into the live session so the JWT reflects it
-  // immediately, without requiring the user to log back in.
-  await updateSession({ user: { role: "author" } });
 
   revalidatePath("/", "layout");
   return { ok: true };

@@ -10,6 +10,7 @@ import {
   type PortalProfile,
 } from "@/lib/portalDb";
 import { prisma } from "@/lib/prisma";
+import { syncVerification } from "@/lib/verification";
 
 /** What Auth.js needs from a successful portal sign-in. */
 export type PortalSignedInUser = {
@@ -260,10 +261,25 @@ async function activatePendingInvite(user: PortalSignedInUser): Promise<PortalSi
   }
 }
 
+/**
+ * Lens no longer has a Reader mode: everyone is an author, and admins can view
+ * the app as author or admin. A legacy reader account is therefore upgraded to
+ * author the next time they sign in (same effect as the old "Become an Author"
+ * button: no approval, profile and history kept). Company members are already
+ * "corporate" by now and are not touched.
+ */
+async function upgradeLegacyReader(user: PortalSignedInUser): Promise<PortalSignedInUser> {
+  if (user.role !== "reader") return user;
+  await prisma.user.update({ where: { id: user.id }, data: { role: "author" } });
+  await syncVerification(user.id);
+  return { ...user, role: "author" };
+}
+
 export async function signInPortalUser(
   auth0UserId: string,
   intent = "",
 ): Promise<PortalSignedInUser | null> {
   const user = await findLinkOrCreate(auth0UserId, intent);
-  return user ? activatePendingInvite(user) : null;
+  if (!user) return null;
+  return upgradeLegacyReader(await activatePendingInvite(user));
 }

@@ -32,7 +32,6 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <SessionSync role={role} name={name} />
       <AppSidebar
         role={role}
-        canAdmin={session.user.canAdmin}
         name={name}
         avatarUrl={profile?.avatarUrl ?? null}
         pendingReviewCount={pendingReviewCount}

@@ -13,7 +13,8 @@ import type { UserRole } from "@prisma/client";
 
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
-import { becomeAuthor, updateAvatar, updateProfile } from "./actions";
+import { updateAvatar, updateProfile } from "./actions";
+import { switchView } from "@/app/auth/actions";
 
 const COUNTRIES = [
   "Australia",
@@ -35,6 +36,7 @@ export function ProfileSettings({
   abn,
   avatarUrl,
   role,
+  canAdmin,
   connectStatus,
 }: {
   displayName: string;
@@ -46,6 +48,8 @@ export function ProfileSettings({
   abn: string;
   avatarUrl: string | null;
   role: UserRole;
+  /** A real admin account: shows the Admin / Author view switch. */
+  canAdmin: boolean;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
@@ -92,18 +96,6 @@ export function ProfileSettings({
   const [countryVal, setCountryVal] = useState(country);
   const [abnVal, setAbnVal] = useState(abn);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
-
-  const [isBecomingAuthor, startBecomingAuthor] = useTransition();
-  const [becomeAuthorMsg, setBecomeAuthorMsg] = useState<string | null>(null);
-
-  function doBecomeAuthor() {
-    setBecomeAuthorMsg(null);
-    startBecomingAuthor(async () => {
-      const res = await becomeAuthor();
-      if ("error" in res) setBecomeAuthorMsg(res.error);
-      else window.location.href = "/author-dashboard";
-    });
-  }
 
   // Payout accounts live in MYHitch Business; Lens only links there. Inlined at build time.
   const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
@@ -216,17 +208,19 @@ export function ProfileSettings({
         </Button>
       </div>
 
-      {role === "reader" && (
+      {canAdmin && (
         <div className={dashCard + " mt-6"}>
-          <h3 className={dashHeading}>Become an Author</h3>
+          <h3 className={dashHeading}>View mode</h3>
           <p className="mb-4 text-[12.5px] text-text-muted">
-            Want to publish your own articles on MYHitch Lens? Switch your account to an author account —
-            it&apos;s free, instant, and you keep your existing profile and history.
+            You are an admin. You are currently using Lens in{" "}
+            <span className="font-semibold text-text-main">{role === "admin" ? "Admin" : "Author"}</span> mode.
+            Switch any time; your account stays the same.
           </p>
-          {becomeAuthorMsg && <p className="mb-4 text-[12.5px] text-text-muted">{becomeAuthorMsg}</p>}
-          <Button size="sm" disabled={isBecomingAuthor} onClick={doBecomeAuthor}>
-            {isBecomingAuthor ? "Switching..." : "Become an Author"}
-          </Button>
+          <form action={switchView.bind(null, role === "admin" ? "author" : "admin")}>
+            <Button type="submit" size="sm">
+              {role === "admin" ? "Switch to Author mode" : "Switch to Admin mode"}
+            </Button>
+          </form>
         </div>
       )}
 

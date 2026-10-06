@@ -34,6 +34,7 @@ export default async function ProfilePage() {
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
       role={session.user.role}
+      canAdmin={session.user.canAdmin}
       connectStatus={connectStatus}
     />
   );

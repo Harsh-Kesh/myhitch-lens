@@ -33,7 +33,6 @@ export default async function ProfilePage() {
       country={user.profile?.country ?? ""}
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
-      role={session.user.role}
       connectStatus={connectStatus}
     />
   );

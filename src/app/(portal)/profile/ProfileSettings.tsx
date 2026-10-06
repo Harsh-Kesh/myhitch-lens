@@ -9,13 +9,10 @@ import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 
-import type { UserRole } from "@prisma/client";
 
 import { ABN_COUNTRY } from "@/lib/platformConfig";
 import type { ConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { updateAvatar, updateProfile } from "./actions";
-import { enterAdminMode } from "@/app/auth/actions";
-import { ADMIN_MODE_LABEL } from "@/lib/adminMode";
 
 const COUNTRIES = [
   "Australia",
@@ -36,7 +33,6 @@ export function ProfileSettings({
   country,
   abn,
   avatarUrl,
-  role,
   connectStatus,
 }: {
   displayName: string;
@@ -47,7 +43,6 @@ export function ProfileSettings({
   country: string;
   abn: string;
   avatarUrl: string | null;
-  role: UserRole;
   connectStatus: ConnectStatus | null;
 }) {
   const router = useRouter();
@@ -205,21 +200,6 @@ export function ProfileSettings({
           {isPending ? "Saving..." : "Save Changes"}
         </Button>
       </div>
-
-      {role !== "corporate" && (
-        <div className={dashCard + " mt-6"}>
-          <h3 className={dashHeading}>Dashboard mode</h3>
-          <p className="mb-4 text-[12.5px] text-text-muted">
-            You sign in to your Author dashboard by default. Switch to the {ADMIN_MODE_LABEL} dashboard to promote
-            a subscription package, then come back any time.
-          </p>
-          <form action={enterAdminMode}>
-            <Button type="submit" size="sm">
-              Switch to {ADMIN_MODE_LABEL}
-            </Button>
-          </form>
-        </div>
-      )}
 
       {connectStatus && (
         <div className={dashCard + " mt-6"}>

@@ -25,7 +25,6 @@ const PORTAL_PREFIXES = [
   "/article",
   "/profile",
   "/company",
-  "/promote",
 ];
 
 /**

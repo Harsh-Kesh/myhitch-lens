@@ -275,11 +275,63 @@ async function upgradeLegacyReader(user: PortalSignedInUser): Promise<PortalSign
   return { ...user, role: "author" };
 }
 
+/** Countries Lens's profile form offers; a portal value is only copied if it matches one. */
+const KNOWN_COUNTRIES = ["Australia", "New Zealand", "United Kingdom", "United States", "Canada", "Singapore"];
+
+/**
+ * Fill the author's profile from what they already entered when registering
+ * with MYHitch Business, so they don't type it twice. It only ever FILLS EMPTY
+ * fields (and a display name that is still the auto-generated default): anything
+ * the person has written in Lens is never overwritten. Best effort: if the
+ * portal is unreachable or has nothing, sign-in carries on unchanged.
+ */
+async function autofillFromPortal(user: PortalSignedInUser, auth0UserId: string): Promise<PortalSignedInUser> {
+  try {
+    const portalProfile = await loadPortalProfile(auth0UserId);
+    if (!portalProfile) return user;
+    const business = await loadPortalBusiness(portalProfile.profileId);
+    if (!business) return user;
+
+    const [row, profile] = await Promise.all([
+      prisma.user.findUnique({ where: { id: user.id }, select: { displayName: true, username: true, email: true } }),
+      prisma.profile.findUnique({ where: { userId: user.id }, select: { bio: true, website: true, country: true, abn: true } }),
+    ]);
+    if (!row) return user;
+
+    const emailLocal = row.email.split("@")[0];
+    const portalName = business.contactFullName?.trim() || business.tradingName?.trim() || business.legalEntityName?.trim();
+    const stillDefaultName = row.displayName === row.username || row.displayName === emailLocal;
+
+    const country = KNOWN_COUNTRIES.find((c) => c.toLowerCase() === business.countryOfRegistration?.trim().toLowerCase());
+    const next = {
+      bio: !profile?.bio?.trim() && business.businessDescription?.trim() ? business.businessDescription.trim().slice(0, 600) : undefined,
+      website: !profile?.website?.trim() && business.website?.trim() ? business.website.trim() : undefined,
+      country: !profile?.country?.trim() && country ? country : undefined,
+      abn: !profile?.abn?.trim() && business.abn && (profile?.country || country) === "Australia" ? normalizeAbn(business.abn) : undefined,
+    };
+    const hasProfileChange = Object.values(next).some((v) => v !== undefined);
+
+    if (hasProfileChange) {
+      const data = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined));
+      await prisma.profile.upsert({ where: { userId: user.id }, update: data, create: { userId: user.id, ...data } });
+    }
+    if (stillDefaultName && portalName && portalName !== row.displayName) {
+      await prisma.user.update({ where: { id: user.id }, data: { displayName: portalName } });
+      return { ...user, name: portalName };
+    }
+    return user;
+  } catch (error) {
+    console.error("[sso] profile autofill skipped", { error: error instanceof Error ? error.message : String(error) });
+    return user;
+  }
+}
+
 export async function signInPortalUser(
   auth0UserId: string,
   intent = "",
 ): Promise<PortalSignedInUser | null> {
   const user = await findLinkOrCreate(auth0UserId, intent);
   if (!user) return null;
-  return upgradeLegacyReader(await activatePendingInvite(user));
+  const upgraded = await upgradeLegacyReader(await activatePendingInvite(user));
+  return autofillFromPortal(upgraded, auth0UserId);
 }

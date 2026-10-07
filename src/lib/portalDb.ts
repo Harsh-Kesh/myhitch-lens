@@ -55,6 +55,10 @@ export type PortalBusiness = {
   tradingName: string | null;
   abn: string | null;
   reviewStatus: string | null;
+  contactFullName: string | null;
+  website: string | null;
+  countryOfRegistration: string | null;
+  businessDescription: string | null;
 };
 
 export type PortalStripeAccount = {
@@ -86,7 +90,9 @@ export async function loadPortalProfile(auth0UserId: string): Promise<PortalProf
 export async function loadPortalBusiness(profileId: string): Promise<PortalBusiness | null> {
   const { data, error } = await db()
     .from("business_profiles")
-    .select("legal_entity_name, trading_name, abn, review_status")
+    .select(
+      "legal_entity_name, trading_name, abn, review_status, contact_full_name, website, country_of_registration, business_description",
+    )
     .eq("profile_id", profileId)
     .maybeSingle();
   if (error) throw new PortalDbError(error.message);
@@ -96,6 +102,10 @@ export async function loadPortalBusiness(profileId: string): Promise<PortalBusin
     tradingName: (data.trading_name as string | null) ?? null,
     abn: (data.abn as string | null) ?? null,
     reviewStatus: (data.review_status as string | null) ?? null,
+    contactFullName: (data.contact_full_name as string | null) ?? null,
+    website: (data.website as string | null) ?? null,
+    countryOfRegistration: (data.country_of_registration as string | null) ?? null,
+    businessDescription: (data.business_description as string | null) ?? null,
   };
 }
 

@@ -199,14 +199,22 @@ export async function updateDetails(ctx: HubCompany, input: { name?: unknown; ab
   need(ctx, "team");
   const name = String(input.name ?? "").trim();
   if (!name) throw new HubError(400, "Company name can't be empty.");
-  const abnInput = String(input.abn ?? "").trim();
-  let abn: string | null = null;
-  if (abnInput) {
-    const check = await lookupAbn(abnInput);
-    if (!check.valid) throw new HubError(400, check.error ?? "That ABN doesn't look valid.");
-    abn = normalizeAbn(abnInput);
+  // Left out: the ABN stays as it is. Sent empty: it's removed.
+  let abn: string | null | undefined = undefined;
+  if (input.abn !== undefined) {
+    const abnInput = String(input.abn ?? "").trim();
+    abn = null;
+    if (abnInput) {
+      const check = await lookupAbn(abnInput);
+      if (!check.valid) throw new HubError(400, check.error ?? "That ABN doesn't look valid.");
+      abn = normalizeAbn(abnInput);
+    }
   }
   await prisma.organization.update({ where: { id: ctx.membership.orgId }, data: { name, abn } });
+  // An owner named after the company (as the hub sets them up) follows it.
+  if (ctx.membership.isAdmin && ctx.user.displayName === ctx.membership.org.name) {
+    await prisma.user.update({ where: { id: ctx.user.id }, data: { displayName: name } });
+  }
   refresh();
 }
 

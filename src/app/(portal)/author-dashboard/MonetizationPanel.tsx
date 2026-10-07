@@ -79,12 +79,12 @@ export function MonetizationPanel({
               rel="noopener noreferrer"
               className={buttonClasses("primary", "sm", "mt-5 w-full")}
             >
-              {connectStatus.connected ? "Finish payout setup" : "Set up payouts in MYHitch Business"}
+              {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
             </a>
           )}
           <p className="mt-2 text-center text-[10.5px] text-text-muted">
             {connectStatus.connected
-              ? "Your payout account needs a few more details before it can receive funds."
+              ? "Your Stripe account is connected, but Stripe still needs more information (such as an identity document) before payouts can be turned on."
               : "Payouts are set up once in MYHitch Business — it takes a couple of minutes."}
           </p>
         </>

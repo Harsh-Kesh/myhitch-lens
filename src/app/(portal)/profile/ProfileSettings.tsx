@@ -210,7 +210,7 @@ export function ProfileSettings({
             <>
               <p className="mb-4 text-[12.5px] text-text-muted">
                 {connectStatus.connected
-                  ? "Your payout account needs a few more details before it can receive funds."
+                  ? "Your Stripe account is connected, but Stripe still needs more information (such as an identity document) before payouts can be turned on."
                   : "Set up payouts once in MYHitch Business to receive your earnings."}
               </p>
               {payoutSetupHref && (
@@ -220,7 +220,7 @@ export function ProfileSettings({
                   rel="noopener noreferrer"
                   className={buttonClasses("primary", "sm")}
                 >
-                  {connectStatus.connected ? "Finish payout setup" : "Set up payouts in MYHitch Business"}
+                  {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
                 </a>
               )}
             </>

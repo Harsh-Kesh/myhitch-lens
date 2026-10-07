@@ -9,12 +9,14 @@ import { useGsapReveal } from "@/hooks/useGsapReveal";
 import { cn } from "@/lib/cn";
 
 interface Plan {
-  badge: string;
+  badge?: string;
   title: string;
   price: string;
   period: string;
+  yearly?: string;
   desc: string;
   features: string[];
+  excluded?: string[];
   cta: string;
   href: string;
   variant: ButtonVariant;
@@ -23,56 +25,116 @@ interface Plan {
 
 const PLANS: Plan[] = [
   {
-    badge: "Free / Premium",
-    title: "Reader",
-    price: "$9.99",
-    period: "/mo",
-    desc: "For professionals seeking verified insight and niche industry analysis.",
+    title: "Lens Free",
+    price: "AU$0",
+    period: "forever free",
+    desc: "Start your journey on MYHitch Lens.",
     features: [
-      "Unlimited access to basic articles",
-      "Bookmark & Comment options",
-      "Follow verified authors",
-      "Personalized reading preferences",
-      "Custom notifications feed",
+      "Read public articles",
+      "Create author profile",
+      "Submit up to 2 articles per month",
+      "Basic images in articles",
+      "Comment, like and share",
+      "Follow authors and topics",
+      "Bookmark articles",
+      "Basic article analytics",
+      "AI writing assistance (limited)",
+      "MYHitch editorial approval",
     ],
-    cta: "Subscribe as Reader",
+    excluded: [
+      "Video/Media embedding",
+      "SEO tools",
+      "Schedule publishing",
+      "Monetisation eligibility",
+      "Sponsored articles",
+      "Business profile",
+    ],
+    cta: "Get Started Free",
     href: "/auth/login?mode=signup&role=reader",
     variant: "secondary",
   },
   {
-    badge: "Recommended",
-    title: "Author",
-    price: "$29.99",
-    period: "/mo",
-    desc: "For domain experts, researchers, and professional freelance writers.",
+    title: "Lens Creator",
+    price: "AU$9.99",
+    period: "/ month",
+    yearly: "or AU$99 / year (Save 17%)",
+    desc: "For bloggers, students and emerging writers.",
     features: [
-      "Verified writer badge upon vetting",
-      "AI writing assistant (Summaries, Narration)",
-      "Full SEO recommendation tools",
-      "Personalized author portfolio page",
-      "Analytics dashboard (views, reading time)",
-      "Direct subscriber revenue sharing",
+      "All Free plan features",
+      "Submit up to 10 articles per month",
+      "Images and media in articles",
+      "Video embedding",
+      "Standard article analytics",
+      "AI writing assistance",
+      "Grammar and style check",
+      "Basic SEO optimisation",
+      "Schedule publishing",
+      "Eligible for Verified Author badge",
+      "Follow author performance",
+      "MYHitch editorial approval",
     ],
-    cta: "Start Writing",
+    excluded: [
+      "Advanced analytics",
+      "Monetisation tools",
+      "Sponsored articles",
+      "Business profile",
+      "Multiple users",
+    ],
+    cta: "Choose Creator Plan",
+    href: "/auth/login?mode=signup&role=author",
+    variant: "secondary",
+  },
+  {
+    badge: "Most Popular",
+    title: "Lens Professional",
+    price: "AU$19.99",
+    period: "/ month",
+    yearly: "or AU$199 / year (Save 17%)",
+    desc: "For journalists, researchers and industry experts.",
+    features: [
+      "All Creator plan features",
+      "Unlimited article submissions",
+      "Advanced article analytics",
+      "Advanced AI writing assistance",
+      "Grammar and style check",
+      "Advanced SEO tools",
+      "Schedule publishing",
+      "Priority editorial review",
+      "Monetisation eligibility",
+      "Publish sponsored articles",
+      "Eligible for Verified Author badge",
+      "MYHitch ecosystem promotion",
+      "Author audience insights",
+      "Custom article categories (subject to approval)",
+    ],
+    cta: "Choose Professional Plan",
     href: "/auth/login?mode=signup&role=author",
     variant: "primary",
     featured: true,
   },
   {
-    badge: "Enterprise",
-    title: "Corporate Publisher",
-    price: "$199",
-    period: "/mo",
-    desc: "For research institutes, supply chain businesses, and corporate teams.",
+    title: "Lens Business",
+    price: "AU$49.99",
+    period: "/ month",
+    yearly: "or AU$499 / year (Save 17%)",
+    desc: "For companies, organisations and media publishers.",
     features: [
-      "Multiple publisher accounts (up to 10)",
-      "Premium report publication & sales",
-      "Advanced analytics & team performance",
-      "Direct MYHitch Mart products linking",
-      "Priority editorial review queue",
-      "API access to reader metrics",
+      "All Professional plan features",
+      "Branded company/organisation profile",
+      "5 author/user accounts included",
+      "Additional users at AU$5/user/month",
+      "Team management and roles",
+      "Advanced analytics dashboard",
+      "Publish unlimited articles",
+      "Sponsored content capability",
+      "Advertising campaign tools (separate fees apply)",
+      "Priority editorial review",
+      "MYHitch ecosystem promotion (priority)",
+      "Lead generation tools",
+      "Custom branding options",
+      "Dedicated account support",
     ],
-    cta: "Launch Team Account",
+    cta: "Choose Business Plan",
     href: "/auth/login?mode=signup&role=corporate",
     variant: "secondary",
   },
@@ -84,7 +146,7 @@ const pricingCard =
 
 /** `.pricing-badge` */
 const pricingBadge =
-  "absolute top-6 right-6 rounded border px-2.5 py-1 text-[11px] font-bold tracking-[0.5px] uppercase";
+  "mb-4 self-start rounded border px-2.5 py-1 text-[11px] font-bold tracking-[0.5px] uppercase";
 
 export default function PricingPage() {
   const rootRef = useGsapReveal<HTMLDivElement>([HERO_REVEAL]);
@@ -99,15 +161,12 @@ export default function PricingPage() {
             Flexible Plans for Our <HeroAccent>Diverse Ecosystem</HeroAccent>
           </>
         }
-        subtitle="Select the tier that matches your goals. Verified authors share directly in subscriber payouts."
+        subtitle="Select the tier that matches your goals, from free readers to global publishers."
       />
 
       <main className="py-15">
         <Container>
-          {/* A 320px floor drops to two columns at ~1024px, leaving the third
-              tier stranded on its own row. 290px keeps all three side by side
-              right down to the 992px single-column cutover. */}
-          <div className="mt-10 grid grid-cols-[repeat(auto-fill,minmax(min(290px,100%),1fr))] items-stretch gap-[30px] max-[992px]:mx-auto max-[992px]:max-w-[480px] max-[992px]:grid-cols-1 max-[992px]:gap-6">
+          <div className="mt-10 grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 xl:grid-cols-4 max-md:mx-auto max-md:max-w-[480px]">
             {PLANS.map((plan) => (
               <div
                 key={plan.title}
@@ -118,26 +177,33 @@ export default function PricingPage() {
                     : "border-line bg-bg-secondary",
                 )}
               >
-                <div
-                  className={cn(
-                    pricingBadge,
-                    plan.featured
-                      ? "border-transparent bg-primary text-text-inverse"
-                      : "border-line bg-bg-primary text-text-muted",
-                  )}
-                >
-                  {plan.badge}
-                </div>
+                {plan.badge && (
+                  <div
+                    className={cn(
+                      pricingBadge,
+                      plan.featured
+                        ? "border-transparent bg-primary text-text-inverse"
+                        : "border-line bg-bg-primary text-text-muted",
+                    )}
+                  >
+                    {plan.badge}
+                  </div>
+                )}
 
                 <h3 className="mb-4 font-heading text-[22px] font-bold text-text-main">
                   {plan.title}
                 </h3>
-                <div className="mb-6 font-heading text-[40px] font-extrabold text-text-main">
+                <div className="mb-6 font-heading text-[34px] font-extrabold text-text-main">
                   {plan.price}
                   <span className="text-[15px] font-medium text-text-muted">
                     {plan.period}
                   </span>
                 </div>
+                {plan.yearly && (
+                  <p className="-mt-4 mb-6 text-[13px] text-text-muted">
+                    {plan.yearly}
+                  </p>
+                )}
                 <p className="mb-8 text-sm text-text-muted">{plan.desc}</p>
 
                 <ul className="mb-10 flex flex-1 list-none flex-col gap-3">
@@ -148,6 +214,14 @@ export default function PricingPage() {
                         "pricing-check flex items-center gap-2.5 text-[13.5px]",
                         plan.featured && "pricing-check-accent",
                       )}
+                    >
+                      {feature}
+                    </li>
+                  ))}
+                  {plan.excluded?.map((feature) => (
+                    <li
+                      key={feature}
+                      className="pricing-cross flex items-center gap-2.5 text-[13.5px] text-text-muted opacity-60"
                     >
                       {feature}
                     </li>

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 /** Keys shared with /auth/callback. sessionStorage is per-tab, so a login started elsewhere is rejected. */
 const STATE_KEY = "portal_sso_state";
 const INTENT_KEY = "lens_sso_intent";
+const NEXT_KEY = "lens_sso_next";
 
 /** Roles the browser may hint at. A UI convenience only; the server re-validates on first sign-in. */
 const HINTABLE_ROLES = new Set(["author", "corporate"]);
@@ -39,6 +40,22 @@ export default function AuthLoginPage() {
       const role = params.get("role") ?? "";
       if (HINTABLE_ROLES.has(role)) sessionStorage.setItem(INTENT_KEY, role);
       else sessionStorage.removeItem(INTENT_KEY);
+
+      // Remember the page the user was heading to (Auth.js passes it as callbackUrl,
+      // an absolute URL on THIS site) so we can land there after sign-in. Only a
+      // same-origin path is kept; the server validates it again.
+      let next = params.get("next") ?? "";
+      const callbackUrl = params.get("callbackUrl");
+      if (!next && callbackUrl) {
+        try {
+          const parsed = new URL(callbackUrl, window.location.origin);
+          if (parsed.origin === window.location.origin) next = parsed.pathname + parsed.search;
+        } catch {
+          /* ignore a malformed callbackUrl */
+        }
+      }
+      if (next.startsWith("/") && !next.startsWith("//") && next !== "/auth/login") sessionStorage.setItem(NEXT_KEY, next);
+      else sessionStorage.removeItem(NEXT_KEY);
 
       const target = new URL("/api/sso/lens", portal);
       target.searchParams.set("state", state);

@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { formControl, formLabel } from "@/components/ui/Form";
+import { ManageBusinessLink } from "@/components/ui/ManageBusinessLink";
 import { Modal } from "@/components/ui/Modal";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { cn } from "@/lib/cn";
@@ -70,7 +71,6 @@ export function CompanyDashboard({
 
 function OwnerPanel({ overview }: { overview: CompanyOverview }) {
   const router = useRouter();
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL; // inlined at build time
   const [showAdd, setShowAdd] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -99,16 +99,9 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
       <div className={cn(dashCard, "mb-6")}>
         <div className="mb-2 flex items-center justify-between">
           <h3 className={dashHeading}>Company Details</h3>
-          {portalUrl && (
-            <a
-              href={`${portalUrl}/onboarding/business`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[12.5px] font-semibold text-primary hover:underline"
-            >
-              Edit in MYHitch Business
-            </a>
-          )}
+          <ManageBusinessLink className="text-[12.5px] font-semibold text-primary hover:underline">
+            Edit in MYHitch Business
+          </ManageBusinessLink>
         </div>
         <p className="text-[13px] text-text-muted">
           Using <span className="font-semibold text-text-main">{seatsUsed}</span> of{" "}

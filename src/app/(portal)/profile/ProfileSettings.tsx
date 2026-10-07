@@ -5,6 +5,7 @@ import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
 import { AbnField } from "@/components/ui/AbnField";
 import { Button, buttonClasses } from "@/components/ui/Button";
+import { ManageBusinessLink } from "@/components/ui/ManageBusinessLink";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
@@ -89,10 +90,6 @@ export function ProfileSettings({
   const [countryVal, setCountryVal] = useState(country);
   const [abnVal, setAbnVal] = useState(abn);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
-
-  // Payout accounts live in MYHitch Business; Lens only links there. Inlined at build time.
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
-  const payoutSetupHref = portalUrl ? `${portalUrl}/onboarding/business` : null;
 
   function saveProfile() {
     setProfileMsg(null);
@@ -213,16 +210,9 @@ export function ProfileSettings({
                   ? "Your Stripe account is connected, but Stripe still needs more information (such as an identity document) before payouts can be turned on."
                   : "Set up payouts once in MYHitch Business to receive your earnings."}
               </p>
-              {payoutSetupHref && (
-                <a
-                  href={payoutSetupHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buttonClasses("primary", "sm")}
-                >
-                  {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
-                </a>
-              )}
+              <ManageBusinessLink className={buttonClasses("primary", "sm")}>
+                {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
+              </ManageBusinessLink>
             </>
           ) : (
             <p className="text-[12.5px] text-success">

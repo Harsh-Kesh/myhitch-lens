@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 
 import { auth, signIn, signOut } from "@/auth";
+import { safeNextPath } from "@/lib/portalLinks";
 
 export type AuthResult = { error: string } | undefined;
 
@@ -13,12 +14,13 @@ export type AuthResult = { error: string } | undefined;
  * `intent` is an unauthenticated UI hint re-validated server-side. Success
  * redirects (thrown by signIn); only failures return here.
  */
-export async function completePortalSignIn(ticket: string, intent?: string): Promise<AuthResult> {
+export async function completePortalSignIn(ticket: string, intent?: string, next?: string): Promise<AuthResult> {
   try {
     await signIn("portal-sso", {
       ticket,
       intent: intent ?? "",
-      redirectTo: "/auth/landing",
+      // Land on the page the user was heading to when it is a safe same-site path.
+      redirectTo: safeNextPath(next) ?? "/auth/landing",
     });
   } catch (error) {
     if (error instanceof AuthError) {

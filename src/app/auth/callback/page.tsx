@@ -8,6 +8,7 @@ import { completePortalSignIn } from "@/app/auth/actions";
 
 const STATE_KEY = "portal_sso_state";
 const INTENT_KEY = "lens_sso_intent";
+const NEXT_KEY = "lens_sso_next";
 
 /**
  * SSO return leg. Order matters:
@@ -32,11 +33,14 @@ export default function AuthCallbackPage() {
 
     let expected: string | null = null;
     let intent = "";
+    let next = "";
     try {
       expected = sessionStorage.getItem(STATE_KEY);
       intent = sessionStorage.getItem(INTENT_KEY) ?? "";
+      next = sessionStorage.getItem(NEXT_KEY) ?? "";
       sessionStorage.removeItem(STATE_KEY);
       sessionStorage.removeItem(INTENT_KEY);
+      sessionStorage.removeItem(NEXT_KEY);
     } catch {
       /* storage blocked: expected stays null and the attempt is refused below */
     }
@@ -48,7 +52,7 @@ export default function AuthCallbackPage() {
       return;
     }
 
-    completePortalSignIn(ticket, intent).then((result) => {
+    completePortalSignIn(ticket, intent, next).then((result) => {
       // Success redirects server-side; only failures come back.
       if (result?.error) setError(result.error);
     });

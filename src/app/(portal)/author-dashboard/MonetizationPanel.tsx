@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { buttonClasses } from "@/components/ui/Button";
+import { ManageBusinessLink } from "@/components/ui/ManageBusinessLink";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { DollarSignIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
@@ -26,10 +27,6 @@ export function MonetizationPanel({
   earningsBreakdown: { label: string; value: number }[];
   connectStatus: ConnectStatus;
 }) {
-  // Payout accounts live in MYHitch Business; Lens only links there. Inlined at build time.
-  const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL;
-  const setupHref = portalUrl ? `${portalUrl}/onboarding/business` : null;
-
   return (
     <div className={cn(dashCard, "self-start")}>
       <h3 className={dashHeading}>
@@ -72,16 +69,9 @@ export function MonetizationPanel({
         </p>
       ) : !connectStatus.connected || !connectStatus.payoutsEnabled ? (
         <>
-          {setupHref && (
-            <a
-              href={setupHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonClasses("primary", "sm", "mt-5 w-full")}
-            >
-              {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
-            </a>
-          )}
+          <ManageBusinessLink className={buttonClasses("primary", "sm", "mt-5 w-full")}>
+            {connectStatus.connected ? "Complete Stripe verification" : "Set up payouts in MYHitch Business"}
+          </ManageBusinessLink>
           <p className="mt-2 text-center text-[10.5px] text-text-muted">
             {connectStatus.connected
               ? "Your Stripe account is connected, but Stripe still needs more information (such as an identity document) before payouts can be turned on."

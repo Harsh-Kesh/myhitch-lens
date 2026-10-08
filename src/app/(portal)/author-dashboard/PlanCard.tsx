@@ -2,8 +2,11 @@ import Link from "next/link";
 
 import { buttonClasses } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
-import { getPlan, getSubmissionAllowance } from "@/lib/entitlements";
+import { hasActivePaidPlan } from "@/lib/billing";
+import { getPlan, getSubmissionAllowance, ownedOrganizationId } from "@/lib/entitlements";
 import type { PlanEntitlements } from "@/lib/plans";
+
+import { PackagePicker } from "./PackagePicker";
 
 /** The headline benefits shown on the plan card, in order, with how to test each against a plan. */
 const BENEFITS: { label: string; has: (e: PlanEntitlements) => boolean }[] = [
@@ -21,7 +24,12 @@ const BENEFITS: { label: string; has: (e: PlanEntitlements) => boolean }[] = [
 
 /** The author's current plan, this month's submission usage, and what the plan does and doesn't include. */
 export async function PlanCard({ userId }: { userId: string }) {
-  const [plan, allowance] = await Promise.all([getPlan(userId), getSubmissionAllowance(userId)]);
+  const [plan, allowance, ownsPaid, companyId] = await Promise.all([
+    getPlan(userId),
+    getSubmissionAllowance(userId),
+    hasActivePaidPlan(userId),
+    ownedOrganizationId(userId),
+  ]);
   const included = BENEFITS.filter((b) => b.has(plan.entitlements));
   const missing = BENEFITS.filter((b) => !b.has(plan.entitlements));
   const pct = allowance.limit === null ? 0 : Math.min(100, Math.round((allowance.used / allowance.limit) * 100));
@@ -30,18 +38,11 @@ export async function PlanCard({ userId }: { userId: string }) {
     <div className={dashCard + " mb-6"}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className={dashHeading + " mb-0"}>Your plan: {plan.name}</h3>
-        <div className="flex gap-2">
-          {plan.code !== "free" && (
-            <Link href="/billing" className={buttonClasses("secondary", "sm")}>
-              Manage billing
-            </Link>
-          )}
-          {plan.code !== "business" && (
-            <Link href="/pricing" className={buttonClasses("primary", "sm")}>
-              {plan.code === "free" ? "Upgrade your plan" : "Change plan"}
-            </Link>
-          )}
-        </div>
+        {ownsPaid && (
+          <Link href="/billing" className={buttonClasses("secondary", "sm")}>
+            Manage billing
+          </Link>
+        )}
       </div>
 
       <div className="mb-4">
@@ -92,6 +93,8 @@ export async function PlanCard({ userId }: { userId: string }) {
           )}
         </div>
       </div>
+
+      <PackagePicker current={plan.code} hasOwnPaidPlan={ownsPaid} canBuyBusiness={!!companyId} />
     </div>
   );
 }

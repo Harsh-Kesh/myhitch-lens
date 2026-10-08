@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getAnalyticsData, getPlatformAnalytics } from "@/lib/dashboard";
+import { getEntitlements } from "@/lib/entitlements";
 import { AuthorAnalyticsView } from "./AuthorAnalyticsView";
 import { PlatformAnalyticsView } from "./PlatformAnalyticsView";
 
@@ -13,6 +14,9 @@ export default async function AnalyticsPage() {
     return <PlatformAnalyticsView data={data} />;
   }
 
-  const data = await getAnalyticsData(session!.user.id);
-  return <AuthorAnalyticsView data={data} />;
+  const [data, { analytics }] = await Promise.all([
+    getAnalyticsData(session!.user.id),
+    getEntitlements(session!.user.id),
+  ]);
+  return <AuthorAnalyticsView data={data} level={analytics} />;
 }

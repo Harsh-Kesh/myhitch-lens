@@ -4,16 +4,32 @@ import { workspacePanel } from "@/components/ui/Form";
 import { BarChartIcon, HeartIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import type { AnalyticsData } from "@/lib/dashboard";
+import type { PlanEntitlements } from "@/lib/plans";
 import { cn } from "@/lib/cn";
 import { formatAUD, formatCompact, TABLE_CELL } from "./format";
 
-export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
+/** What the Analytics Hub shows depends on the plan: basic < standard < advanced. */
+function LockedPanel({ title, plan }: { title: string; plan: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-line bg-bg-secondary p-6 text-center">
+      <p className="font-heading text-[14px] font-bold text-text-main">{title}</p>
+      <p className="mt-1 text-[12.5px] text-text-muted">Available on {plan} and above.</p>
+      <Link href="/pricing" className="mt-3 inline-block text-[12.5px] font-semibold text-primary hover:underline">
+        See plans
+      </Link>
+    </div>
+  );
+}
+
+export function AuthorAnalyticsView({ data, level }: { data: AnalyticsData; level: PlanEntitlements["analytics"] }) {
   const { totalViews, totalFollowers, totalEarnings, articles, categoryShares } = data;
+  const standard = level !== "basic"; // Creator and above
+  const advanced = level === "advanced"; // Professional and above
 
   const kpis = [
     { label: "Accumulated Views", value: formatCompact(totalViews) },
     { label: "Vetted Followers", value: formatCompact(totalFollowers) },
-    { label: "Net Revenue Share", value: formatAUD(totalEarnings), positive: true },
+    ...(advanced ? [{ label: "Net Revenue Share", value: formatAUD(totalEarnings), positive: true }] : []),
     { label: "Published Articles", value: String(articles.length) },
   ];
 
@@ -45,7 +61,10 @@ export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
       </div>
 
       <div className="grid grid-cols-[1.3fr_0.7fr] gap-[30px] max-[992px]:grid-cols-1">
-        {/* Revenue breakdown */}
+        {/* Revenue breakdown (advanced) */}
+        {!advanced ? (
+          <LockedPanel title="Revenue by article" plan="Lens Professional" />
+        ) : (
         <div className={workspacePanel}>
           <h3 className="mb-3 flex items-center gap-2 font-heading text-[15px] font-bold text-text-main">
             <BarChartIcon className="size-[18px] align-middle text-primary" /> Revenue by Article
@@ -76,9 +95,13 @@ export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
             <p className="py-8 text-center text-sm text-text-muted">No revenue data yet.</p>
           )}
         </div>
+        )}
 
         {/* Category performance */}
         <div className="flex flex-col gap-6">
+          {!standard ? (
+            <LockedPanel title="Category performance" plan="Lens Creator" />
+          ) : (
           <div className="rounded-xl border border-line bg-bg-secondary p-6 max-[480px]:p-5">
             <h4 className="mb-4 font-heading text-sm leading-[1.25] font-bold text-text-muted uppercase">
               Top Categories Share
@@ -104,6 +127,7 @@ export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
               <p className="py-4 text-center text-sm text-text-muted">No published articles yet.</p>
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -121,16 +145,20 @@ export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
                 <th className={TABLE_CELL}>Category</th>
                 <th className={cn(TABLE_CELL, "text-right")}>Views</th>
                 <th className={cn(TABLE_CELL, "text-right")}>Likes</th>
-                <th className={cn(TABLE_CELL, "text-right")}>Earnings</th>
+                {advanced && <th className={cn(TABLE_CELL, "text-right")}>Earnings</th>}
               </tr>
             </thead>
             <tbody>
               {articles.map((article) => (
                 <tr key={article.id} className="border-b border-line">
                   <td className={cn(TABLE_CELL, "font-semibold text-text-main")}>
-                    <Link href={`/analytics/article?id=${article.id}`} className="hover:text-primary hover:underline">
-                      {article.title}
-                    </Link>
+                    {standard ? (
+                      <Link href={`/analytics/article?id=${article.id}`} className="hover:text-primary hover:underline">
+                        {article.title}
+                      </Link>
+                    ) : (
+                      article.title
+                    )}
                   </td>
                   <td className={cn(TABLE_CELL, "text-text-muted")}>{article.author}</td>
                   <td className={TABLE_CELL}>
@@ -145,9 +173,11 @@ export function AuthorAnalyticsView({ data }: { data: AnalyticsData }) {
                     <HeartIcon className="mr-1 inline size-3 align-middle text-primary" />
                     {article.likes}
                   </td>
-                  <td className={cn(TABLE_CELL, "text-right text-success")}>
-                    <strong>{formatAUD(article.earnings)}</strong>
-                  </td>
+                  {advanced && (
+                    <td className={cn(TABLE_CELL, "text-right text-success")}>
+                      <strong>{formatAUD(article.earnings)}</strong>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

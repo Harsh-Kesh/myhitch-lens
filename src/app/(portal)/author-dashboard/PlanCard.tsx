@@ -28,11 +28,18 @@ export async function PlanCard({ userId }: { userId: string }) {
     <div className={dashCard + " mb-6"}>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <h3 className={dashHeading + " mb-0"}>Your plan: {plan.name}</h3>
-        {plan.code !== "business" && (
-          <Link href="/pricing" className={buttonClasses("primary", "sm")}>
-            {plan.code === "free" ? "Upgrade your plan" : "See plans"}
-          </Link>
-        )}
+        <div className="flex gap-2">
+          {plan.code !== "free" && (
+            <Link href="/billing" className={buttonClasses("secondary", "sm")}>
+              Manage billing
+            </Link>
+          )}
+          {plan.code !== "business" && (
+            <Link href="/pricing" className={buttonClasses("primary", "sm")}>
+              {plan.code === "free" ? "Upgrade your plan" : "Change plan"}
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="mb-4">

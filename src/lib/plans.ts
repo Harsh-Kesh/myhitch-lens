@@ -21,7 +21,7 @@ export type BillingInterval = "month" | "year";
 export interface PlanEntitlements {
   /** Articles an author may submit per calendar month; null = unlimited. */
   monthlySubmissions: number | null;
-  /** Video / rich media embeds inside articles (flag: editor support not built yet). */
+  /** Video and audio embeds inside articles (enforced: editor toolbar, upload and save/submit). */
   videoEmbeds: boolean;
   /** SEO tooling (flag: not built yet). */
   seoTools: "none" | "basic" | "advanced";

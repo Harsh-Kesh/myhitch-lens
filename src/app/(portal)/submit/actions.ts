@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
 import { isSuspended } from "@/lib/authGuards";
+import { articleHasVideoOrAudio } from "@/lib/articleMedia";
 import { getEntitlements, getSubmissionAllowance, upgradeMessage } from "@/lib/entitlements";
 import { isEligibleToSubmit } from "@/lib/verification";
 import type { ArticleDestination } from "@prisma/client";
@@ -85,6 +86,11 @@ export async function saveDraft(input: {
     data.slug = `${slugify(input.title || "untitled")}-${Date.now().toString(36)}`;
   }
   if (input.content !== undefined) {
+    // Video and audio embeds belong to Creator and above. Refuse to store them for a plan
+    // without them, however they got into the editor (toolbar, paste, an older draft).
+    if (articleHasVideoOrAudio(input.content) && !(await getEntitlements(session.user.id)).videoEmbeds) {
+      return { error: upgradeMessage("Video and audio embedding isn't included in your plan. Remove the video or audio clips to keep saving.") };
+    }
     data.content = input.content;
   }
 
@@ -138,6 +144,9 @@ export async function submitForReview(input: {
   // submission counts against the monthly allowance (a resubmission after
   // "changes requested" does not count again).
   const entitlements = await getEntitlements(session.user.id);
+  if (!entitlements.videoEmbeds && articleHasVideoOrAudio(article.content)) {
+    return { error: upgradeMessage("This article has an embedded video or audio clip, which isn't included in your plan. Remove it to submit.") };
+  }
   if (input.destination === "exchange_hub" && !entitlements.sponsoredArticles) {
     return { error: upgradeMessage("Sponsored articles through the Exchange Hub aren't included in your plan.") };
   }
@@ -210,6 +219,8 @@ export interface MyPlanSummary {
   verified: boolean;
   /** The plan includes sponsored articles, so "Exchange Hub" is a valid destination. */
   canSponsor: boolean;
+  /** The plan includes video and audio embedding in articles. */
+  canEmbedMedia: boolean;
   /** Monthly submissions: limit is null when unlimited. */
   allowance: { limit: number | null; used: number; allowed: boolean };
 }
@@ -225,6 +236,7 @@ export async function getMyProfileSummary(): Promise<MyPlanSummary> {
     name: user?.displayName ?? session.user.name ?? "Author",
     verified: user?.isVerified ?? false,
     canSponsor: entitlements.sponsoredArticles,
+    canEmbedMedia: entitlements.videoEmbeds,
     allowance: { limit: allowance.limit, used: allowance.used, allowed: allowance.allowed },
   };
 }

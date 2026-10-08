@@ -75,6 +75,7 @@ export default function SubmitPage() {
     name: "Author",
     verified: false,
     canSponsor: false,
+    canEmbedMedia: false,
     allowance: { limit: null, used: 0, allowed: true },
   });
   useEffect(() => {
@@ -286,6 +287,7 @@ export default function SubmitPage() {
         </div>
       ) : (
         <RichEditor
+          allowRichMedia={profile.canEmbedMedia}
           key={articleId || "new"}
           content={content || undefined}
           onUpdate={handleContentUpdate}

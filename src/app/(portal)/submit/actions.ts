@@ -205,13 +205,28 @@ export async function submitForReview(input: {
 }
 
 /** The current user's display name + verified status, for the live preview. */
-export async function getMyProfileSummary(): Promise<{ name: string; verified: boolean }> {
+export interface MyPlanSummary {
+  name: string;
+  verified: boolean;
+  /** The plan includes sponsored articles, so "Exchange Hub" is a valid destination. */
+  canSponsor: boolean;
+  /** Monthly submissions: limit is null when unlimited. */
+  allowance: { limit: number | null; used: number; allowed: boolean };
+}
+
+export async function getMyProfileSummary(): Promise<MyPlanSummary> {
   const session = await requireAuthorSession();
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { displayName: true, isVerified: true },
   });
-  return { name: user?.displayName ?? session.user.name ?? "Author", verified: user?.isVerified ?? false };
+  const [entitlements, allowance] = await Promise.all([getEntitlements(session.user.id), getSubmissionAllowance(session.user.id)]);
+  return {
+    name: user?.displayName ?? session.user.name ?? "Author",
+    verified: user?.isVerified ?? false,
+    canSponsor: entitlements.sponsoredArticles,
+    allowance: { limit: allowance.limit, used: allowance.used, allowed: allowance.allowed },
+  };
 }
 
 /** Fetch all available tags for the tag picker. */

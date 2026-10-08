@@ -11,6 +11,8 @@ import { cn } from "@/lib/cn";
 import { VerificationStatus } from "./VerificationPanel";
 import { RemovedArticles } from "./RemovedArticles";
 import { DeleteDraftButton } from "./DeleteDraftButton";
+import { LockedFeature } from "@/components/ui/LockedFeature";
+import { getEntitlements, getSubmissionAllowance } from "@/lib/entitlements";
 import { MonetizationPanel } from "./MonetizationPanel";
 import { getConnectStatus, getPayoutHistory } from "./payoutActions";
 import { PlanCard } from "./PlanCard";
@@ -32,11 +34,16 @@ export default async function AuthorDashboardPage() {
   const nextIssue = await getNextIssueSummary();
   const connectStatus = await getConnectStatus();
   const { totalWithdrawn } = await getPayoutHistory();
+  const [entitlements, allowance] = await Promise.all([getEntitlements(session!.user.id), getSubmissionAllowance(session!.user.id)]);
+  const canMonetise = entitlements.monetisation;
   const { articles, drafts, pendingReview, removedArticles, copyrightStrikes, totalViews, totalLikes, published, totalEarnings, earningsBreakdown, walletBalance, rankPosition, rankTier, rankPoints } = space;
 
   return (
     <>
-      <ViewHeader title="Author Studio" subtitle="Manage your profile, monitor published work, and review earnings." />
+      <ViewHeader
+        title="Author Studio"
+        subtitle={canMonetise ? "Manage your profile, monitor published work, and review earnings." : "Manage your profile and monitor your published work."}
+      />
 
       {/* Profile header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-bg-secondary p-5 max-[480px]:p-4">
@@ -45,7 +52,7 @@ export default async function AuthorDashboardPage() {
           <div className="min-w-0">
             <h3 className="flex flex-wrap items-center gap-2 font-heading text-lg font-bold text-text-main max-[480px]:text-base">
               {name}
-              <VerificationStatus isVerified={verification.isVerified} items={verification.items} />
+              <VerificationStatus isVerified={verification.isVerified} items={verification.items} badgeAvailable={entitlements.verifiedBadge} />
             </h3>
             <p className="mt-0.5 text-xs text-text-muted">
               {rankPosition != null ? (
@@ -66,10 +73,21 @@ export default async function AuthorDashboardPage() {
         <StatChip icon={<BookIcon className="size-4" />} value={published} label="Published" />
         <StatChip icon={<BarChartIcon className="size-4" />} value={totalViews.toLocaleString()} label="Total views" />
         <StatChip icon={<HeartIcon className="size-4" />} value={totalLikes.toLocaleString()} label="Total likes" />
-        <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
+        {canMonetise ? (
+          <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
+        ) : (
+          <StatChip
+            icon={<DollarSignIcon className="size-4" />}
+            value={allowance.remaining === null ? "Unlimited" : `${allowance.remaining} left`}
+            label="Submissions this month"
+            accent
+          />
+        )}
       </div>
 
-      <PlanCard userId={session!.user.id} />
+      <div id="packages">
+        <PlanCard userId={session!.user.id} />
+      </div>
 
       {/* Magazine issue */}
       <div className={cn(dashCard, "mb-6")}>
@@ -183,7 +201,7 @@ export default async function AuthorDashboardPage() {
                   <p className="mb-4 line-clamp-2 flex-1 text-[12.5px] text-text-muted">{article.summary}</p>
                   <div className="flex items-center justify-between border-t border-line pt-3 text-[11.5px] text-text-muted">
                     <span>{article.views.toLocaleString()} views</span>
-                    {article.earnings > 0 && (
+                    {canMonetise && article.earnings > 0 && (
                       <span className="font-semibold text-success">+{formatAUD(article.earnings)}</span>
                     )}
                   </div>
@@ -196,13 +214,22 @@ export default async function AuthorDashboardPage() {
           </div>
         </div>
 
-        <MonetizationPanel
-          walletBalance={walletBalance}
-          totalEarnings={totalEarnings}
-          totalWithdrawn={totalWithdrawn}
-          earningsBreakdown={earningsBreakdown}
-          connectStatus={connectStatus}
-        />
+        {canMonetise ? (
+          <MonetizationPanel
+            walletBalance={walletBalance}
+            totalEarnings={totalEarnings}
+            totalWithdrawn={totalWithdrawn}
+            earningsBreakdown={earningsBreakdown}
+            connectStatus={connectStatus}
+          />
+        ) : (
+          <LockedFeature
+            className="self-start"
+            title="Monetisation"
+            plan="Lens Professional"
+            description="Earnings, your wallet and payouts."
+          />
+        )}
       </div>
     </>
   );

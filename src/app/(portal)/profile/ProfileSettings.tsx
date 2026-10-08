@@ -5,6 +5,7 @@ import { useRef, useState, useTransition, type ChangeEvent } from "react";
 
 import { AbnField } from "@/components/ui/AbnField";
 import { Button, buttonClasses } from "@/components/ui/Button";
+import { LockedFeature } from "@/components/ui/LockedFeature";
 import { ManageBusinessLink } from "@/components/ui/ManageBusinessLink";
 import { formControl, formLabel } from "@/components/ui/Form";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
@@ -35,6 +36,7 @@ export function ProfileSettings({
   abn,
   avatarUrl,
   connectStatus,
+  payoutsLocked,
 }: {
   displayName: string;
   email: string;
@@ -45,6 +47,8 @@ export function ProfileSettings({
   abn: string;
   avatarUrl: string | null;
   connectStatus: ConnectStatus | null;
+  /** The plan has no monetisation, so payout setup is shown as locked instead of hidden. */
+  payoutsLocked: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -197,6 +201,10 @@ export function ProfileSettings({
           {isPending ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+
+      {payoutsLocked && (
+        <LockedFeature className="mt-6" title="Payouts" plan="Lens Professional" description="Set up payouts to receive your earnings." />
+      )}
 
       {connectStatus && (
         <div className={dashCard + " mt-6"}>

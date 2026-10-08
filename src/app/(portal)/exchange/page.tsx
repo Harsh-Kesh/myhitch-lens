@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
+import { LockedFeature } from "@/components/ui/LockedFeature";
+import { ViewHeader } from "@/components/ui/ViewHeader";
+import { getEntitlements } from "@/lib/entitlements";
 import { listAuthorOpportunities, listExchangeEligibleArticles } from "@/lib/exchange";
 import { listActiveExternalOpportunities, listAllExternalOpportunities } from "@/lib/externalOpportunities";
 import { ExchangeHub } from "./ExchangeHub";
@@ -19,6 +22,20 @@ export default async function ExchangePage() {
   if (session.user.role === "admin") {
     const opportunities = await listAllExternalOpportunities();
     return <ExternalOpportunitiesAdmin opportunities={opportunities} />;
+  }
+
+  // Sponsored articles are part of Professional and above; Free sees what it unlocks, not the tools.
+  if (!(await getEntitlements(session.user.id)).sponsoredArticles) {
+    return (
+      <>
+        <ViewHeader title="Exchange Hub" subtitle="Line up a sponsor for your articles and pick up briefs from MYHitch products." />
+        <LockedFeature
+          title="Sponsored articles"
+          plan="Lens Professional"
+          description="Submit an unpublished article to the Exchange Hub to find a sponsor before it goes live."
+        />
+      </>
+    );
   }
 
   const [listable, opportunities, externalOpportunities] = await Promise.all([

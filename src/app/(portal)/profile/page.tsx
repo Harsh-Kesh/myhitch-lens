@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
+import { getEntitlements } from "@/lib/entitlements";
 import { ProfileSettings } from "./ProfileSettings";
 
 /** Account settings — open to every signed-in role. */
@@ -21,7 +22,10 @@ export default async function ProfilePage() {
   });
   if (!user) redirect("/auth/login");
 
-  const connectStatus = session.user.role === "author" ? await getConnectStatus() : null;
+  // Payouts belong to monetisation (Professional and above); Free sees a locked note instead.
+  const canMonetise = session.user.role !== "author" || (await getEntitlements(session.user.id)).monetisation;
+  const connectStatus = session.user.role === "author" && canMonetise ? await getConnectStatus() : null;
+  const payoutsLocked = session.user.role === "author" && !canMonetise;
 
   return (
     <ProfileSettings
@@ -34,6 +38,7 @@ export default async function ProfilePage() {
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
       connectStatus={connectStatus}
+      payoutsLocked={payoutsLocked}
     />
   );
 }

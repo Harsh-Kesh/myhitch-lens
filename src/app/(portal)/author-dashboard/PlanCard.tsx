@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { buttonClasses } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
-import { hasActivePaidPlan } from "@/lib/billing";
+import { freePlanSwitchEnabled, hasActivePaidPlan } from "@/lib/billing";
 import { getPlan, getSubmissionAllowance, ownedOrganizationId } from "@/lib/entitlements";
 import type { PlanEntitlements } from "@/lib/plans";
 
@@ -94,7 +94,12 @@ export async function PlanCard({ userId }: { userId: string }) {
         </div>
       </div>
 
-      <PackagePicker current={plan.code} hasOwnPaidPlan={ownsPaid} canBuyBusiness={!!companyId} />
+      <PackagePicker
+        current={plan.code}
+        hasOwnPaidPlan={ownsPaid}
+        canBuyBusiness={!!companyId}
+        freeSwitch={freePlanSwitchEnabled()}
+      />
     </div>
   );
 }

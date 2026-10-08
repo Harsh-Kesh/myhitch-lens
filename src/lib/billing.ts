@@ -80,10 +80,59 @@ async function ensureCustomer(stripe: Stripe, userId: string): Promise<string> {
   return customer.id;
 }
 
-/** True when the user already holds a paid plan (so they should change it in the billing portal). */
+/**
+ * True when the user pays for a plan through Stripe (so they should change it in the
+ * billing portal). A plan switched on without payment (test mode, below) has no
+ * Stripe subscription and does not count: it can still be replaced by buying one.
+ */
 export async function hasActivePaidPlan(userId: string): Promise<boolean> {
-  const sub = await prisma.subscription.findUnique({ where: { userId }, select: { plan: true, status: true } });
-  return !!sub && sub.plan !== "free" && (sub.status === "active" || sub.status === "past_due");
+  const sub = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { plan: true, status: true, stripeSubscriptionId: true },
+  });
+  return !!sub && !!sub.stripeSubscriptionId && sub.plan !== "free" && (sub.status === "active" || sub.status === "past_due");
+}
+
+/**
+ * TEST MODE: let people switch plan without paying, to try each package's benefits.
+ * Off unless ALLOW_FREE_PLAN_SWITCH=true, and refused outright when Stripe is in
+ * live mode, so it cannot hand out paid plans on a real-money deployment even if
+ * the flag is left on by mistake. Turn it off (and rely on checkout) to go live.
+ */
+export function freePlanSwitchEnabled(): boolean {
+  if ((process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_")) return false;
+  return process.env.ALLOW_FREE_PLAN_SWITCH === "true";
+}
+
+/** Put a user on any plan with no payment (only when test mode is on). Never touches a plan paid through Stripe. */
+export async function switchPlanWithoutPayment(userId: string, plan: PlanCode): Promise<void> {
+  if (!freePlanSwitchEnabled()) throw new BillingError("Switching plans without payment isn't enabled.");
+  if (!isPlanCode(plan)) throw new BillingError("Choose a valid plan.");
+
+  const current = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { stripeSubscriptionId: true, status: true },
+  });
+  if (current?.stripeSubscriptionId && (current.status === "active" || current.status === "past_due")) {
+    throw new BillingError("You pay for your current plan through Stripe. Use Manage billing to change or cancel it.");
+  }
+  if (plan === "business" && !(await ownedOrganizationId(userId))) {
+    throw new BillingError("Lens Business is for company accounts. Register your business with MYHitch first.");
+  }
+
+  const data = {
+    plan,
+    status: "active" as const,
+    interval: null,
+    stripeSubscriptionId: null,
+    stripePriceId: null,
+    currentPeriodEnd: null, // no payment, so no paid period to run out
+    cancelAtPeriodEnd: false,
+    extraSeats: 0,
+  };
+  await prisma.subscription.upsert({ where: { userId }, update: data, create: { userId, ...data } });
+  console.info("[billing] plan switched without payment", { userId, plan });
+  await syncVerification(userId); // the plan may add or remove the Verified badge
 }
 
 /** Create a Stripe Checkout Session for a plan and return its URL. */

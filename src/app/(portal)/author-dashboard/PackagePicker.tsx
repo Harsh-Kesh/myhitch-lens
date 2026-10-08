@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
-import { startCheckout } from "@/app/(portal)/billing/actions";
+import { startCheckout, switchPlan } from "@/app/(portal)/billing/actions";
 import { buttonClasses } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import { PLANS, PLAN_CODES, formatAud, type BillingInterval, type PlanCode } from "@/lib/plans";
@@ -30,17 +31,32 @@ export function PackagePicker({
   current,
   hasOwnPaidPlan,
   canBuyBusiness,
+  freeSwitch,
 }: {
   current: PlanCode;
   /** The user already has their own active paid subscription (change it in billing, don't buy a second). */
   hasOwnPaidPlan: boolean;
   /** The user owns a company, so Lens Business can be bought. */
   canBuyBusiness: boolean;
+  /** Test mode: the buttons switch plan immediately and take no payment. */
+  freeSwitch: boolean;
 }) {
+  const router = useRouter();
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState<PlanCode | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function switchTo(code: PlanCode) {
+    setError(null);
+    setBusy(code);
+    startTransition(async () => {
+      const result = await switchPlan(code);
+      setBusy(null);
+      if ("error" in result) setError(result.error);
+      else router.refresh();
+    });
+  }
 
   function choose(code: PlanCode) {
     setError(null);
@@ -62,7 +78,7 @@ export function PackagePicker({
     <div className="mt-6 border-t border-line pt-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h4 className="font-heading text-[14px] font-bold text-text-main">Choose your package</h4>
-        <div className="flex items-center gap-1 rounded-full border border-line bg-bg-primary p-1 text-[12px] font-semibold">
+        <div className={cn("flex items-center gap-1 rounded-full border border-line bg-bg-primary p-1 text-[12px] font-semibold", freeSwitch && "hidden")}>
           {(["month", "year"] as const).map((value) => (
             <button
               key={value}
@@ -79,6 +95,12 @@ export function PackagePicker({
         </div>
       </div>
 
+      {freeSwitch && (
+        <p className="mb-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[12px] text-warning">
+          Test mode: switching packages here takes no payment, so you can try what each one unlocks.
+        </p>
+      )}
+
       <div className="grid grid-cols-4 gap-3 max-[1200px]:grid-cols-2 max-[560px]:grid-cols-1">
         {PLAN_CODES.map((code, index) => {
           const plan = PLANS[code];
@@ -89,6 +111,20 @@ export function PackagePicker({
           let action: React.ReactNode = null;
           if (isCurrent) {
             action = <span className="block rounded-lg bg-primary-glow py-2 text-center text-[12.5px] font-bold text-primary">Current plan</span>;
+          } else if (freeSwitch) {
+            action =
+              code === "business" && !canBuyBusiness ? (
+                <span className="block py-2 text-center text-[12px] text-text-muted">For company accounts</span>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => switchTo(code)}
+                  className={buttonClasses(code === "professional" ? "primary" : "secondary", "sm", "w-full")}
+                >
+                  {busy === code ? "Switching…" : `Switch to ${plan.name.replace("Lens ", "")}`}
+                </button>
+              );
           } else if (code === "free" || lower) {
             action = <span className="block py-2 text-center text-[12px] text-text-muted">Included in your plan</span>;
           } else if (hasOwnPaidPlan) {
@@ -140,7 +176,9 @@ export function PackagePicker({
 
       {error && <p className="mt-3 text-[12.5px] text-danger">{error}</p>}
       <p className="mt-3 text-[11.5px] text-text-muted">
-        Paid plans renew automatically and you can cancel any time in Manage billing.{" "}
+        {freeSwitch
+          ? "Payment is switched off for now."
+          : "Paid plans renew automatically and you can cancel any time in Manage billing."}{" "}
         <Link href="/pricing" className="font-semibold text-primary hover:underline">
           Full comparison
         </Link>

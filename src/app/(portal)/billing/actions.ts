@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
@@ -8,10 +9,13 @@ import {
   BillingError,
   createCheckoutUrl,
   createPortalUrl,
+  freePlanSwitchEnabled,
   hasActivePaidPlan,
   isInterval,
   isPaidPlan,
+  switchPlanWithoutPayment,
 } from "@/lib/billing";
+import { isPlanCode } from "@/lib/plans";
 
 export type CheckoutResult = { url: string } | { error: string } | { login: true };
 
@@ -58,4 +62,28 @@ export async function openBillingPortal(): Promise<void> {
     redirect("/billing?error=portal");
   }
   redirect(url);
+}
+
+export type SwitchResult = { ok: true } | { error: string };
+
+/**
+ * TEST MODE: switch to a plan with no payment. Only works while the server has
+ * ALLOW_FREE_PLAN_SWITCH=true (never on a live-Stripe deployment); the checks are
+ * in switchPlanWithoutPayment, this just adds who is asking.
+ */
+export async function switchPlan(plan: string): Promise<SwitchResult> {
+  const session = await auth();
+  if (!session?.user) return { error: "Please sign in first." };
+  if (session.user.role === "editor" || session.user.role === "admin") return { error: "Staff accounts don't need a plan." };
+  if (!freePlanSwitchEnabled() || !isPlanCode(plan)) return { error: "Switching without payment isn't available." };
+
+  try {
+    await switchPlanWithoutPayment(session.user.id, plan);
+  } catch (error) {
+    if (error instanceof BillingError) return { error: error.message };
+    console.error("[billing] free switch failed", { error: error instanceof Error ? error.message : String(error) });
+    return { error: "Couldn't switch your plan. Please try again." };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
 }

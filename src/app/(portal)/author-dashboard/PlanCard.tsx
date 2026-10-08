@@ -8,6 +8,8 @@ import type { PlanEntitlements } from "@/lib/plans";
 /** The headline benefits shown on the plan card, in order, with how to test each against a plan. */
 const BENEFITS: { label: string; has: (e: PlanEntitlements) => boolean }[] = [
   { label: "Verified Author badge", has: (e) => e.verifiedBadge },
+  { label: "Standard analytics", has: (e) => e.analytics !== "basic" },
+  { label: "Advanced analytics and audience insights", has: (e) => e.analytics === "advanced" && e.audienceInsights },
   { label: "Video / media embedding", has: (e) => e.videoEmbeds },
   { label: "SEO tools", has: (e) => e.seoTools !== "none" },
   { label: "Schedule publishing", has: (e) => e.schedulePublishing },

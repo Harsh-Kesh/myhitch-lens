@@ -1,5 +1,7 @@
 import "server-only";
 
+import { Prisma } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 
 export interface SavedArticle {
@@ -637,5 +639,68 @@ export async function getArticleAnalytics(articleId: string): Promise<ArticleAna
     owner: article.owner?.displayName ?? null,
     soldPrice: null,
     viewTrend,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Audience insights (Professional and above)
+// ---------------------------------------------------------------------------
+
+export interface AudienceInsights {
+  windowDays: number;
+  views: number;
+  /** One entry per day, oldest first, zero-filled. */
+  viewsByDay: { date: string; views: number }[];
+  newFollowers: number;
+  /** Likes, bookmarks and comments on this author's articles in the window. */
+  engagements: number;
+  /** engagements / views, as a percentage (0 when there are no views). */
+  engagementRate: number;
+  /** Average seconds of reading recorded per view (0 when unknown). */
+  avgReadSeconds: number;
+}
+
+const INSIGHT_WINDOW_DAYS = 30;
+
+/** Audience activity for the author's articles over the last 30 days. */
+export async function getAudienceInsights(userId: string): Promise<AudienceInsights> {
+  const since = new Date(Date.now() - INSIGHT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const mine = { article: { authorId: userId }, createdAt: { gte: since } };
+
+  const [daily, readTime, newFollowers, likes, bookmarks, comments] = await Promise.all([
+    prisma.$queryRaw<{ day: Date; views: bigint }[]>(Prisma.sql`
+      SELECT date_trunc('day', e."createdAt") AS day, COUNT(*) AS views
+      FROM "AnalyticsEvent" e
+      JOIN "Article" a ON a.id = e."articleId"
+      WHERE a."authorId" = ${userId} AND e.kind = 'view' AND e."createdAt" >= ${since}
+      GROUP BY 1
+    `),
+    prisma.analyticsEvent.aggregate({
+      where: { kind: "read_time_ping", article: { authorId: userId }, createdAt: { gte: since } },
+      _sum: { value: true },
+    }),
+    prisma.follow.count({ where: { followingId: userId, createdAt: { gte: since } } }),
+    prisma.like.count({ where: mine }),
+    prisma.bookmark.count({ where: mine }),
+    prisma.comment.count({ where: mine }),
+  ]);
+
+  const byDay = new Map(daily.map((d) => [d.day.toISOString().slice(0, 10), Number(d.views)]));
+  const viewsByDay: AudienceInsights["viewsByDay"] = [];
+  for (let i = INSIGHT_WINDOW_DAYS - 1; i >= 0; i--) {
+    const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    viewsByDay.push({ date, views: byDay.get(date) ?? 0 });
+  }
+
+  const views = viewsByDay.reduce((sum, d) => sum + d.views, 0);
+  const engagements = likes + bookmarks + comments;
+  return {
+    windowDays: INSIGHT_WINDOW_DAYS,
+    views,
+    viewsByDay,
+    newFollowers,
+    engagements,
+    engagementRate: views > 0 ? Math.round((engagements / views) * 1000) / 10 : 0,
+    avgReadSeconds: views > 0 ? Math.round((readTime._sum.value ?? 0) / views) : 0,
   };
 }

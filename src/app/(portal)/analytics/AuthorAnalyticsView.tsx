@@ -3,7 +3,7 @@ import Link from "next/link";
 import { workspacePanel } from "@/components/ui/Form";
 import { BarChartIcon, HeartIcon } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
-import type { AnalyticsData } from "@/lib/dashboard";
+import type { AnalyticsData, AudienceInsights } from "@/lib/dashboard";
 import type { PlanEntitlements } from "@/lib/plans";
 import { cn } from "@/lib/cn";
 import { formatAUD, formatCompact, TABLE_CELL } from "./format";
@@ -21,7 +21,52 @@ function LockedPanel({ title, plan }: { title: string; plan: string }) {
   );
 }
 
-export function AuthorAnalyticsView({ data, level }: { data: AnalyticsData; level: PlanEntitlements["analytics"] }) {
+function AudienceInsightsPanel({ insights }: { insights: AudienceInsights }) {
+  const max = Math.max(...insights.viewsByDay.map((d) => d.views), 1);
+  const minutes = Math.floor(insights.avgReadSeconds / 60);
+  const seconds = insights.avgReadSeconds % 60;
+  const stats = [
+    { label: `Views (${insights.windowDays} days)`, value: insights.views.toLocaleString() },
+    { label: "New followers", value: `+${insights.newFollowers}` },
+    { label: "Engagement rate", value: `${insights.engagementRate}%` },
+    { label: "Avg read time per view", value: insights.avgReadSeconds ? `${minutes}m ${seconds}s` : "n/a" },
+  ];
+  return (
+    <div className={cn(workspacePanel, "mb-[30px] w-full")}>
+      <h3 className="mb-3 font-heading text-[15px] font-bold text-text-main">Audience insights · last {insights.windowDays} days</h3>
+      <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(min(160px,100%),1fr))] gap-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="rounded-lg border border-line bg-bg-primary p-4">
+            <span className="text-[11px] text-text-muted uppercase">{stat.label}</span>
+            <span className="block text-lg font-extrabold text-text-main">{stat.value}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mb-2 text-[11.5px] text-text-muted">Views per day</p>
+      <div className="flex h-24 items-end gap-[3px]" role="img" aria-label="Views per day over the last 30 days">
+        {insights.viewsByDay.map((d) => (
+          <div
+            key={d.date}
+            title={`${d.date}: ${d.views} views`}
+            className="flex-1 rounded-t-[2px] bg-primary/70"
+            style={{ height: `${Math.max(d.views === 0 ? 2 : 6, Math.round((d.views / max) * 100))}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AuthorAnalyticsView({
+  data,
+  level,
+  insights,
+}: {
+  data: AnalyticsData;
+  level: PlanEntitlements["analytics"];
+  /** Present only when the plan includes audience insights. */
+  insights: AudienceInsights | null;
+}) {
   const { totalViews, totalFollowers, totalEarnings, articles, categoryShares } = data;
   const standard = level !== "basic"; // Creator and above
   const advanced = level === "advanced"; // Professional and above
@@ -59,6 +104,14 @@ export function AuthorAnalyticsView({ data, level }: { data: AnalyticsData; leve
           </div>
         ))}
       </div>
+
+      {insights ? (
+        <AudienceInsightsPanel insights={insights} />
+      ) : (
+        <div className="mb-[30px]">
+          <LockedPanel title="Audience insights" plan="Lens Professional" />
+        </div>
+      )}
 
       <div className="grid grid-cols-[1.3fr_0.7fr] gap-[30px] max-[992px]:grid-cols-1">
         {/* Revenue breakdown (advanced) */}

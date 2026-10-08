@@ -15,15 +15,21 @@ import { PLANS, isPlanCode, type PlanCode, type PlanDefinition, type PlanEntitle
 
 const ACCESS_STATUSES = new Set(["active", "past_due"]);
 
+/** A subscription whose paid period ended more than this long ago no longer grants access. */
+const PERIOD_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function grantsAccess(sub: { status: string; currentPeriodEnd: Date | null }): boolean {
+  if (!ACCESS_STATUSES.has(sub.status)) return false;
+  // Even if a webhook hasn't marked it canceled yet, an expired period grants nothing.
+  return !sub.currentPeriodEnd || sub.currentPeriodEnd.getTime() >= Date.now() - PERIOD_GRACE_MS;
+}
+
 export async function getPlanCode(userId: string): Promise<PlanCode> {
   const sub = await prisma.subscription.findUnique({
     where: { userId },
     select: { plan: true, status: true, currentPeriodEnd: true },
   });
-  if (!sub || !ACCESS_STATUSES.has(sub.status)) return "free";
-  // A subscription whose paid period has ended no longer grants access, even if
-  // a webhook hasn't arrived to mark it canceled yet.
-  if (sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() < Date.now() - 3 * 24 * 60 * 60 * 1000) return "free";
+  if (!sub || !grantsAccess(sub)) return "free";
   return isPlanCode(sub.plan) ? sub.plan : "free";
 }
 
@@ -63,4 +69,21 @@ export async function getSubmissionAllowance(userId: string): Promise<Submission
 /** Standard wording for a refused action, with a pointer to upgrade. */
 export function upgradeMessage(what: string): string {
   return `${what} Upgrade your plan on the Pricing page to unlock it.`;
+}
+
+/**
+ * Of these authors, the ones whose plan includes priority editorial review
+ * (Professional and above). One query for the whole list, so the review queue
+ * can be ordered without a lookup per article.
+ */
+export async function priorityAuthorIds(userIds: string[]): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+  const priorityPlans = Object.values(PLANS)
+    .filter((p) => p.entitlements.priorityReview)
+    .map((p) => p.code);
+  const rows = await prisma.subscription.findMany({
+    where: { userId: { in: userIds }, plan: { in: priorityPlans }, status: { in: ["active", "past_due"] } },
+    select: { userId: true, status: true, currentPeriodEnd: true },
+  });
+  return new Set(rows.filter(grantsAccess).map((r) => r.userId));
 }

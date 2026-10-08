@@ -61,11 +61,15 @@ export function AuthorAnalyticsView({
   data,
   level,
   insights,
+  title = "Analytics Hub",
+  subtitle = "Monitor reader engagement metrics, publication reads, and revenue trends.",
 }: {
   data: AnalyticsData;
   level: PlanEntitlements["analytics"];
   /** Present only when the plan includes audience insights. */
   insights: AudienceInsights | null;
+  title?: string;
+  subtitle?: string;
 }) {
   const { totalViews, totalFollowers, totalEarnings, articles, categoryShares } = data;
   const standard = level !== "basic"; // Creator and above
@@ -80,10 +84,7 @@ export function AuthorAnalyticsView({
 
   return (
     <>
-      <ViewHeader
-        title="Analytics Hub"
-        subtitle="Monitor reader engagement metrics, publication reads, and revenue trends."
-      />
+      <ViewHeader title={title} subtitle={subtitle} />
 
       {/* KPI widgets */}
       <div className="mb-[30px] grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-4">

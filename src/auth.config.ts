@@ -44,7 +44,7 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   // there's no reason for them to reach the authoring workspace itself.
   { prefix: "/submit", roles: ["author"] },
   { prefix: "/author-dashboard", roles: ["author"] },
-  { prefix: "/analytics", roles: ["author", "editor", "admin"] },
+  { prefix: "/analytics", roles: ["author", "editor", "admin", "corporate"] },
   // Not author-facing: these toggles are a single, platform-wide switch (no
   // per-author or per-article scoping behind them yet), so exposing them to
   // authors implies personal control that doesn't actually exist.

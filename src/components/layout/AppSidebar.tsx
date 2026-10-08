@@ -100,7 +100,7 @@ const NAV_LINKS: NavLink[] = [
     href: "/analytics",
     label: "Analytics Hub",
     icon: <BarChartIcon className={navIcon} />,
-    roles: ["author", "editor", "admin"],
+    roles: ["author", "editor", "admin", "corporate"],
   },
   {
     href: "/governance",

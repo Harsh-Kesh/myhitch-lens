@@ -42,6 +42,19 @@ enum SubscriptionTier {
   corporate
 }
 
+/** The plan a subscription grants. "free" is the default for everyone (no row needed). */
+enum PlanCode {
+  free
+  creator
+  professional
+  business
+}
+
+enum BillingInterval {
+  month
+  year
+}
+
 enum SubscriptionStatus {
   active
   past_due
@@ -305,11 +318,18 @@ model Subscription {
   id                   String             @id @default(cuid())
   userId               String             @unique
   user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tier                 SubscriptionTier
+  /// Legacy, unused. Superseded by `plan`; kept nullable so existing rows stay valid.
+  tier                 SubscriptionTier?
+  plan                 PlanCode           @default(free)
+  interval             BillingInterval?
   status               SubscriptionStatus @default(incomplete)
   stripeCustomerId     String?
   stripeSubscriptionId String?
+  stripePriceId        String?
   currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  /// Company users beyond the plan's included seats (Business plan only).
+  extraSeats           Int                @default(0)
   updatedAt            DateTime           @updatedAt
 }
 
@@ -362,6 +382,8 @@ model Article {
   aiScores    Json?         // plagiarism, readability, seo, sentiment
   publishedAt DateTime?
   scheduledAt DateTime?
+  /// When the author first submitted it for review; drives the monthly submission allowance.
+  submittedAt DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -383,6 +405,7 @@ model Article {
   @@index([status, lane])
   @@index([categoryId])
   @@index([authorId])
+  @@index([authorId, submittedAt])
 }
 
 model ArticleTag {

@@ -294,6 +294,7 @@ export async function submitCompanyArticle(input: { title: string; content: stri
       content: JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] }),
       contentType: "Blog",
       status: "in_review",
+      submittedAt: new Date(),
       lane: "public",
       destination: "main_app",
       license: "all_rights_reserved",

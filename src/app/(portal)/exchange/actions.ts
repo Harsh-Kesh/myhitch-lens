@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
+import { getEntitlements, upgradeMessage } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { mintProvenance } from "@/lib/provenance";
 import { feeFor, round2 } from "@/lib/marketplace";
@@ -61,6 +62,10 @@ export async function submitToExchangeHub(input: {
   const profile = await prisma.profile.findUnique({ where: { userId: user.id }, select: { country: true, abn: true } });
   if (profile?.country === ABN_COUNTRY && !(profile.abn && isValidAbnChecksum(profile.abn))) {
     return { error: "Add a valid ABN to your profile before submitting to the Exchange Hub." };
+  }
+
+  if (!(await getEntitlements(user.id)).sponsoredArticles) {
+    return { error: upgradeMessage("Sponsored articles through the Exchange Hub aren't included in your plan.") };
   }
 
   const description = input.description.trim();

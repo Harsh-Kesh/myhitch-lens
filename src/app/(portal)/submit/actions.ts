@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
 import { isSuspended } from "@/lib/authGuards";
+import { getEntitlements, getSubmissionAllowance, upgradeMessage } from "@/lib/entitlements";
 import { isEligibleToSubmit } from "@/lib/verification";
 import type { ArticleDestination } from "@prisma/client";
 
@@ -124,7 +125,7 @@ export async function submitForReview(input: {
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
-    select: { authorId: true, status: true, title: true, content: true },
+    select: { authorId: true, status: true, title: true, content: true, submittedAt: true },
   });
   if (!article) return { error: "Article not found." };
   if (article.authorId !== session.user.id) return { error: "Not your article." };
@@ -132,6 +133,22 @@ export async function submitForReview(input: {
     return { error: "Article cannot be submitted in its current state." };
   }
   if (!article.title.trim()) return { error: "Please add a title before submitting." };
+
+  // Plan limits. Sponsored articles go through the Exchange Hub; and a first
+  // submission counts against the monthly allowance (a resubmission after
+  // "changes requested" does not count again).
+  const entitlements = await getEntitlements(session.user.id);
+  if (input.destination === "exchange_hub" && !entitlements.sponsoredArticles) {
+    return { error: upgradeMessage("Sponsored articles through the Exchange Hub aren't included in your plan.") };
+  }
+  if (article.submittedAt === null) {
+    const allowance = await getSubmissionAllowance(session.user.id);
+    if (!allowance.allowed) {
+      return {
+        error: upgradeMessage(`You've used all ${allowance.limit} article submissions your plan includes this month.`),
+      };
+    }
+  }
 
   let contentText = "";
   try {
@@ -161,6 +178,7 @@ export async function submitForReview(input: {
     where: { id: input.articleId },
     data: {
       status: "in_review",
+      submittedAt: article.submittedAt ?? new Date(),
       contentType: input.contentType,
       categoryId: bestCategory,
       license: input.license,

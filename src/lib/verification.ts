@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getEntitlements } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { isValidAbnChecksum } from "@/lib/abn";
 import { ABN_COUNTRY } from "@/lib/platformConfig";
@@ -59,10 +60,13 @@ async function buildChecklist(userId: string): Promise<VerificationChecklist> {
 
 /** Recomputes verification from the live checklist and persists any change. */
 export async function syncVerification(userId: string): Promise<boolean> {
-  const [{ eligible }, user] = await Promise.all([
+  const [{ eligible: profileComplete }, user, entitlements] = await Promise.all([
     buildChecklist(userId),
     prisma.user.findUnique({ where: { id: userId }, select: { isVerified: true } }),
+    getEntitlements(userId),
   ]);
+  // The badge needs BOTH a complete profile and a plan that includes it.
+  const eligible = profileComplete && entitlements.verifiedBadge;
 
   if (eligible !== (user?.isVerified ?? false)) {
     await prisma.user.update({ where: { id: userId }, data: { isVerified: eligible } });

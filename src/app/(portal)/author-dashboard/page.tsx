@@ -13,6 +13,7 @@ import { RemovedArticles } from "./RemovedArticles";
 import { DeleteDraftButton } from "./DeleteDraftButton";
 import { MonetizationPanel } from "./MonetizationPanel";
 import { getConnectStatus, getPayoutHistory } from "./payoutActions";
+import { PlanCard } from "./PlanCard";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -67,6 +68,8 @@ export default async function AuthorDashboardPage() {
         <StatChip icon={<HeartIcon className="size-4" />} value={totalLikes.toLocaleString()} label="Total likes" />
         <StatChip icon={<DollarSignIcon className="size-4" />} value={formatAUD(totalEarnings)} label="Earnings" accent />
       </div>
+
+      <PlanCard userId={session!.user.id} />
 
       {/* Magazine issue */}
       <div className={cn(dashCard, "mb-6")}>

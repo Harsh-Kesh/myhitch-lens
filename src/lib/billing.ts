@@ -104,7 +104,7 @@ export function freePlanSwitchEnabled(): boolean {
   return process.env.ALLOW_FREE_PLAN_SWITCH === "true";
 }
 
-/** Put a user on any plan with no payment (only when test mode is on). Never touches a plan paid through Stripe. */
+/** Put a user on any plan with no payment (only when test mode is on, never with a live Stripe key). */
 export async function switchPlanWithoutPayment(userId: string, plan: PlanCode): Promise<void> {
   if (!freePlanSwitchEnabled()) throw new BillingError("Switching plans without payment isn't enabled.");
   if (!isPlanCode(plan)) throw new BillingError("Choose a valid plan.");
@@ -113,11 +113,27 @@ export async function switchPlanWithoutPayment(userId: string, plan: PlanCode): 
     where: { userId },
     select: { stripeSubscriptionId: true, status: true },
   });
-  if (current?.stripeSubscriptionId && (current.status === "active" || current.status === "past_due")) {
-    throw new BillingError("You pay for your current plan through Stripe. Use Manage billing to change or cancel it.");
-  }
   if (plan === "business" && !(await ownedOrganizationId(userId))) {
     throw new BillingError("Lens Business is for company accounts. Register your business with MYHitch first.");
+  }
+
+  // The account may hold a Stripe TEST subscription from trying checkout. Leaving it
+  // running would keep billing it in the background while the plan says something else,
+  // so end it first. This can only run in test mode: freePlanSwitchEnabled() above
+  // refuses a live key, so a real customer's subscription is never cancelled here.
+  if (current?.stripeSubscriptionId && (current.status === "active" || current.status === "past_due")) {
+    const stripe = getBillingStripe();
+    if (!stripe) throw new BillingError("Couldn't end your current test subscription. Please try again shortly.");
+    try {
+      await stripe.subscriptions.cancel(current.stripeSubscriptionId);
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "resource_missing") {
+        console.error("[billing] could not cancel the test subscription", { error: error instanceof Error ? error.message : String(error) });
+        throw new BillingError("Couldn't end your current test subscription. Please try again shortly.");
+      }
+      // Already gone in Stripe: nothing to cancel.
+    }
   }
 
   const data = {
@@ -194,6 +210,12 @@ export async function syncSubscription(subscription: Stripe.Subscription): Promi
     (await prisma.subscription.findFirst({ where: { stripeCustomerId: customerId }, select: { userId: true } }))?.userId;
   if (!userId) return null;
 
+  // A stale event for a subscription that has ENDED, arriving after the customer moved
+  // to something else (a new purchase or a plan switched on without payment), is ignored.
+  const row = await prisma.subscription.findUnique({ where: { userId }, select: { stripeSubscriptionId: true } });
+  const ended = subscription.status === "canceled" || subscription.status === "incomplete_expired";
+  if (ended && row?.stripeSubscriptionId !== subscription.id) return userId;
+
   // Where the period end lives depends on the Stripe API version.
   const periodEndSeconds =
     (item as unknown as { current_period_end?: number }).current_period_end ??
@@ -224,8 +246,10 @@ export async function markSubscriptionEnded(subscription: Stripe.Subscription): 
     where: { OR: [{ stripeSubscriptionId: subscription.id }, { stripeCustomerId: customerId }] },
     select: { userId: true, stripeSubscriptionId: true },
   });
-  // Ignore an old subscription ending after the customer already moved to a new one.
-  if (!row || (row.stripeSubscriptionId && row.stripeSubscriptionId !== subscription.id)) return;
+  // Only act when this IS the subscription our row is tied to. An old one ending after the
+  // customer moved on (a new purchase, or a plan switched on without payment) must not
+  // knock them back to Free.
+  if (!row || row.stripeSubscriptionId !== subscription.id) return;
   await prisma.subscription.update({
     where: { userId: row.userId },
     data: { plan: "free", status: "canceled", cancelAtPeriodEnd: false, interval: null, extraSeats: 0 },

@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizeAbn } from "@/lib/abn";
+import { BillingError, setExtraSeats } from "@/lib/billing";
+import { getOrgSeatCapacity } from "@/lib/entitlements";
 import { loadPortalBusiness, loadPortalProfile } from "@/lib/portalDb";
 import { mintProvenance } from "@/lib/provenance";
 import type { OrgRole } from "@prisma/client";
@@ -56,7 +58,10 @@ export interface CompanyOverview {
   abn: string | null;
   /** True when name/ABN were read live from the MYHitch Business portal (the source of truth). */
   fromPortal: boolean;
+  /** Seats the company's plan covers (0 when the owner is not on Lens Business). */
   seats: number;
+  /** Lens Business plan details for the seat controls. */
+  plan: { onBusiness: boolean; includedSeats: number; extraSeats: number; interval: "month" | "year" | null };
   myRole: OrgRole;
   isOwner: boolean;
   members: CompanyMember[];
@@ -119,6 +124,11 @@ export async function getCompanyOverview(): Promise<CompanyOverview> {
     orderBy: { id: "asc" },
     include: { user: { select: { username: true, displayName: true, createdAt: true } } },
   });
+  const capacity = await getOrgSeatCapacity(membership.orgId);
+  const ownerSub = membership.isAdmin
+    ? await prisma.subscription.findUnique({ where: { userId: user.id }, select: { interval: true } })
+    : null;
+  const interval = capacity.onBusiness ? (ownerSub?.interval ?? null) : null;
   const invites = membership.isAdmin
     ? await prisma.orgInvite.findMany({
         where: { orgId: membership.orgId, acceptedAt: null },
@@ -131,7 +141,8 @@ export async function getCompanyOverview(): Promise<CompanyOverview> {
     orgName: legal.name,
     abn: legal.abn,
     fromPortal: legal.fromPortal,
-    seats: membership.org.seats,
+    seats: capacity.total,
+    plan: { onBusiness: capacity.onBusiness, includedSeats: capacity.included, extraSeats: capacity.extra, interval },
     myRole: membership.orgRole,
     isOwner: membership.isAdmin,
     members: members.map((m) => ({
@@ -172,13 +183,18 @@ export async function inviteSubAccount(input: {
   if (!EMAIL_RE.test(email)) return { error: "Enter a valid email address." };
   if (input.orgRole !== "author" && input.orgRole !== "editor") return { error: "Choose a role." };
 
-  // Invites count against seats just like members, so owners can't over-invite.
+  // Seats come from the company's Lens Business plan (5 included, plus any extra
+  // users the owner pays for). Invites count against seats just like members.
+  const capacity = await getOrgSeatCapacity(membership.orgId);
+  if (!capacity.onBusiness) {
+    return { error: "Adding team members is part of the Lens Business plan. Choose Lens Business on the Pricing page to invite your team." };
+  }
   const [memberCount, pendingCount] = await Promise.all([
     prisma.orgMembership.count({ where: { orgId: membership.orgId } }),
     prisma.orgInvite.count({ where: { orgId: membership.orgId, acceptedAt: null } }),
   ]);
-  if (memberCount + pendingCount >= membership.org.seats) {
-    return { error: `You've used all ${membership.org.seats} seats on your plan.` };
+  if (memberCount + pendingCount >= capacity.total) {
+    return { error: `You've used all ${capacity.total} seats on your plan. Add extra users in Company Details to invite more.` };
   }
 
   // One person can only belong to one company, and platform authors/staff keep
@@ -402,6 +418,20 @@ export async function rejectCompanyArticle(articleId: string, reason: string): P
     }),
   ]);
 
+  revalidatePath("/company");
+  return { ok: true };
+}
+
+/** Owner-only: set how many extra company users to pay for (AU$5/user/month, or AU$60/user/year). */
+export async function changeExtraSeats(count: number): Promise<ActionResult> {
+  const { user } = await requireOwner();
+  try {
+    await setExtraSeats(user.id, Math.trunc(Number(count)));
+  } catch (error) {
+    if (error instanceof BillingError) return { error: error.message };
+    console.error("[company] extra seats failed", { error: error instanceof Error ? error.message : String(error) });
+    return { error: "Couldn't update your extra users right now. Please try again shortly." };
+  }
   revalidatePath("/company");
   return { ok: true };
 }

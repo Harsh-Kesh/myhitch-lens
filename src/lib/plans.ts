@@ -70,8 +70,16 @@ export interface PlanDefinition {
   entitlements: PlanEntitlements;
 }
 
-/** Price of each additional company user on the Business plan, AUD cents per month. */
+/**
+ * Price of each additional company user on the Business plan. A Stripe
+ * subscription can only mix prices that bill on the same interval, so the add-on
+ * has a monthly price and a yearly price (12 x the monthly one).
+ */
 export const EXTRA_SEAT_MONTHLY_CENTS = 500;
+export const EXTRA_SEAT_YEARLY_CENTS = EXTRA_SEAT_MONTHLY_CENTS * 12;
+
+/** Most extra users one company can add (a sanity ceiling, not a product limit). */
+export const MAX_EXTRA_SEATS = 95;
 
 const FREE: PlanEntitlements = {
   monthlySubmissions: 2,

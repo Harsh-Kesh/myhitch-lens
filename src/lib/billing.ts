@@ -2,9 +2,10 @@ import "server-only";
 
 import type Stripe from "stripe";
 
+import { ownedOrganizationId } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { appBaseUrl, getBillingStripe } from "@/lib/stripe";
-import { isPlanCode, type BillingInterval, type PlanCode } from "@/lib/plans";
+import { MAX_EXTRA_SEATS, PLANS, isPlanCode, type BillingInterval, type PlanCode } from "@/lib/plans";
 import { syncVerification } from "@/lib/verification";
 
 /**
@@ -31,6 +32,12 @@ export function priceLookupKey(plan: PaidPlan, interval: BillingInterval): strin
 }
 
 const LOOKUP_RE = /^lens_(creator|professional|business)_(month|year)$/;
+const SEAT_RE = /^lens_business_extra_seat_(month|year)$/;
+
+/** Price key of the "extra company user" add-on; it must bill on the plan's own interval. */
+export function seatLookupKey(interval: BillingInterval): string {
+  return `lens_business_extra_seat_${interval}`;
+}
 
 function parseLookupKey(key: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
   const match = key ? LOOKUP_RE.exec(key) : null;
@@ -126,9 +133,11 @@ function mapStatus(status: Stripe.Subscription.Status): "active" | "past_due" | 
  * the subscription's current state). Returns the Lens user id it belongs to.
  */
 export async function syncSubscription(subscription: Stripe.Subscription): Promise<string | null> {
-  const item = subscription.items.data[0];
+  // A Business subscription can carry two items: the plan and the extra-users add-on.
+  const item = subscription.items.data.find((i) => parseLookupKey(i.price.lookup_key));
   const parsed = parseLookupKey(item?.price.lookup_key);
-  if (!parsed) return null; // not one of our plans
+  if (!item || !parsed) return null; // not one of our plans
+  const seatItem = subscription.items.data.find((i) => SEAT_RE.test(i.price.lookup_key ?? ""));
 
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
   const userId =
@@ -150,6 +159,7 @@ export async function syncSubscription(subscription: Stripe.Subscription): Promi
     stripePriceId: item.price.id,
     currentPeriodEnd: periodEndSeconds ? new Date(periodEndSeconds * 1000) : null,
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    extraSeats: parsed.plan === "business" ? (seatItem?.quantity ?? 0) : 0,
   };
   await prisma.subscription.upsert({ where: { userId }, update: data, create: { userId, ...data } });
 
@@ -244,3 +254,51 @@ export async function createPortalUrl(userId: string): Promise<string> {
   return session.url;
 }
 
+
+/**
+ * Set how many extra company users the owner pays for (Business plan). Changes the
+ * live Stripe subscription (prorated), then reads it back so our row matches.
+ * Refuses to go below the seats already in use.
+ */
+export async function setExtraSeats(userId: string, count: number): Promise<void> {
+  if (!Number.isInteger(count) || count < 0 || count > MAX_EXTRA_SEATS) {
+    throw new BillingError(`Choose between 0 and ${MAX_EXTRA_SEATS} extra users.`);
+  }
+  const orgId = await ownedOrganizationId(userId);
+  const row = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { plan: true, status: true, interval: true, stripeSubscriptionId: true },
+  });
+  if (!orgId || !row || row.plan !== "business" || row.status !== "active" || !row.stripeSubscriptionId || !row.interval) {
+    throw new BillingError("Extra users are part of an active Lens Business plan.");
+  }
+
+  const [members, pending] = await Promise.all([
+    prisma.orgMembership.count({ where: { orgId } }),
+    prisma.orgInvite.count({ where: { orgId, acceptedAt: null } }),
+  ]);
+  const minimum = Math.max(0, members + pending - PLANS.business.entitlements.includedSeats);
+  if (count < minimum) {
+    throw new BillingError(`${members + pending} seats are in use (members and pending invites). Remove some before reducing below ${minimum} extra.`);
+  }
+
+  const stripe = requireStripe();
+  const seatPriceId = await priceIdByKey(stripe, seatLookupKey(row.interval));
+  const subscription = await stripe.subscriptions.retrieve(row.stripeSubscriptionId);
+  const existing = subscription.items.data.find((i) => i.price.id === seatPriceId);
+
+  const items: Stripe.SubscriptionUpdateParams.Item[] = [];
+  if (count === 0 && existing) items.push({ id: existing.id, deleted: true });
+  else if (count > 0 && existing) items.push({ id: existing.id, quantity: count });
+  else if (count > 0) items.push({ price: seatPriceId, quantity: count });
+  if (items.length === 0) return; // nothing to change
+
+  const updated = await stripe.subscriptions.update(subscription.id, { items, proration_behavior: "create_prorations" });
+  await syncSubscription(updated);
+}
+
+async function priceIdByKey(stripe: Stripe, key: string): Promise<string> {
+  const prices = await stripe.prices.list({ lookup_keys: [key], active: true, limit: 1 });
+  if (!prices.data[0]) throw new BillingError("Extra users aren't available to purchase yet.");
+  return prices.data[0].id;
+}

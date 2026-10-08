@@ -28,7 +28,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     getPlan(session.user.id),
     prisma.subscription.findUnique({
       where: { userId: session.user.id },
-      select: { plan: true, status: true, interval: true, currentPeriodEnd: true, cancelAtPeriodEnd: true, stripeCustomerId: true },
+      select: { plan: true, status: true, interval: true, currentPeriodEnd: true, cancelAtPeriodEnd: true, stripeCustomerId: true, extraSeats: true },
     }),
   ]);
 
@@ -65,6 +65,15 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
               {paid && sub ? STATUS_LABEL[sub.status] ?? sub.status : "Active"}
             </dd>
           </div>
+          {paid && plan.code === "business" && sub && (
+            <div>
+              <dt className="text-[11px] font-medium text-text-muted uppercase">Team seats</dt>
+              <dd className="mt-0.5 font-semibold text-text-main">
+                {plan.entitlements.includedSeats + sub.extraSeats} ({plan.entitlements.includedSeats} included
+                {sub.extraSeats > 0 ? ` + ${sub.extraSeats} extra` : ""})
+              </dd>
+            </div>
+          )}
           {paid && sub?.currentPeriodEnd && (
             <div>
               <dt className="text-[11px] font-medium text-text-muted uppercase">

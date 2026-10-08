@@ -14,7 +14,7 @@
  */
 import Stripe from "stripe";
 
-import { PLANS, EXTRA_SEAT_MONTHLY_CENTS } from "../src/lib/plans";
+import { PLANS, EXTRA_SEAT_MONTHLY_CENTS, EXTRA_SEAT_YEARLY_CENTS } from "../src/lib/plans";
 
 const dryRun = process.argv.includes("--dry-run");
 const key = process.env.STRIPE_SECRET_KEY;
@@ -32,6 +32,7 @@ for (const plan of [PLANS.creator, PLANS.professional, PLANS.business]) {
   rows.push({ lookupKey: `lens_${plan.code}_year`, productName: plan.name, cents: plan.yearlyCents!, interval: "year" });
 }
 rows.push({ lookupKey: "lens_business_extra_seat_month", productName: "Lens Business extra user", cents: EXTRA_SEAT_MONTHLY_CENTS, interval: "month" });
+rows.push({ lookupKey: "lens_business_extra_seat_year", productName: "Lens Business extra user", cents: EXTRA_SEAT_YEARLY_CENTS, interval: "year" });
 
 async function productFor(name: string): Promise<string> {
   const found = await stripe.products.search({ query: `name:'${name}' AND active:'true' AND metadata['app']:'lens'` });

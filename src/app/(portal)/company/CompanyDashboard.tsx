@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -13,6 +14,7 @@ import { cn } from "@/lib/cn";
 
 import {
   approveCompanyArticle,
+  changeExtraSeats,
   inviteSubAccount,
   rejectCompanyArticle,
   removeSubAccount,
@@ -93,6 +95,15 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
   }
 
   const seatsUsed = overview.members.length + overview.invites.length;
+  const seatPrice = overview.plan.interval === "year" ? "AU$60 per user per year" : "AU$5 per user per month";
+
+  function setExtra(next: number) {
+    startTransition(async () => {
+      const res = await changeExtraSeats(next);
+      if ("error" in res) alert(res.error);
+      else router.refresh();
+    });
+  }
 
   return (
     <>
@@ -103,10 +114,35 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
             Edit in MYHitch Business
           </ManageBusinessLink>
         </div>
-        <p className="text-[13px] text-text-muted">
-          Using <span className="font-semibold text-text-main">{seatsUsed}</span> of{" "}
-          <span className="font-semibold text-text-main">{overview.seats}</span> seats.
-        </p>
+        {overview.plan.onBusiness ? (
+          <>
+            <p className="text-[13px] text-text-muted">
+              Lens Business: using <span className="font-semibold text-text-main">{seatsUsed}</span> of{" "}
+              <span className="font-semibold text-text-main">{overview.seats}</span> seats (
+              {overview.plan.includedSeats} included
+              {overview.plan.extraSeats > 0 ? ` + ${overview.plan.extraSeats} extra` : ""}).
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-[13px]">
+              <span className="text-text-muted">Extra users ({seatPrice}):</span>
+              <Button size="sm" variant="secondary" disabled={isPending || overview.plan.extraSeats === 0} onClick={() => setExtra(overview.plan.extraSeats - 1)}>
+                −
+              </Button>
+              <span className="min-w-6 text-center font-semibold text-text-main">{overview.plan.extraSeats}</span>
+              <Button size="sm" variant="secondary" disabled={isPending} onClick={() => setExtra(overview.plan.extraSeats + 1)}>
+                +
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-[13px] text-text-muted">
+            Your company isn&apos;t on a Lens Business plan. Team members already in your company keep their access, but
+            adding more people needs{" "}
+            <Link href="/pricing" className="font-semibold text-primary hover:underline">
+              Lens Business
+            </Link>
+            .
+          </p>
+        )}
         <p className="mt-2 text-[13px] text-text-muted">
           Legal name:{" "}
           <span className="font-semibold text-text-main">{overview.orgName}</span>
@@ -129,7 +165,7 @@ function OwnerPanel({ overview }: { overview: CompanyOverview }) {
           <h3 className={dashHeading}>Team</h3>
           <Button
             size="sm"
-            disabled={seatsUsed >= overview.seats}
+            disabled={!overview.plan.onBusiness || seatsUsed >= overview.seats}
             onClick={() => setShowAdd(true)}
           >
             Invite team member

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import { PLANS, isPlanCode, type PlanCode, type PlanDefinition, type PlanEntitlements } from "@/lib/plans";
+import { PLAN_CODES, PLANS, isPlanCode, type PlanCode, type PlanDefinition, type PlanEntitlements } from "@/lib/plans";
 
 /**
  * Server-side plan checks. Every gated action asks THIS module what the user's
@@ -24,13 +24,50 @@ function grantsAccess(sub: { status: string; currentPeriodEnd: Date | null }): b
   return !sub.currentPeriodEnd || sub.currentPeriodEnd.getTime() >= Date.now() - PERIOD_GRACE_MS;
 }
 
-export async function getPlanCode(userId: string): Promise<PlanCode> {
+/** The plan this user's OWN subscription grants (free if none or lapsed). */
+async function ownPlanCode(userId: string): Promise<PlanCode> {
   const sub = await prisma.subscription.findUnique({
     where: { userId },
     select: { plan: true, status: true, currentPeriodEnd: true },
   });
   if (!sub || !grantsAccess(sub)) return "free";
   return isPlanCode(sub.plan) ? sub.plan : "free";
+}
+
+/**
+ * Company members share their company's Lens Business plan: if the owner of the
+ * company you belong to holds an active Business subscription, you get Business
+ * benefits too. Only Business is shared this way; a personal Creator or
+ * Professional plan stays personal.
+ */
+async function inheritedPlanCode(userId: string): Promise<PlanCode> {
+  const membership = await prisma.orgMembership.findFirst({
+    where: { userId },
+    select: {
+      org: {
+        select: {
+          members: {
+            where: { isAdmin: true },
+            select: { user: { select: { subscription: { select: { plan: true, status: true, currentPeriodEnd: true } } } } },
+          },
+        },
+      },
+    },
+  });
+  const owners = membership?.org.members ?? [];
+  const hasBusiness = owners.some((o) => {
+    const sub = o.user.subscription;
+    return !!sub && sub.plan === "business" && grantsAccess(sub);
+  });
+  return hasBusiness ? "business" : "free";
+}
+
+/** Whichever is higher: the user's own plan or the Business plan inherited from their company. */
+export async function getPlanCode(userId: string): Promise<PlanCode> {
+  const own = await ownPlanCode(userId);
+  if (own === "business") return own;
+  const inherited = await inheritedPlanCode(userId);
+  return PLAN_CODES.indexOf(inherited) > PLAN_CODES.indexOf(own) ? inherited : own;
 }
 
 export async function getPlan(userId: string): Promise<PlanDefinition> {
@@ -86,4 +123,35 @@ export async function priorityAuthorIds(userIds: string[]): Promise<Set<string>>
     select: { userId: true, status: true, currentPeriodEnd: true },
   });
   return new Set(rows.filter(grantsAccess).map((r) => r.userId));
+}
+
+/** The organisation this user OWNS (is the admin of), if any. */
+export async function ownedOrganizationId(userId: string): Promise<string | null> {
+  const m = await prisma.orgMembership.findFirst({ where: { userId, isAdmin: true }, select: { orgId: true } });
+  return m?.orgId ?? null;
+}
+
+export interface SeatCapacity {
+  /** Seats the company's plan pays for (0 when the owner is not on Business). */
+  total: number;
+  included: number;
+  extra: number;
+  /** True when the owner holds an active Business plan. */
+  onBusiness: boolean;
+}
+
+/**
+ * How many people (owner included) a company may have: Business includes 5, and
+ * the owner can buy more. Companies that are not on Business get 0, which means
+ * "no NEW invites"; people already in the company keep their access.
+ */
+export async function getOrgSeatCapacity(orgId: string): Promise<SeatCapacity> {
+  const owner = await prisma.orgMembership.findFirst({
+    where: { orgId, isAdmin: true },
+    select: { user: { select: { subscription: { select: { plan: true, status: true, currentPeriodEnd: true, extraSeats: true } } } } },
+  });
+  const sub = owner?.user.subscription;
+  if (!sub || sub.plan !== "business" || !grantsAccess(sub)) return { total: 0, included: 0, extra: 0, onBusiness: false };
+  const included = PLANS.business.entitlements.includedSeats;
+  return { total: included + sub.extraSeats, included, extra: sub.extraSeats, onBusiness: true };
 }

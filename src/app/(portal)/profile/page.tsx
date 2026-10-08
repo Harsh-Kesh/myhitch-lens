@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
 import { getEntitlements } from "@/lib/entitlements";
+import { PlanInfo } from "./PlanInfo";
 import { ProfileSettings } from "./ProfileSettings";
 
 /** Account settings — open to every signed-in role. */
@@ -38,6 +39,11 @@ export default async function ProfilePage() {
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
       connectStatus={connectStatus}
+      planSection={
+        session.user.role === "editor" || session.user.role === "admin" ? null : (
+          <PlanInfo userId={session.user.id} role={session.user.role} />
+        )
+      }
       payoutsLocked={payoutsLocked}
     />
   );

@@ -4,23 +4,9 @@ import { buttonClasses } from "@/components/ui/Button";
 import { dashCard, dashHeading } from "@/components/ui/DashboardKit";
 import { freePlanSwitchEnabled, hasActivePaidPlan } from "@/lib/billing";
 import { getPlan, getSubmissionAllowance, ownedOrganizationId } from "@/lib/entitlements";
-import type { PlanEntitlements } from "@/lib/plans";
+import { PLAN_BENEFITS } from "@/lib/planBenefits";
 
 import { PackagePicker } from "./PackagePicker";
-
-/** The headline benefits shown on the plan card, in order, with how to test each against a plan. */
-const BENEFITS: { label: string; has: (e: PlanEntitlements) => boolean }[] = [
-  { label: "Verified Author badge", has: (e) => e.verifiedBadge },
-  { label: "Standard analytics", has: (e) => e.analytics !== "basic" },
-  { label: "Advanced analytics and audience insights", has: (e) => e.analytics === "advanced" && e.audienceInsights },
-  { label: "Video / media embedding", has: (e) => e.videoEmbeds },
-  { label: "SEO tools", has: (e) => e.seoTools !== "none" },
-  { label: "Schedule publishing", has: (e) => e.schedulePublishing },
-  { label: "Sponsored articles (Exchange Hub)", has: (e) => e.sponsoredArticles },
-  { label: "Monetisation (sell your articles)", has: (e) => e.monetisation },
-  { label: "Priority editorial review", has: (e) => e.priorityReview },
-  { label: "Business profile and team accounts", has: (e) => e.businessProfile },
-];
 
 /** The author's current plan, this month's submission usage, and what the plan does and doesn't include. */
 export async function PlanCard({ userId }: { userId: string }) {
@@ -30,8 +16,8 @@ export async function PlanCard({ userId }: { userId: string }) {
     hasActivePaidPlan(userId),
     ownedOrganizationId(userId),
   ]);
-  const included = BENEFITS.filter((b) => b.has(plan.entitlements));
-  const missing = BENEFITS.filter((b) => !b.has(plan.entitlements));
+  const included = PLAN_BENEFITS.filter((b) => b.has(plan.entitlements));
+  const missing = PLAN_BENEFITS.filter((b) => !b.has(plan.entitlements));
   const pct = allowance.limit === null ? 0 : Math.min(100, Math.round((allowance.used / allowance.limit) * 100));
 
   return (
@@ -75,7 +61,7 @@ export async function PlanCard({ userId }: { userId: string }) {
           ) : (
             <ul className="flex flex-col gap-1 text-text-main">
               {included.map((b) => (
-                <li key={b.label}>✓ {b.label}</li>
+                <li key={b.label}>✓ {b.label}{b.comingSoon && <span className="text-text-muted"> (coming soon)</span>}</li>
               ))}
             </ul>
           )}

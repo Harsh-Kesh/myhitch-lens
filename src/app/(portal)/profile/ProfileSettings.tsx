@@ -37,6 +37,7 @@ export function ProfileSettings({
   avatarUrl,
   connectStatus,
   payoutsLocked,
+  planSection,
 }: {
   displayName: string;
   email: string;
@@ -49,6 +50,8 @@ export function ProfileSettings({
   connectStatus: ConnectStatus | null;
   /** The plan has no monetisation, so payout setup is shown as locked instead of hidden. */
   payoutsLocked: boolean;
+  /** Server-rendered plan information (not shown for staff accounts). */
+  planSection: React.ReactNode;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -201,6 +204,8 @@ export function ProfileSettings({
           {isPending ? "Saving..." : "Save Changes"}
         </Button>
       </div>
+
+      {planSection}
 
       {payoutsLocked && (
         <LockedFeature className="mt-6" title="Payouts" plan="Lens Professional" description="Set up payouts to receive your earnings." />

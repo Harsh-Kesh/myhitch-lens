@@ -24,8 +24,10 @@ export default async function ExchangePage() {
     return <ExternalOpportunitiesAdmin opportunities={opportunities} />;
   }
 
-  // Sponsored articles are part of Professional and above; Free sees what it unlocks, not the tools.
-  if (!(await getEntitlements(session.user.id)).sponsoredArticles) {
+  // Every plan can list in the Exchange Hub, with a cap on listings at once (Free 1, Creator 5,
+  // Professional and Business unlimited). The lock stays as a safeguard for a plan without access.
+  const { sponsoredArticles, exchangeListings } = await getEntitlements(session.user.id);
+  if (!sponsoredArticles) {
     return (
       <>
         <ViewHeader title="Exchange Hub" subtitle="Line up a sponsor for your articles and pick up briefs from MYHitch products." />
@@ -46,7 +48,7 @@ export default async function ExchangePage() {
 
   return (
     <>
-      <ExchangeHub listable={listable} opportunities={opportunities} />
+      <ExchangeHub listable={listable} opportunities={opportunities} listingLimit={exchangeListings} />
       <div className="mt-6">
         <ExternalOpportunitiesBoard opportunities={externalOpportunities} />
       </div>

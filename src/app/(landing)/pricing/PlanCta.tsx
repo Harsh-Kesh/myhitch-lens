@@ -38,7 +38,7 @@ export function PlanCta({
         window.location.assign(result.url);
       } else if ("login" in result) {
         const back = `/pricing?plan=${code}&interval=${chosen}`;
-        window.location.assign(`/auth/login?mode=signup&role=${code === "business" ? "corporate" : "author"}&next=${encodeURIComponent(back)}`);
+        window.location.assign(`/auth/login?mode=signup&role=author&next=${encodeURIComponent(back)}`);
       } else {
         setError(result.error);
       }

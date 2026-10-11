@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { getMagazineView } from "@/app/(portal)/magazine/publicActions";
 import type { IssueArticleRow } from "@/lib/magazine";
+import { MAGAZINE_PAGES, formatPageRange } from "@/lib/magazineLayout";
+import { CONTINUATION_BUDGET, FIRST_PAGE_BUDGET, paginateText } from "@/lib/magazinePagination";
 
 /**
  * The MYHitch Lens Magazine page — a single shared component for both the
@@ -16,33 +18,8 @@ import type { IssueArticleRow } from "@/lib/magazine";
  * only, as a literal masthead at the top of the page.
  */
 
-// Sized to what a real magazine page actually holds in two columns of running
-// text (~550-650 words), not to what looked tidy in a small mockup box.
-const FIRST_PAGE_BUDGET = 2600;
-const CONTINUATION_BUDGET = 3800;
 const FIRST_PAGE_COLUMN_HEIGHT = 900;
 const CONTINUATION_COLUMN_HEIGHT = 1150;
-
-/** Splits text into page-sized chunks, breaking on word boundaries. */
-function paginateText(text: string, firstPageBudget: number, laterPageBudget: number): string[] {
-  const pages: string[] = [];
-  let remaining = text.trim();
-  if (!remaining) return [""];
-  let index = 0;
-  while (remaining.length > 0) {
-    const budget = index === 0 ? firstPageBudget : laterPageBudget;
-    if (remaining.length <= budget) {
-      pages.push(remaining);
-      break;
-    }
-    let cut = remaining.lastIndexOf(" ", budget);
-    if (cut <= 0) cut = budget;
-    pages.push(remaining.slice(0, cut).trim());
-    remaining = remaining.slice(cut).trim();
-    index += 1;
-  }
-  return pages;
-}
 
 function rangeArray(start: number, end: number): number[] {
   const out: number[] = [];
@@ -184,8 +161,19 @@ export function MagazinePage({
   }
 
   const { placement, issueArticles } = view;
+  if (placement.page === null) {
+    return (
+      <div className="mx-auto max-w-[600px] rounded-xl border border-warning/30 bg-warning/5 p-8 text-center text-[13px] text-warning">
+        This plan&rsquo;s pages (
+        {formatPageRange(placement.planRange.from, placement.planRange.to)}) are full in the {placement.issue.label}{" "}
+        issue, so this article would wait for a later one.
+      </div>
+    );
+  }
   const startPage = placement.page;
-  const endPage = startPage + articlePages.length - 1;
+  // An article only ever runs to the pages its plan allots; submission enforces the same cap.
+  const shownPages = articlePages.slice(0, placement.pagesAllotted);
+  const endPage = startPage + shownPages.length - 1;
   const spansMultiplePages = endPage > startPage;
   const currentPage = viewPage ?? startPage;
   const withinArticle = currentPage >= startPage && currentPage <= endPage;
@@ -193,30 +181,34 @@ export function MagazinePage({
   const isLastPageOfArticle = currentPage === endPage;
 
   const minNav = allowIssueBrowsing ? Math.max(1, startPage - 2) : startPage;
-  const maxNav = allowIssueBrowsing ? endPage + 2 : endPage;
+  const maxNav = allowIssueBrowsing ? Math.min(MAGAZINE_PAGES, endPage + 2) : endPage;
   const railPages = allowIssueBrowsing
-    ? rangeArray(Math.max(1, startPage - 1), endPage + 1)
+    ? rangeArray(Math.max(1, startPage - 1), Math.min(MAGAZINE_PAGES, endPage + 1))
     : rangeArray(startPage, endPage);
+
+  const articleAtPage = (page: number) =>
+    issueArticles.find((a) => a.pageStart !== null && a.pageEnd !== null && page >= a.pageStart && page <= a.pageEnd && a.id !== articleId);
 
   let trailingNeighbour: IssueArticleRow | undefined;
   if (allowIssueBrowsing && withinArticle && isLastPageOfArticle) {
-    const lastChunk = articlePages[articlePages.length - 1];
-    const budget = articlePages.length === 1 ? FIRST_PAGE_BUDGET : CONTINUATION_BUDGET;
+    const lastChunk = shownPages[shownPages.length - 1];
+    const budget = shownPages.length === 1 ? FIRST_PAGE_BUDGET : CONTINUATION_BUDGET;
     if (lastChunk.length < budget * 0.65) {
-      trailingNeighbour = issueArticles.find((a) => a.page === endPage + 1 && a.id !== articleId);
+      trailingNeighbour = articleAtPage(endPage + 1);
     }
   }
   // With issue browsing off, currentPage is clamped to [startPage, endPage]
   // above, so this can never actually resolve — kept only so the branch
   // below stays well-typed rather than needing a second code path.
-  const currentNeighbour = !withinArticle ? issueArticles.find((a) => a.page === currentPage) : undefined;
+  const currentNeighbour = !withinArticle ? articleAtPage(currentPage) : undefined;
 
   return (
     <div className="mx-auto max-w-[600px]">
       {placement.isEstimate && (
         <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
-          Estimated placement — projected as if this published right now. Your actual page depends on when you
-          publish and how many other articles publish before you that week.
+          Estimated placement — projected as if this published right now. Your plan places you on pages{" "}
+          {formatPageRange(placement.planRange.from, placement.planRange.to)} of the {placement.issue.label} issue,
+          and your exact pages depend on how many other articles publish ahead of you that month.
         </div>
       )}
 
@@ -271,7 +263,7 @@ export function MagazinePage({
       )}
       {spansMultiplePages && (
         <p className="mb-3 text-center text-[11px] text-text-muted">
-          This piece runs {articlePages.length} pages at its current length — pages {startPage}–{endPage}.
+          This piece runs {shownPages.length} pages at its current length — pages {startPage}–{endPage}.
         </p>
       )}
 
@@ -300,7 +292,7 @@ export function MagazinePage({
             <div className="mb-5 -mx-9 flex items-center justify-between gap-3 bg-[#0f2b5c] px-9 py-3 max-[480px]:-mx-6 max-[480px]:px-6">
               {/* eslint-disable-next-line @next/next/no-img-element -- masthead logo, preview only */}
               <img src="/images/logo.png" alt="MYHitch Lens Magazine" className="h-8 w-auto brightness-0 invert" />
-              <span className="font-sans text-[10px] tracking-[0.14em] text-white/70 uppercase">{placement.issue.weekLabel}</span>
+              <span className="font-sans text-[10px] tracking-[0.14em] text-white/70 uppercase">{placement.issue.label}</span>
             </div>
           )}
 
@@ -358,7 +350,7 @@ export function MagazinePage({
                       : undefined
                   }
                 >
-                  {articlePages[currentPage - startPage]}
+                  {shownPages[currentPage - startPage]}
                 </p>
               </div>
               {!isLastPageOfArticle && (
@@ -377,15 +369,16 @@ export function MagazinePage({
 
         {/* Folio */}
         <div className="relative z-10 flex items-center justify-between bg-[#0f2b5c] px-9 py-2.5 font-sans text-[10px] tracking-[0.14em] text-white/80 uppercase max-[480px]:px-6">
-          <span>MYHitch Weekly</span>
-          <span>Page {currentPage} of {placement.totalArticlesThisIssue}</span>
+          <span>MYHitch Lens{placement.sectionLabel ? ` · ${placement.sectionLabel}` : ""}</span>
+          <span>Page {currentPage} of {MAGAZINE_PAGES}</span>
         </div>
       </div>
 
       {showMasthead && (
         <p className="mt-4 text-center text-[11px] text-text-muted">
-          Pages 1–3 are hand-picked by the MYHitch editorial team each week; every other page follows publish order —
-          publish earlier to land on an earlier page.
+          One 128-page MYHitch Lens magazine a month. Your plan places articles on pages{" "}
+          {formatPageRange(placement.planRange.from, placement.planRange.to)}, up to {placement.pagesAllotted} page
+          {placement.pagesAllotted === 1 ? "" : "s"} each; the MYHitch team approves every article.
         </p>
       )}
     </div>

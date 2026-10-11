@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { isoWeekOf } from "@/lib/magazine";
+import { issueOf } from "@/lib/magazine";
 
 export type ActionResult = { error: string } | { ok: true };
 
@@ -17,9 +17,11 @@ async function requireEditor() {
 }
 
 /**
- * Feature (or unfeature) an article into one of the issue's first 3 pages.
- * Assigning a slot already held by another article in the same week bumps
- * that article back into the regular, publish-time-ordered pages.
+ * Make an article one of the issue's editor picks (slot 1-3), or remove it. A pick
+ * is placed ahead of its plan's other articles, within that plan's own pages; it
+ * never moves an article outside the pages its plan allows. Assigning a slot
+ * already held by another article in the same month bumps that article back to
+ * publish-time order.
  */
 export async function setMagazineFeature(articleId: string, order: 1 | 2 | 3 | null): Promise<ActionResult> {
   await requireEditor();
@@ -34,11 +36,11 @@ export async function setMagazineFeature(articleId: string, order: 1 | 2 | 3 | n
   }
 
   if (order !== null) {
-    const issue = isoWeekOf(article.publishedAt);
+    const issue = issueOf(article.publishedAt);
     await prisma.article.updateMany({
       where: {
         status: "published",
-        publishedAt: { gte: issue.weekStart, lte: issue.weekEnd },
+        publishedAt: { gte: issue.start, lte: issue.end },
         magazineFeatureOrder: order,
         id: { not: articleId },
       },

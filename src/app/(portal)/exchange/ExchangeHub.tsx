@@ -41,9 +41,12 @@ function formatAUD(n: number): string {
 export function ExchangeHub({
   listable,
   opportunities,
+  listingLimit,
 }: {
   listable: ExchangeListableArticle[];
   opportunities: AuthorOpportunity[];
+  /** Listings the plan allows in play at once; null = unlimited. */
+  listingLimit: number | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -51,6 +54,7 @@ export function ExchangeHub({
 
   const openCount = opportunities.filter((o) => ["open", "in_negotiation", "agreement_pending"].includes(o.status)).length;
   const publishedCount = opportunities.filter((o) => o.status === "published").length;
+  const atLimit = listingLimit !== null && openCount >= listingLimit;
 
   function refresh() {
     router.refresh();
@@ -80,11 +84,19 @@ export function ExchangeHub({
         title="Exchange Hub"
         subtitle="Route an unpublished article to MYHitch's cross-platform commercial exchange — sponsorship, advertising, bidding, or partnership opportunities are reviewed by MYHitch and matched with a business before the article goes live."
         actions={
-          <Button size="sm" onClick={() => setShowSubmit(true)} disabled={listable.length === 0}>
+          <Button size="sm" onClick={() => setShowSubmit(true)} disabled={listable.length === 0 || atLimit}>
             Submit to Exchange Hub
           </Button>
         }
       />
+
+      {listingLimit !== null && (
+        <p className={cn("mb-4 text-[12.5px]", atLimit ? "text-warning" : "text-text-muted")}>
+          Your plan includes {listingLimit} Exchange Hub listing{listingLimit === 1 ? "" : "s"} at a time —{" "}
+          {Math.min(openCount, listingLimit)} of {listingLimit} in use.
+          {atLimit && " Withdraw one or wait for it to finish to list another, or upgrade for more."}
+        </p>
+      )}
 
       {listable.length === 0 && opportunities.length === 0 && (
         <p className="mb-4 text-[12.5px] text-text-muted">

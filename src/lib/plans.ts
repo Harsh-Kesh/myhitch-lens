@@ -13,6 +13,8 @@
  * accurate today and the feature only has to read its flag when it ships.
  */
 
+import { MAGAZINE_SECTIONS, type PageRange } from "@/lib/magazineLayout";
+
 export const PLAN_CODES = ["free", "creator", "professional", "business"] as const;
 export type PlanCode = (typeof PLAN_CODES)[number];
 
@@ -37,8 +39,14 @@ export interface PlanEntitlements {
   verifiedBadge: boolean;
   /** May list articles for sale on the marketplace (monetisation tools). */
   monetisation: boolean;
-  /** May publish sponsored articles through the Exchange Hub. */
+  /** Has access to the Exchange Hub (requesting sponsorships). How many listings is `exchangeListings`. */
   sponsoredArticles: boolean;
+  /** Exchange Hub listings an author may have in play at once; null = unlimited, 0 = no access. */
+  exchangeListings: number | null;
+  /** The magazine pages (of 128) this plan's articles can be placed on. */
+  magazineRange: PageRange;
+  /** Most magazine pages one approved article may take up (enforced at submission). */
+  maxPagesPerArticle: number;
   /** Branded company / organisation profile and team accounts. */
   businessProfile: boolean;
   /** Editorial review queue priority. */
@@ -91,7 +99,12 @@ const FREE: PlanEntitlements = {
   grammarCheck: false,
   verifiedBadge: false,
   monetisation: false,
-  sponsoredArticles: false,
+  // Free can use the Exchange Hub, but with a single listing at a time.
+  sponsoredArticles: true,
+  exchangeListings: 1,
+  // Free contributors are featured only in their own block, 121-124: room for two 2-page articles.
+  magazineRange: { from: MAGAZINE_SECTIONS.contributors.from, to: MAGAZINE_SECTIONS.contributors.to },
+  maxPagesPerArticle: 2,
   businessProfile: false,
   priorityReview: false,
   ecosystemPromotion: "none",
@@ -104,8 +117,13 @@ const FREE: PlanEntitlements = {
   dedicatedSupport: false,
 };
 
+// Professional and Business page caps follow the plan chart; their Exchange Hub access is
+// unchanged until each plan is reviewed in turn.
 const CREATOR: PlanEntitlements = {
   ...FREE,
+  // Creator: five Exchange Hub listings at a time, and the middle editorial pages (57-120).
+  exchangeListings: 5,
+  magazineRange: { from: MAGAZINE_SECTIONS.middle.from, to: MAGAZINE_SECTIONS.middle.to },
   monthlySubmissions: 10,
   videoEmbeds: true,
   seoTools: "basic",
@@ -124,6 +142,10 @@ const PROFESSIONAL: PlanEntitlements = {
   aiAssistant: "advanced",
   monetisation: true,
   sponsoredArticles: true,
+  exchangeListings: null,
+  // Any contributor editorial page (9-120), premium section first. 121-124 stays Free-only.
+  magazineRange: { from: MAGAZINE_SECTIONS.premium.from, to: MAGAZINE_SECTIONS.middle.to },
+  maxPagesPerArticle: 3,
   priorityReview: true,
   ecosystemPromotion: "standard",
   audienceInsights: true,
@@ -132,6 +154,7 @@ const PROFESSIONAL: PlanEntitlements = {
 
 const BUSINESS: PlanEntitlements = {
   ...PROFESSIONAL,
+  maxPagesPerArticle: 4,
   businessProfile: true,
   ecosystemPromotion: "priority",
   includedSeats: 5,

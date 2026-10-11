@@ -10,6 +10,7 @@ import { isLicenseCode } from "@/lib/licenses";
 import { isSuspended } from "@/lib/authGuards";
 import { articleHasVideoOrAudio } from "@/lib/articleMedia";
 import { getEntitlements, getSubmissionAllowance, upgradeMessage } from "@/lib/entitlements";
+import { pagesNeeded } from "@/lib/magazinePagination";
 import { isEligibleToSubmit } from "@/lib/verification";
 import type { ArticleDestination } from "@prisma/client";
 
@@ -170,6 +171,16 @@ export async function submitForReview(input: {
     return { error: "Article body is too short. Write at least a few sentences." };
   }
   const words = contentText.trim().split(/\s+/).length;
+
+  // Each plan gives an approved article a fixed number of magazine pages (Free: 2).
+  const pages = pagesNeeded(contentText);
+  if (pages > entitlements.maxPagesPerArticle) {
+    return {
+      error: upgradeMessage(
+        `This article runs to ${pages} magazine pages, but your plan includes up to ${entitlements.maxPagesPerArticle} per article. Shorten it to submit.`,
+      ),
+    };
+  }
 
   const tagIds: string[] = [];
   for (const name of input.tagNames) {

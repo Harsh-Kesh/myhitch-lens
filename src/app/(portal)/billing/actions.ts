@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/auth";
-import { ownedOrganizationId } from "@/lib/entitlements";
 import {
   BillingError,
   createCheckoutUrl,
@@ -34,10 +33,6 @@ export async function startCheckout(plan: string, interval: string): Promise<Che
   if (!isPaidPlan(plan) || !isInterval(interval)) return { error: "Choose a valid plan." };
 
   try {
-    // Lens Business is a company plan: it belongs to the company's owner.
-    if (plan === "business" && !(await ownedOrganizationId(session.user.id))) {
-      return { error: "Lens Business is for company accounts. Register your business with MYHitch first, then choose this plan." };
-    }
     if (await hasActivePaidPlan(session.user.id)) {
       return { error: "You already have a paid plan. Use Manage billing to change or cancel it." };
     }

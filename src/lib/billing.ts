@@ -113,10 +113,6 @@ export async function switchPlanWithoutPayment(userId: string, plan: PlanCode): 
     where: { userId },
     select: { stripeSubscriptionId: true, status: true },
   });
-  if (plan === "business" && !(await ownedOrganizationId(userId))) {
-    throw new BillingError("Lens Business is for company accounts. Register your business with MYHitch first.");
-  }
-
   // The account may hold a Stripe TEST subscription from trying checkout. Leaving it
   // running would keep billing it in the background while the plan says something else,
   // so end it first. This can only run in test mode: freePlanSwitchEnabled() above

@@ -7,6 +7,7 @@ import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getAuthorSpace } from "@/lib/dashboard";
 import { getMyVerification } from "@/lib/verification";
 import { getNextIssueSummary } from "@/lib/magazine";
+import { formatPageRange } from "@/lib/magazineLayout";
 import { cn } from "@/lib/cn";
 import { VerificationStatus } from "./VerificationPanel";
 import { RemovedArticles } from "./RemovedArticles";
@@ -15,7 +16,6 @@ import { LockedFeature } from "@/components/ui/LockedFeature";
 import { getEntitlements, getSubmissionAllowance } from "@/lib/entitlements";
 import { MonetizationPanel } from "./MonetizationPanel";
 import { getConnectStatus, getPayoutHistory } from "./payoutActions";
-import { PlanCard } from "./PlanCard";
 
 function formatAUD(n: number): string {
   return `$${n.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -31,7 +31,7 @@ export default async function AuthorDashboardPage() {
   const name = session?.user?.name ?? "Author";
   const space = await getAuthorSpace(session!.user.id);
   const verification = await getMyVerification(session!.user.id);
-  const nextIssue = await getNextIssueSummary();
+  const nextIssue = await getNextIssueSummary(session!.user.id);
   const connectStatus = await getConnectStatus();
   const { totalWithdrawn } = await getPayoutHistory();
   const [entitlements, allowance] = await Promise.all([getEntitlements(session!.user.id), getSubmissionAllowance(session!.user.id)]);
@@ -85,10 +85,6 @@ export default async function AuthorDashboardPage() {
         )}
       </div>
 
-      <div id="packages">
-        <PlanCard userId={session!.user.id} />
-      </div>
-
       {/* Magazine issue */}
       <div className={cn(dashCard, "mb-6")}>
         <h3 className={dashHeading}>
@@ -103,8 +99,31 @@ export default async function AuthorDashboardPage() {
           </div>
           <div className="rounded-lg border border-line bg-bg-primary p-4">
             <p className="text-[11px] font-medium text-text-muted uppercase">If you published today</p>
-            <p className="mt-1 font-heading text-lg font-bold text-text-main">Page {nextIssue.currentAvailablePage}</p>
-            <p className="text-[11px] text-text-muted">of the {nextIssue.currentIssueLabel} issue</p>
+            {nextIssue.availablePage ? (
+              <>
+                <p className="mt-1 font-heading text-lg font-bold text-text-main">
+                  {nextIssue.availablePage.pageEnd > nextIssue.availablePage.pageStart ? "Pages" : "Page"}{" "}
+                  {formatPageRange(nextIssue.availablePage.pageStart, nextIssue.availablePage.pageEnd)}
+                </p>
+                <p className="text-[11px] text-text-muted">of the {nextIssue.currentIssueLabel} issue</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 font-heading text-lg font-bold text-text-main">Pages full</p>
+                <p className="text-[11px] text-text-muted">
+                  {nextIssue.planName} pages are taken in the {nextIssue.currentIssueLabel} issue
+                </p>
+              </>
+            )}
+          </div>
+          <div className="col-span-2 rounded-lg border border-line bg-bg-primary p-4 max-[480px]:col-span-1">
+            <p className="text-[11px] font-medium text-text-muted uppercase">Your plan&apos;s place in the 128-page magazine</p>
+            <p className="mt-1 font-heading text-lg font-bold text-text-main">
+              Pages {formatPageRange(nextIssue.planRange.from, nextIssue.planRange.to)}
+            </p>
+            <p className="text-[11px] text-text-muted">
+              Up to {nextIssue.pagesPerArticle} page{nextIssue.pagesPerArticle === 1 ? "" : "s"} per approved article
+            </p>
           </div>
         </div>
       </div>

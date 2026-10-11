@@ -26,7 +26,7 @@ export function LockedFeature({
       <p className="mt-1 text-[12.5px] text-text-muted">
         {description ? `${description} ` : ""}Available on {plan} and above.
       </p>
-      <Link href="/author-dashboard#packages" className={buttonClasses("primary", "sm", "mt-4")}>
+      <Link href="/profile#packages" className={buttonClasses("primary", "sm", "mt-4")}>
         See packages
       </Link>
     </div>

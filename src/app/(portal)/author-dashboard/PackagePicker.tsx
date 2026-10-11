@@ -11,15 +11,34 @@ import { PLANS, PLAN_CODES, formatAud, type BillingInterval, type PlanCode } fro
 
 /** What each package gives, in plain words (only things Lens actually delivers today). */
 const HIGHLIGHTS: Record<PlanCode, string[]> = {
-  free: ["2 article submissions a month", "Basic analytics", "Editorial review"],
-  creator: ["10 article submissions a month", "Verified Author badge", "Standard analytics"],
+  free: [
+    "2 article submissions a month",
+    "Magazine pages 121–124, 2 pages per article",
+    "1 Exchange Hub listing",
+    "Basic analytics",
+    "Editorial review",
+  ],
+  creator: [
+    "10 article submissions a month",
+    "Magazine pages 57–120, 2 pages per article",
+    "5 Exchange Hub listings",
+    "Verified Author badge",
+    "Standard analytics",
+  ],
   professional: [
     "Unlimited submissions",
+    "Magazine pages 9–120, up to 3 pages per article",
+    "Unlimited Exchange Hub listings",
     "Monetisation and sponsored articles",
     "Priority editorial review",
     "Advanced analytics and audience insights",
   ],
-  business: ["Everything in Professional", "5 team seats, extra users AU$5/month", "Team management for your company"],
+  business: [
+    "Everything in Professional",
+    "Magazine pages 9–120, up to 4 pages per article",
+    "Unlimited Exchange Hub listings",
+    "5 team seats, extra users AU$5/month",
+  ],
 };
 
 /**
@@ -30,14 +49,11 @@ const HIGHLIGHTS: Record<PlanCode, string[]> = {
 export function PackagePicker({
   current,
   hasOwnPaidPlan,
-  canBuyBusiness,
   freeSwitch,
 }: {
   current: PlanCode;
   /** The user already has their own active paid subscription (change it in billing, don't buy a second). */
   hasOwnPaidPlan: boolean;
-  /** The user owns a company, so Lens Business can be bought. */
-  canBuyBusiness: boolean;
   /** Test mode: the buttons switch plan immediately and take no payment. */
   freeSwitch: boolean;
 }) {
@@ -112,19 +128,16 @@ export function PackagePicker({
           if (isCurrent) {
             action = <span className="block rounded-lg bg-primary-glow py-2 text-center text-[12.5px] font-bold text-primary">Current plan</span>;
           } else if (freeSwitch) {
-            action =
-              code === "business" && !canBuyBusiness ? (
-                <span className="block py-2 text-center text-[12px] text-text-muted">For company accounts</span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={pending}
-                  onClick={() => switchTo(code)}
-                  className={buttonClasses(code === "professional" ? "primary" : "secondary", "sm", "w-full")}
-                >
-                  {busy === code ? "Switching…" : `Switch to ${plan.name.replace("Lens ", "")}`}
-                </button>
-              );
+            action = (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => switchTo(code)}
+                className={buttonClasses(code === "professional" ? "primary" : "secondary", "sm", "w-full")}
+              >
+                {busy === code ? "Switching…" : `Switch to ${plan.name.replace("Lens ", "")}`}
+              </button>
+            );
           } else if (code === "free" || lower) {
             action = <span className="block py-2 text-center text-[12px] text-text-muted">Included in your plan</span>;
           } else if (hasOwnPaidPlan) {
@@ -133,8 +146,6 @@ export function PackagePicker({
                 Change in Manage billing
               </Link>
             );
-          } else if (code === "business" && !canBuyBusiness) {
-            action = <span className="block py-2 text-center text-[12px] text-text-muted">For company accounts</span>;
           } else {
             action = (
               <button

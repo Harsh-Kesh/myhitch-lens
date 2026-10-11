@@ -467,7 +467,7 @@ export default function SubmitPage() {
               <p className="mt-1.5 text-[11px] text-text-muted">
                 {profile.canSponsor
                   ? "Your editor sees this choice — you can still switch to the Exchange Hub later from an unpublished article."
-                  : "Sponsored articles through the Exchange Hub are part of Lens Professional and above."}
+                  : "Sponsored articles through the Exchange Hub aren't included in your plan."}
               </p>
             </div>
 
@@ -515,7 +515,7 @@ export default function SubmitPage() {
               {outOfSubmissions && (
                 <p className="mb-3 w-full text-[12.5px] text-danger">
                   You&apos;ve used all {profile.allowance.limit} article submissions your plan includes this month. They reset on
-                  the 1st; upgrade on your Author dashboard to submit more now.
+                  the 1st; upgrade your package in My Profile to submit more now.
                 </p>
               )}
               <Button

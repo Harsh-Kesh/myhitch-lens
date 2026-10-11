@@ -54,7 +54,7 @@ export function VerificationStatus({
           </button>
         )}
         <Link
-          href="/author-dashboard#packages"
+          href="/profile#packages"
           className="inline-flex items-center gap-1 rounded-full bg-bg-tertiary px-2 py-0.5 text-[11px] font-semibold text-text-muted hover:text-text-main"
         >
           Verified badge: Creator and above

@@ -41,7 +41,7 @@ export default async function ProfilePage() {
       connectStatus={connectStatus}
       planSection={
         session.user.role === "editor" || session.user.role === "admin" ? null : (
-          <PlanInfo userId={session.user.id} role={session.user.role} />
+          <PlanInfo userId={session.user.id} />
         )
       }
       payoutsLocked={payoutsLocked}

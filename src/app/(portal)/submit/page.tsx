@@ -12,7 +12,7 @@ import { LICENSE_OPTIONS } from "@/lib/licenses";
 
 import type { ArticleDestination } from "@prisma/client";
 
-import { createDraft, saveDraft, submitForReview, listTags, loadDraft, getMyProfileSummary } from "./actions";
+import { createDraft, saveDraft, submitForReview, listTags, loadDraft, getMyProfileSummary, type MyPlanSummary } from "./actions";
 
 const CONTENT_TYPES = [
   { value: "Blog", label: "Blog Post" },
@@ -71,10 +71,20 @@ export default function SubmitPage() {
   }, []);
 
   // Real author name + verified status, for an accurate preview.
-  const [profile, setProfile] = useState<{ name: string; verified: boolean }>({ name: "Author", verified: false });
+  const [profile, setProfile] = useState<MyPlanSummary>({
+    name: "Author",
+    verified: false,
+    canSponsor: false,
+    canEmbedMedia: false,
+    allowance: { limit: null, used: 0, allowed: true },
+  });
   useEffect(() => {
     getMyProfileSummary().then(setProfile);
   }, []);
+
+  // A first submission uses up one of the plan's monthly submissions; a resubmission after
+  // "changes requested" does not, so only block brand-new ones.
+  const outOfSubmissions = !profile.allowance.allowed && draftStatus !== "changes_requested";
 
   // Load existing draft if editing — block editor render until loaded
   useEffect(() => {
@@ -277,6 +287,7 @@ export default function SubmitPage() {
         </div>
       ) : (
         <RichEditor
+          allowRichMedia={profile.canEmbedMedia}
           key={articleId || "new"}
           content={content || undefined}
           onUpdate={handleContentUpdate}
@@ -430,29 +441,33 @@ export default function SubmitPage() {
                     </span>
                   </span>
                 </label>
-                <label
-                  className={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-lg border p-3",
-                    destination === "exchange_hub" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary",
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="destination"
-                    checked={destination === "exchange_hub"}
-                    onChange={() => setDestination("exchange_hub")}
-                    className="mt-0.5 size-4 accent-primary"
-                  />
-                  <span className="text-[12.5px] text-text-main">
-                    Exchange Hub
-                    <span className="mt-0.5 block text-[11px] text-text-muted">
-                      Hold for a sponsor before publishing — submit the opportunity from Exchange Hub after this is approved.
+                {profile.canSponsor && (
+                  <label
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-lg border p-3",
+                      destination === "exchange_hub" ? "border-primary bg-primary-glow" : "border-line bg-bg-primary",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="destination"
+                      checked={destination === "exchange_hub"}
+                      onChange={() => setDestination("exchange_hub")}
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <span className="text-[12.5px] text-text-main">
+                      Exchange Hub
+                      <span className="mt-0.5 block text-[11px] text-text-muted">
+                        Hold for a sponsor before publishing — submit the opportunity from Exchange Hub after this is approved.
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                )}
               </div>
               <p className="mt-1.5 text-[11px] text-text-muted">
-                Your editor sees this choice — you can still switch to the Exchange Hub later from an unpublished article.
+                {profile.canSponsor
+                  ? "Your editor sees this choice — you can still switch to the Exchange Hub later from an unpublished article."
+                  : "Sponsored articles through the Exchange Hub aren't included in your plan."}
               </p>
             </div>
 
@@ -497,6 +512,12 @@ export default function SubmitPage() {
             </div>
 
             <div className="mt-auto flex gap-3">
+              {outOfSubmissions && (
+                <p className="mb-3 w-full text-[12.5px] text-danger">
+                  You&apos;ve used all {profile.allowance.limit} article submissions your plan includes this month. They reset on
+                  the 1st; upgrade your package in My Profile to submit more now.
+                </p>
+              )}
               <Button
                 variant="secondary"
                 className="flex-1"
@@ -507,7 +528,7 @@ export default function SubmitPage() {
               <Button
                 className="flex-1"
                 onClick={handleSubmit}
-                disabled={isSubmitting || !title.trim() || selectedTags.length === 0 || !rightsAttested}
+                disabled={isSubmitting || outOfSubmissions || !title.trim() || selectedTags.length === 0 || !rightsAttested}
               >
                 {isSubmitting ? "Submitting..." : draftStatus === "changes_requested" ? "Resubmit" : "Submit"}
               </Button>

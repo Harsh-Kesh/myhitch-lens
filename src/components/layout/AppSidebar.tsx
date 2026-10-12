@@ -39,6 +39,8 @@ interface NavLink {
   roles?: UserRole[];
   /** Renders the editorial queue counter badge. */
   showQueueCount?: boolean;
+  /** Only shown when the plan includes the Exchange Hub (sponsored articles). */
+  needsExchange?: boolean;
 }
 
 const NAV_LINKS: NavLink[] = [
@@ -92,12 +94,13 @@ const NAV_LINKS: NavLink[] = [
     label: "Exchange Hub",
     icon: <BriefcaseIcon className={navIcon} />,
     roles: ["author", "admin"],
+    needsExchange: true,
   },
   {
     href: "/analytics",
     label: "Analytics Hub",
     icon: <BarChartIcon className={navIcon} />,
-    roles: ["author", "editor", "admin"],
+    roles: ["author", "editor", "admin", "corporate"],
   },
   {
     href: "/governance",
@@ -165,6 +168,7 @@ const MOBILE_QUERY = "not all and (min-width: 768px)";
  */
 export function AppSidebar({
   role: sessionRole,
+  showExchange = true,
   name: sessionName,
   avatarUrl = null,
   pendingReviewCount = 0,
@@ -172,6 +176,8 @@ export function AppSidebar({
   unreadCount = 0,
 }: {
   role: UserRole;
+  /** False when the user's plan has no Exchange Hub (sponsored articles). */
+  showExchange?: boolean;
   name: string;
   /** Real uploaded profile photo, if the user has set one — see /profile. */
   avatarUrl?: string | null;
@@ -216,7 +222,7 @@ export function AppSidebar({
 
   const presentation = ROLE_PRESENTATION[role];
   const visibleLinks = NAV_LINKS.filter(
-    (link) => !link.roles || link.roles.includes(role),
+    (link) => (!link.roles || link.roles.includes(role)) && (!link.needsExchange || showExchange),
   );
 
   return (

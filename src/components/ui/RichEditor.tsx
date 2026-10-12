@@ -640,7 +640,15 @@ async function uploadFile(
 // Toolbar
 // ---------------------------------------------------------------------------
 
-function Toolbar({ editor, onUploadMedia }: { editor: Editor; onUploadMedia: (type: string) => void }) {
+function Toolbar({
+  editor,
+  onUploadMedia,
+  allowRichMedia,
+}: {
+  editor: Editor;
+  onUploadMedia: (type: string) => void;
+  allowRichMedia: boolean;
+}) {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
 
   const applyLink = useCallback(
@@ -747,12 +755,20 @@ function Toolbar({ editor, onUploadMedia }: { editor: Editor; onUploadMedia: (ty
       <ToolbarButton action={() => onUploadMedia("image")} isActive={false} title="Upload image">
         <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
       </ToolbarButton>
-      <ToolbarButton action={() => onUploadMedia("video")} isActive={false} title="Upload video">
-        <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-      </ToolbarButton>
-      <ToolbarButton action={() => onUploadMedia("audio")} isActive={false} title="Upload audio">
-        <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      </ToolbarButton>
+      {allowRichMedia ? (
+        <>
+          <ToolbarButton action={() => onUploadMedia("video")} isActive={false} title="Upload video">
+            <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </ToolbarButton>
+          <ToolbarButton action={() => onUploadMedia("audio")} isActive={false} title="Upload audio">
+            <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </ToolbarButton>
+        </>
+      ) : (
+        <span className="px-1.5 text-[11px] text-text-muted" title="Video and audio embedding comes with Lens Creator and above">
+          Video &amp; audio: Creator+
+        </span>
+      )}
 
       <Separator />
 
@@ -776,6 +792,8 @@ export interface RichEditorProps {
   placeholder?: string;
   className?: string;
   editable?: boolean;
+  /** Show the video and audio upload buttons (plans without video embedding hide them). Default true. */
+  allowRichMedia?: boolean;
 }
 
 type PendingUpload = {
@@ -791,6 +809,7 @@ export function RichEditor({
   placeholder = "Start writing your article...",
   className,
   editable = true,
+  allowRichMedia = true,
 }: RichEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -917,7 +936,7 @@ export function RichEditor({
     <div className={cn("overflow-hidden rounded-xl border border-line bg-bg-secondary", className)}>
       {editable && (
         <>
-          <Toolbar editor={editor} onUploadMedia={handleUploadMedia} />
+          <Toolbar editor={editor} onUploadMedia={handleUploadMedia} allowRichMedia={allowRichMedia} />
           {uploading && (
             <div className="border-b border-line bg-primary-glow px-4 py-1.5 text-xs font-semibold text-primary">
               Uploading media...

@@ -220,6 +220,10 @@
   .pricing-check-accent::before {
     color: var(--accent-color);
   }
+  .pricing-cross::before {
+    content: "✕";
+    font-weight: bold;
+  }
 
   .switch-slider::before {
     position: absolute;

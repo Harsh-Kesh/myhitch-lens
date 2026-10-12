@@ -1,5 +1,6 @@
 import "server-only";
 
+import { priorityAuthorIds } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import type { FeedArticle } from "@/lib/types";
 
@@ -73,6 +74,8 @@ export interface ReviewQueueItem {
   content: string;
   /** Author's chosen destination — gates whether "Approve & Publish" applies. */
   destination: "main_app" | "exchange_hub";
+  /** The author's plan includes priority editorial review: shown first in the queue. */
+  priority: boolean;
 }
 
 function scoreField(aiScores: unknown, key: string, fallback: string | number) {
@@ -98,7 +101,17 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     },
   });
 
-  return rows.map((row) => ({
+  // Priority review (Professional and above) goes to the front; within each
+  // group the oldest submission is first. The sort is stable, so ties keep order.
+  const priorityIds = await priorityAuthorIds(rows.map((r) => r.authorId));
+  const waiting = (r: (typeof rows)[number]) => (r.submittedAt ?? r.createdAt).getTime();
+  const ordered = [...rows].sort((a, b) => {
+    const pa = priorityIds.has(a.authorId) ? 0 : 1;
+    const pb = priorityIds.has(b.authorId) ? 0 : 1;
+    return pa - pb || waiting(a) - waiting(b);
+  });
+
+  return ordered.map((row) => ({
     id: row.id,
     title: row.title,
     author: row.author.displayName,
@@ -107,7 +120,8 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     license: row.license,
     category: row.category.name,
     type: row.contentType,
-    submittedAt: row.createdAt.toISOString(),
+    submittedAt: (row.submittedAt ?? row.createdAt).toISOString(),
+    priority: priorityIds.has(row.authorId),
     aiScore: Number(scoreField(row.aiScores, "aiScore", 90)),
     plagiarism: String(scoreField(row.aiScores, "plagiarism", "0.4% detected")),
     readability: String(scoreField(row.aiScores, "readability", "Good (Flesch: 65)")),

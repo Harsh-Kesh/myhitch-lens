@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { createHash } from "crypto";
 import path from "path";
 import { auth } from "@/auth";
+import { getEntitlements } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { isSupabaseStorageConfigured, uploadToStorage } from "@/lib/storage";
 import { averageHash, hammingDistance, NEAR_DUPLICATE_THRESHOLD } from "@/lib/imageHash";
@@ -60,6 +61,17 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "File type not allowed. Only images, videos, and audio files are accepted." },
       { status: 400 },
+    );
+  }
+
+  // Video and audio embedding is part of Lens Creator and above. Images are open to
+  // everyone. Staff editing on behalf of the platform are exempt.
+  const isMotionOrSound = file.type.startsWith("video/") || file.type.startsWith("audio/");
+  const isStaff = session.user.role === "editor" || session.user.role === "admin";
+  if (isMotionOrSound && !isStaff && !(await getEntitlements(session.user.id)).videoEmbeds) {
+    return NextResponse.json(
+      { error: "Video and audio embedding isn't included in your plan. Upgrade to Lens Creator or above to add it." },
+      { status: 403 },
     );
   }
 

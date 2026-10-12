@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
+import { getEntitlements, upgradeMessage } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { mintProvenance } from "@/lib/provenance";
 import { feeFor, round2 } from "@/lib/marketplace";
-import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES, isCopyrightClear } from "@/lib/exchange";
+import { EXCHANGE_ELIGIBLE_STATUSES, EXCHANGE_OPEN_STATUSES, countActiveListings, isCopyrightClear } from "@/lib/exchange";
 import { isSuspended } from "@/lib/authGuards";
 import { isEligibleToSubmit } from "@/lib/verification";
 import { syncContributorRank } from "@/lib/ranking";
@@ -61,6 +62,19 @@ export async function submitToExchangeHub(input: {
   const profile = await prisma.profile.findUnique({ where: { userId: user.id }, select: { country: true, abn: true } });
   if (profile?.country === ABN_COUNTRY && !(profile.abn && isValidAbnChecksum(profile.abn))) {
     return { error: "Add a valid ABN to your profile before submitting to the Exchange Hub." };
+  }
+
+  const entitlements = await getEntitlements(user.id);
+  if (!entitlements.sponsoredArticles) {
+    return { error: upgradeMessage("Sponsored articles through the Exchange Hub aren't included in your plan.") };
+  }
+  if (entitlements.exchangeListings !== null && (await countActiveListings(user.id)) >= entitlements.exchangeListings) {
+    const n = entitlements.exchangeListings;
+    return {
+      error: upgradeMessage(
+        `Your plan includes ${n} Exchange Hub listing${n === 1 ? "" : "s"} at a time and you're using ${n === 1 ? "it" : "them all"}. Withdraw one or wait for it to finish.`,
+      ),
+    };
   }
 
   const description = input.description.trim();

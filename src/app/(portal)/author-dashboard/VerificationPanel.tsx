@@ -17,9 +17,12 @@ import type { VerificationChecklistItem } from "@/lib/verification";
 export function VerificationStatus({
   isVerified,
   items,
+  badgeAvailable = true,
 }: {
   isVerified: boolean;
   items: VerificationChecklistItem[];
+  /** False when the plan does not include the Verified Author badge (e.g. Lens Free). */
+  badgeAvailable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -28,6 +31,36 @@ export function VerificationStatus({
       <span className="inline-flex items-center gap-1 rounded-full bg-primary-glow px-2 py-0.5 text-[11px] font-semibold text-primary">
         <VerifiedBadge size="xs" /> Verified
       </span>
+    );
+  }
+
+  // The badge is part of Creator and above. The profile checklist still matters on Free:
+  // a complete profile is what allows submitting articles.
+  if (!badgeAvailable) {
+    const complete = items.every((item) => item.met);
+    return (
+      <>
+        {complete ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
+            Profile complete
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary-glow"
+          >
+            Complete your profile
+          </button>
+        )}
+        <Link
+          href="/profile#packages"
+          className="inline-flex items-center gap-1 rounded-full bg-bg-tertiary px-2 py-0.5 text-[11px] font-semibold text-text-muted hover:text-text-main"
+        >
+          Verified badge: Creator and above
+        </Link>
+        {open && <ChecklistModal items={items} badgeAvailable={false} onClose={() => setOpen(false)} />}
+      </>
     );
   }
 
@@ -48,18 +81,21 @@ export function VerificationStatus({
 function ChecklistModal({
   items,
   onClose,
+  badgeAvailable = true,
 }: {
   items: VerificationChecklistItem[];
   onClose: () => void;
+  badgeAvailable?: boolean;
 }) {
   return (
     <Modal onClose={onClose} className="w-[min(420px,92vw)]">
       <h3 className="mb-1 flex items-center gap-2 font-heading text-lg font-bold text-text-main">
-        <VerifiedBadge size="md" /> Get the Verified badge
+        {badgeAvailable ? <VerifiedBadge size="md" /> : null} {badgeAvailable ? "Get the Verified badge" : "Complete your profile"}
       </h3>
       <p className="mb-4 text-[12.5px] text-text-muted">
-        Verification is automatic — no application, no waiting. Complete every item below on your
-        profile and the blue mark appears immediately.
+        {badgeAvailable
+          ? "Verification is automatic — no application, no waiting. Complete every item below on your profile and the blue mark appears immediately."
+          : "A complete profile is needed to submit articles. The blue Verified badge itself comes with Lens Creator and above."}
       </p>
 
       <ul className="mb-5 flex flex-col gap-2">

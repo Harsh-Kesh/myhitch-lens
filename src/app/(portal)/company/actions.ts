@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import bcrypt from "bcryptjs";
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { lookupAbn, normalizeAbn } from "@/lib/abn";
+import { normalizeAbn } from "@/lib/abn";
+import { BillingError, setExtraSeats } from "@/lib/billing";
+import { getOrgSeatCapacity } from "@/lib/entitlements";
+import { loadPortalBusiness, loadPortalProfile } from "@/lib/portalDb";
 import { mintProvenance } from "@/lib/provenance";
 import type { OrgRole } from "@prisma/client";
 
@@ -54,27 +56,93 @@ export interface CompanyOverview {
   orgId: string;
   orgName: string;
   abn: string | null;
+  /** True when name/ABN were read live from the MYHitch Business portal (the source of truth). */
+  fromPortal: boolean;
+  /** Seats the company's plan covers (0 when the owner is not on Lens Business). */
   seats: number;
+  /** Lens Business plan details for the seat controls. */
+  plan: { onBusiness: boolean; includedSeats: number; extraSeats: number; interval: "month" | "year" | null };
   myRole: OrgRole;
   isOwner: boolean;
   members: CompanyMember[];
+  /** Owner-only: invitations not yet accepted. Empty for everyone else. */
+  invites: CompanyInvite[];
+}
+
+export interface CompanyInvite {
+  id: string;
+  email: string;
+  displayName: string;
+  orgRole: OrgRole;
+  createdAt: string;
+}
+
+/**
+ * The company's legal name and ABN are owned by the MYHitch Business portal.
+ * For the OWNER (who is the portal business holder) read them live, and keep
+ * Lens's own Organization row in step so everything else that uses it (slugs,
+ * other members' views) stays right. If the portal is unreachable or has no
+ * approved business, fall back silently to what Lens already has — never fail
+ * the page. Lens never writes back to the portal.
+ */
+async function resolveLegalEntity(
+  userId: string,
+  org: { id: string; name: string; abn: string | null },
+): Promise<{ name: string; abn: string | null; fromPortal: boolean }> {
+  const local = { name: org.name, abn: org.abn, fromPortal: false };
+  try {
+    const identity = await prisma.platformIdentity.findUnique({ where: { userId }, select: { myhitchId: true } });
+    if (!identity) return local;
+    const profile = await loadPortalProfile(identity.myhitchId);
+    if (!profile) return local;
+    const business = await loadPortalBusiness(profile.profileId);
+    const name = business?.legalEntityName || business?.tradingName || null;
+    if (business?.reviewStatus !== "approved" || !name) return local;
+
+    const abn = business.abn ? normalizeAbn(business.abn) : null;
+    if (name !== org.name || abn !== org.abn) {
+      await prisma.organization.update({ where: { id: org.id }, data: { name, abn } });
+    }
+    return { name, abn, fromPortal: true };
+  } catch (error) {
+    console.error("[company] portal business lookup failed; using local details", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return local;
+  }
 }
 
 /** Everything the company dashboard needs, branched by the viewer's own role. */
 export async function getCompanyOverview(): Promise<CompanyOverview> {
-  const { membership } = await requireMembership();
+  const { user, membership } = await requireMembership();
+  const legal = membership.isAdmin
+    ? await resolveLegalEntity(user.id, membership.org)
+    : { name: membership.org.name, abn: membership.org.abn, fromPortal: false };
 
   const members = await prisma.orgMembership.findMany({
     where: { orgId: membership.orgId },
     orderBy: { id: "asc" },
     include: { user: { select: { username: true, displayName: true, createdAt: true } } },
   });
+  const capacity = await getOrgSeatCapacity(membership.orgId);
+  const ownerSub = membership.isAdmin
+    ? await prisma.subscription.findUnique({ where: { userId: user.id }, select: { interval: true } })
+    : null;
+  const interval = capacity.onBusiness ? (ownerSub?.interval ?? null) : null;
+  const invites = membership.isAdmin
+    ? await prisma.orgInvite.findMany({
+        where: { orgId: membership.orgId, acceptedAt: null },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
 
   return {
     orgId: membership.orgId,
-    orgName: membership.org.name,
-    abn: membership.org.abn,
-    seats: membership.org.seats,
+    orgName: legal.name,
+    abn: legal.abn,
+    fromPortal: legal.fromPortal,
+    seats: capacity.total,
+    plan: { onBusiness: capacity.onBusiness, includedSeats: capacity.included, extraSeats: capacity.extra, interval },
     myRole: membership.orgRole,
     isOwner: membership.isAdmin,
     members: members.map((m) => ({
@@ -85,77 +153,91 @@ export async function getCompanyOverview(): Promise<CompanyOverview> {
       isAdmin: m.isAdmin,
       createdAt: m.user.createdAt.toISOString(),
     })),
+    invites: invites.map((i) => ({
+      id: i.id,
+      email: i.email,
+      displayName: i.displayName,
+      orgRole: i.orgRole,
+      createdAt: i.createdAt.toISOString(),
+    })),
   };
 }
 
-/** Owner-only: create a sub-account (author or editor) under the company. */
-export async function createSubAccount(input: {
-  username: string;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Owner-only: invite someone to the company as an author or editor. No
+ * password is set: the invite is activated when that person signs in through
+ * the MYHitch Business portal with this same verified email.
+ */
+export async function inviteSubAccount(input: {
   email: string;
-  password: string;
   displayName: string;
   orgRole: "author" | "editor";
 }): Promise<ActionResult> {
-  const { membership } = await requireOwner();
+  const { membership, user } = await requireOwner();
 
-  const username = input.username.trim().toLowerCase();
   const email = input.email.trim().toLowerCase();
   const displayName = input.displayName.trim();
-  if (!username || !email || !displayName) {
-    return { error: "Fill in username, email, and display name." };
+  if (!email || !displayName) return { error: "Fill in the email and display name." };
+  if (!EMAIL_RE.test(email)) return { error: "Enter a valid email address." };
+  if (input.orgRole !== "author" && input.orgRole !== "editor") return { error: "Choose a role." };
+
+  // Seats come from the company's Lens Business plan (5 included, plus any extra
+  // users the owner pays for). Invites count against seats just like members.
+  const capacity = await getOrgSeatCapacity(membership.orgId);
+  if (!capacity.onBusiness) {
+    return { error: "Adding team members is part of the Lens Business plan. Choose Lens Business on the Pricing page to invite your team." };
   }
-  if (input.password.length < 8) {
-    return { error: "Password must be at least 8 characters." };
+  const [memberCount, pendingCount] = await Promise.all([
+    prisma.orgMembership.count({ where: { orgId: membership.orgId } }),
+    prisma.orgInvite.count({ where: { orgId: membership.orgId, acceptedAt: null } }),
+  ]);
+  if (memberCount + pendingCount >= capacity.total) {
+    return { error: `You've used all ${capacity.total} seats on your plan. Add extra users in Company Details to invite more.` };
   }
 
-  const seatCount = await prisma.orgMembership.count({ where: { orgId: membership.orgId } });
-  if (seatCount >= membership.org.seats) {
-    return { error: `You've used all ${membership.org.seats} seats on your plan.` };
-  }
-
-  const existing = await prisma.user.findFirst({ where: { OR: [{ username }, { email }] } });
-  if (existing) return { error: "That username or email is already registered." };
-
-  const passwordHash = await bcrypt.hash(input.password, 10);
-
-  await prisma.user.create({
-    data: {
-      username,
-      email,
-      passwordHash,
-      role: "corporate",
-      displayName,
-      profile: { create: {} },
-      wallet: { create: {} },
-      rank: { create: {} },
-      memberships: {
-        create: { orgId: membership.orgId, orgRole: input.orgRole, isAdmin: false },
-      },
-    },
+  // One person can only belong to one company, and platform authors/staff keep
+  // their own role (an invite never converts them).
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { role: true, memberships: { select: { id: true }, take: 1 } },
   });
+  if (existing) {
+    if (existing.memberships.length > 0) return { error: "That person already belongs to a company." };
+    if (existing.role !== "reader" && existing.role !== "corporate") {
+      return { error: "That email belongs to an existing author or staff account and can't be invited." };
+    }
+  }
+
+  const duplicate = await prisma.orgInvite.findUnique({
+    where: { orgId_email: { orgId: membership.orgId, email } },
+  });
+  if (duplicate && duplicate.acceptedAt === null) return { error: "That email has already been invited." };
+
+  if (duplicate) {
+    // A previously accepted invite for this email (member was removed): re-invite.
+    await prisma.orgInvite.update({
+      where: { id: duplicate.id },
+      data: { displayName, orgRole: input.orgRole, acceptedAt: null, invitedById: user.id, createdAt: new Date() },
+    });
+  } else {
+    await prisma.orgInvite.create({
+      data: { orgId: membership.orgId, email, displayName, orgRole: input.orgRole, invitedById: user.id },
+    });
+  }
 
   revalidatePath("/company");
   return { ok: true };
 }
 
-/** Owner-only: correct the company's own name and/or ABN after signup — the
- *  only two fields captured once and never otherwise editable. */
-export async function updateCompanyDetails(input: { name: string; abn: string }): Promise<ActionResult> {
+/** Owner-only: cancel a pending invitation. */
+export async function revokeInvite(inviteId: string): Promise<ActionResult> {
   const { membership } = await requireOwner();
-
-  const name = input.name.trim();
-  if (!name) return { error: "Company name can't be empty." };
-
-  const abnInput = input.abn.trim();
-  let abn: string | null = null;
-  if (abnInput) {
-    const check = await lookupAbn(abnInput);
-    if (!check.valid) return { error: check.error ?? "That ABN doesn't look valid." };
-    abn = normalizeAbn(abnInput);
-  }
-
-  await prisma.organization.update({ where: { id: membership.orgId }, data: { name, abn } });
-
+  const result = await prisma.orgInvite.deleteMany({
+    where: { id: inviteId, orgId: membership.orgId, acceptedAt: null },
+  });
+  if (result.count !== 1) return { error: "That invitation no longer exists." };
   revalidatePath("/company");
   return { ok: true };
 }
@@ -228,6 +310,7 @@ export async function submitCompanyArticle(input: { title: string; content: stri
       content: JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: content }] }] }),
       contentType: "Blog",
       status: "in_review",
+      submittedAt: new Date(),
       lane: "public",
       destination: "main_app",
       license: "all_rights_reserved",
@@ -335,6 +418,20 @@ export async function rejectCompanyArticle(articleId: string, reason: string): P
     }),
   ]);
 
+  revalidatePath("/company");
+  return { ok: true };
+}
+
+/** Owner-only: set how many extra company users to pay for (AU$5/user/month, or AU$60/user/year). */
+export async function changeExtraSeats(count: number): Promise<ActionResult> {
+  const { user } = await requireOwner();
+  try {
+    await setExtraSeats(user.id, Math.trunc(Number(count)));
+  } catch (error) {
+    if (error instanceof BillingError) return { error: error.message };
+    console.error("[company] extra seats failed", { error: error instanceof Error ? error.message : String(error) });
+    return { error: "Couldn't update your extra users right now. Please try again shortly." };
+  }
   revalidatePath("/company");
   return { ok: true };
 }

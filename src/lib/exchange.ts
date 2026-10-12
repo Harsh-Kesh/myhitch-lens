@@ -9,6 +9,11 @@ export const EXCHANGE_ELIGIBLE_STATUSES = ["draft", "in_review", "changes_reques
 /** Opportunity statuses that are still "in play" — not yet a final outcome. */
 export const EXCHANGE_OPEN_STATUSES: ExchangeOpportunityStatus[] = ["open", "in_negotiation", "agreement_pending"];
 
+/** Listings an author has in play right now. A finished, withdrawn or rejected one frees its slot. */
+export async function countActiveListings(authorId: string): Promise<number> {
+  return prisma.exchangeOpportunity.count({ where: { authorId, status: { in: EXCHANGE_OPEN_STATUSES } } });
+}
+
 export interface ExchangeListableArticle {
   id: string;
   title: string;

@@ -7,6 +7,7 @@ import { BarChartIcon, BookmarkIcon, DollarSignIcon, HeartIcon } from "@/compone
 import { VerifiedBadge } from "@/components/ui/VerifiedBadge";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { getArticleAnalytics } from "@/lib/dashboard";
+import { getEntitlements } from "@/lib/entitlements";
 import { cn } from "@/lib/cn";
 
 function formatAUD(n: number): string {
@@ -21,6 +22,20 @@ export default async function ArticleAnalyticsPage({
   const { id } = await searchParams;
   const session = await auth();
   if (!session?.user) return null;
+
+  // Per-article analytics start at the Creator plan (staff always see them).
+  const isStaff = session.user.role === "editor" || session.user.role === "admin";
+  if (!isStaff && (await getEntitlements(session.user.id)).analytics === "basic") {
+    return (
+      <div className="rounded-xl border border-dashed border-line bg-bg-secondary p-8 text-center">
+        <p className="font-heading text-[15px] font-bold text-text-main">Article analytics</p>
+        <p className="mt-1 text-[13px] text-text-muted">Available on Lens Creator and above.</p>
+        <Link href="/pricing" className="mt-3 inline-block text-[13px] font-semibold text-primary hover:underline">
+          See plans
+        </Link>
+      </div>
+    );
+  }
 
   const data = id ? await getArticleAnalytics(id) : null;
   if (!data) {

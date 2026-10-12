@@ -8,6 +8,9 @@ import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
 import { isSuspended } from "@/lib/authGuards";
+import { articleHasVideoOrAudio } from "@/lib/articleMedia";
+import { getEntitlements, getSubmissionAllowance, upgradeMessage } from "@/lib/entitlements";
+import { pagesNeeded } from "@/lib/magazinePagination";
 import { isEligibleToSubmit } from "@/lib/verification";
 import type { ArticleDestination } from "@prisma/client";
 
@@ -84,6 +87,11 @@ export async function saveDraft(input: {
     data.slug = `${slugify(input.title || "untitled")}-${Date.now().toString(36)}`;
   }
   if (input.content !== undefined) {
+    // Video and audio embeds belong to Creator and above. Refuse to store them for a plan
+    // without them, however they got into the editor (toolbar, paste, an older draft).
+    if (articleHasVideoOrAudio(input.content) && !(await getEntitlements(session.user.id)).videoEmbeds) {
+      return { error: upgradeMessage("Video and audio embedding isn't included in your plan. Remove the video or audio clips to keep saving.") };
+    }
     data.content = input.content;
   }
 
@@ -124,7 +132,7 @@ export async function submitForReview(input: {
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
-    select: { authorId: true, status: true, title: true, content: true },
+    select: { authorId: true, status: true, title: true, content: true, submittedAt: true },
   });
   if (!article) return { error: "Article not found." };
   if (article.authorId !== session.user.id) return { error: "Not your article." };
@@ -132,6 +140,25 @@ export async function submitForReview(input: {
     return { error: "Article cannot be submitted in its current state." };
   }
   if (!article.title.trim()) return { error: "Please add a title before submitting." };
+
+  // Plan limits. Sponsored articles go through the Exchange Hub; and a first
+  // submission counts against the monthly allowance (a resubmission after
+  // "changes requested" does not count again).
+  const entitlements = await getEntitlements(session.user.id);
+  if (!entitlements.videoEmbeds && articleHasVideoOrAudio(article.content)) {
+    return { error: upgradeMessage("This article has an embedded video or audio clip, which isn't included in your plan. Remove it to submit.") };
+  }
+  if (input.destination === "exchange_hub" && !entitlements.sponsoredArticles) {
+    return { error: upgradeMessage("Sponsored articles through the Exchange Hub aren't included in your plan.") };
+  }
+  if (article.submittedAt === null) {
+    const allowance = await getSubmissionAllowance(session.user.id);
+    if (!allowance.allowed) {
+      return {
+        error: upgradeMessage(`You've used all ${allowance.limit} article submissions your plan includes this month.`),
+      };
+    }
+  }
 
   let contentText = "";
   try {
@@ -144,6 +171,16 @@ export async function submitForReview(input: {
     return { error: "Article body is too short. Write at least a few sentences." };
   }
   const words = contentText.trim().split(/\s+/).length;
+
+  // Each plan gives an approved article a fixed number of magazine pages (Free: 2).
+  const pages = pagesNeeded(contentText);
+  if (pages > entitlements.maxPagesPerArticle) {
+    return {
+      error: upgradeMessage(
+        `This article runs to ${pages} magazine pages, but your plan includes up to ${entitlements.maxPagesPerArticle} per article. Shorten it to submit.`,
+      ),
+    };
+  }
 
   const tagIds: string[] = [];
   for (const name of input.tagNames) {
@@ -161,6 +198,7 @@ export async function submitForReview(input: {
     where: { id: input.articleId },
     data: {
       status: "in_review",
+      submittedAt: article.submittedAt ?? new Date(),
       contentType: input.contentType,
       categoryId: bestCategory,
       license: input.license,
@@ -187,13 +225,31 @@ export async function submitForReview(input: {
 }
 
 /** The current user's display name + verified status, for the live preview. */
-export async function getMyProfileSummary(): Promise<{ name: string; verified: boolean }> {
+export interface MyPlanSummary {
+  name: string;
+  verified: boolean;
+  /** The plan includes sponsored articles, so "Exchange Hub" is a valid destination. */
+  canSponsor: boolean;
+  /** The plan includes video and audio embedding in articles. */
+  canEmbedMedia: boolean;
+  /** Monthly submissions: limit is null when unlimited. */
+  allowance: { limit: number | null; used: number; allowed: boolean };
+}
+
+export async function getMyProfileSummary(): Promise<MyPlanSummary> {
   const session = await requireAuthorSession();
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
     select: { displayName: true, isVerified: true },
   });
-  return { name: user?.displayName ?? session.user.name ?? "Author", verified: user?.isVerified ?? false };
+  const [entitlements, allowance] = await Promise.all([getEntitlements(session.user.id), getSubmissionAllowance(session.user.id)]);
+  return {
+    name: user?.displayName ?? session.user.name ?? "Author",
+    verified: user?.isVerified ?? false,
+    canSponsor: entitlements.sponsoredArticles,
+    canEmbedMedia: entitlements.videoEmbeds,
+    allowance: { limit: allowance.limit, used: allowance.used, allowed: allowance.allowed },
+  };
 }
 
 /** Fetch all available tags for the tag picker. */

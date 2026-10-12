@@ -1,20 +1,26 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
 
 import { HERO_REVEAL, LandingHero } from "@/components/layout/LandingHero";
-import { buttonClasses, type ButtonVariant } from "@/components/ui/Button";
+import { type ButtonVariant } from "@/components/ui/Button";
 import { Container, HeroAccent } from "@/components/ui/Primitives";
 import { useGsapReveal } from "@/hooks/useGsapReveal";
 import { cn } from "@/lib/cn";
+import { PLANS as CATALOGUE, formatAud, type BillingInterval, type PlanCode } from "@/lib/plans";
+
+import { PlanCta } from "./PlanCta";
 
 interface Plan {
-  badge: string;
+  code: PlanCode;
+  badge?: string;
   title: string;
   price: string;
   period: string;
+  yearly?: string;
   desc: string;
   features: string[];
+  excluded?: string[];
   cta: string;
   href: string;
   variant: ButtonVariant;
@@ -23,71 +29,144 @@ interface Plan {
 
 const PLANS: Plan[] = [
   {
-    badge: "Free / Premium",
-    title: "Reader",
-    price: "$9.99",
-    period: "/mo",
-    desc: "For professionals seeking verified insight and niche industry analysis.",
+    code: "free",
+    title: "Lens Free",
+    price: "AU$0",
+    period: "forever free",
+    desc: "Start your journey on MYHitch Lens.",
     features: [
-      "Unlimited access to basic articles",
-      "Bookmark & Comment options",
-      "Follow verified authors",
-      "Personalized reading preferences",
-      "Custom notifications feed",
+      "Read public articles",
+      "Create author profile",
+      "Submit up to 2 articles per month",
+      "Eligible for magazine pages 121–124 only",
+      "2 magazine pages per approved article",
+      "1 Exchange Hub listing; request sponsorships",
+      "Basic images in articles",
+      "Comment, like and share",
+      "Follow authors and topics",
+      "Bookmark articles",
+      "Basic article analytics",
+      "AI writing assistance (limited)",
+      "MYHitch editorial approval",
     ],
-    cta: "Subscribe as Reader",
-    href: "/auth?mode=signup&role=reader",
+    excluded: [
+      "Video/Media embedding",
+      "SEO tools",
+      "Schedule publishing",
+      "Monetisation eligibility",
+      "More than 1 Exchange Hub listing",
+      "Business profile",
+    ],
+    cta: "Get Started Free",
+    href: "/auth/login?mode=signup&role=reader",
     variant: "secondary",
   },
   {
-    badge: "Recommended",
-    title: "Author",
-    price: "$29.99",
-    period: "/mo",
-    desc: "For domain experts, researchers, and professional freelance writers.",
+    code: "creator",
+    title: "Lens Creator",
+    price: "AU$9.99",
+    period: "/ month",
+    yearly: "or AU$99 / year (Save 17%)",
+    desc: "For bloggers, students and emerging writers.",
     features: [
-      "Verified writer badge upon vetting",
-      "AI writing assistant (Summaries, Narration)",
-      "Full SEO recommendation tools",
-      "Personalized author portfolio page",
-      "Analytics dashboard (views, reading time)",
-      "Direct subscriber revenue sharing",
+      "All Free plan features",
+      "Submit up to 10 articles per month",
+      "Eligible for magazine pages 57–120",
+      "2 magazine pages per approved article",
+      "5 Exchange Hub listings; request sponsorships",
+      "Images and media in articles",
+      "Video embedding",
+      "Standard article analytics",
+      "AI writing assistance",
+      "Grammar and style check",
+      "Basic SEO optimisation",
+      "Schedule publishing",
+      "Eligible for Verified Author badge",
+      "Follow author performance",
+      "MYHitch editorial approval",
     ],
-    cta: "Start Writing",
-    href: "/auth?mode=signup&role=author",
+    excluded: [
+      "Advanced analytics",
+      "Monetisation tools",
+      "Unlimited Exchange Hub listings",
+      "Business profile",
+      "Multiple users",
+    ],
+    cta: "Choose Creator Plan",
+    href: "/auth/login?mode=signup&role=author",
+    variant: "secondary",
+  },
+  {
+    badge: "Most Popular",
+    code: "professional",
+    title: "Lens Professional",
+    price: "AU$19.99",
+    period: "/ month",
+    yearly: "or AU$199 / year (Save 17%)",
+    desc: "For journalists, researchers and industry experts.",
+    features: [
+      "All Creator plan features",
+      "Unlimited article submissions",
+      "Eligible for any editorial page, 9–120",
+      "Up to 3 magazine pages per article",
+      "Unlimited Exchange Hub listings",
+      "Advanced article analytics",
+      "Advanced AI writing assistance",
+      "Grammar and style check",
+      "Advanced SEO tools",
+      "Schedule publishing",
+      "Priority editorial review",
+      "Monetisation eligibility",
+      "Publish sponsored articles",
+      "Eligible for Verified Author badge",
+      "MYHitch ecosystem promotion",
+      "Author audience insights",
+      "Custom article categories (subject to approval)",
+    ],
+    cta: "Choose Professional Plan",
+    href: "/auth/login?mode=signup&role=author",
     variant: "primary",
     featured: true,
   },
   {
-    badge: "Enterprise",
-    title: "Corporate Publisher",
-    price: "$199",
-    period: "/mo",
-    desc: "For research institutes, supply chain businesses, and corporate teams.",
+    code: "business",
+    title: "Lens Business",
+    price: "AU$49.99",
+    period: "/ month",
+    yearly: "or AU$499 / year (Save 17%)",
+    desc: "For companies, organisations and media publishers.",
     features: [
-      "Multiple publisher accounts (up to 10)",
-      "Premium report publication & sales",
-      "Advanced analytics & team performance",
-      "Direct MYHitch Mart products linking",
-      "Priority editorial review queue",
-      "API access to reader metrics",
+      "All Professional plan features",
+      "Eligible for any editorial page, 9–120",
+      "Up to 4 magazine pages per article",
+      "Unlimited Exchange Hub listings",
+      "Branded company/organisation profile",
+      "5 author/user accounts included",
+      "Additional users at AU$5/user/month",
+      "Team management and roles",
+      "Advanced analytics dashboard",
+      "Publish unlimited articles",
+      "Sponsored content capability",
+      "Advertising campaign tools (separate fees apply)",
+      "Priority editorial review",
+      "MYHitch ecosystem promotion (priority)",
+      "Lead generation tools",
+      "Custom branding options",
+      "Dedicated account support",
     ],
-    cta: "Launch Team Account",
-    href: "/auth?mode=signup&role=editor",
+    cta: "Choose Business Plan",
+    href: "/auth/login?mode=signup&role=author",
     variant: "secondary",
   },
 ];
 
 /** `.pricing-card` */
 const pricingCard =
-  "relative flex flex-col rounded-2xl border p-8 py-10 transition-all duration-300 hover:-translate-y-2 hover:border-line-hover hover:shadow-card";
-
-/** `.pricing-badge` */
-const pricingBadge =
-  "absolute top-6 right-6 rounded border px-2.5 py-1 text-[11px] font-bold tracking-[0.5px] uppercase";
+  "relative flex flex-col rounded-2xl border p-7 pt-9 transition-all duration-300 hover:-translate-y-2 hover:border-line-hover hover:shadow-card";
 
 export default function PricingPage() {
   const rootRef = useGsapReveal<HTMLDivElement>([HERO_REVEAL]);
+  const [interval, setInterval] = useState<BillingInterval>("month");
 
   return (
     <div ref={rootRef}>
@@ -99,15 +178,28 @@ export default function PricingPage() {
             Flexible Plans for Our <HeroAccent>Diverse Ecosystem</HeroAccent>
           </>
         }
-        subtitle="Select the tier that matches your goals. Verified authors share directly in subscriber payouts."
+        subtitle="Select the tier that matches your goals, from free readers to global publishers."
       />
 
       <main className="py-15">
         <Container>
-          {/* A 320px floor drops to two columns at ~1024px, leaving the third
-              tier stranded on its own row. 290px keeps all three side by side
-              right down to the 992px single-column cutover. */}
-          <div className="mt-10 grid grid-cols-[repeat(auto-fill,minmax(min(290px,100%),1fr))] items-stretch gap-[30px] max-[992px]:mx-auto max-[992px]:max-w-[480px] max-[992px]:grid-cols-1 max-[992px]:gap-6">
+          <div className="mx-auto mt-10 flex w-fit items-center gap-1 rounded-full border border-line bg-bg-secondary p-1 text-[13px] font-semibold">
+            {(["month", "year"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setInterval(value)}
+                className={cn(
+                  "cursor-pointer rounded-full px-5 py-2 transition-colors",
+                  interval === value ? "bg-primary text-text-inverse" : "text-text-muted hover:text-text-main",
+                )}
+              >
+                {value === "month" ? "Monthly" : "Yearly (save 17%)"}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 xl:grid-cols-4 max-md:mx-auto max-md:max-w-[480px]">
             {PLANS.map((plan) => (
               <div
                 key={plan.title}
@@ -118,48 +210,64 @@ export default function PricingPage() {
                     : "border-line bg-bg-secondary",
                 )}
               >
-                <div
-                  className={cn(
-                    pricingBadge,
-                    plan.featured
-                      ? "border-transparent bg-primary text-text-inverse"
-                      : "border-line bg-bg-primary text-text-muted",
-                  )}
-                >
-                  {plan.badge}
-                </div>
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3.5 py-1 text-[11px] font-bold tracking-[0.5px] whitespace-nowrap text-text-inverse uppercase">
+                    {plan.badge}
+                  </div>
+                )}
 
-                <h3 className="mb-4 font-heading text-[22px] font-bold text-text-main">
+                <h3 className="mb-2 font-heading text-[22px] font-bold text-text-main">
                   {plan.title}
                 </h3>
-                <div className="mb-6 font-heading text-[40px] font-extrabold text-text-main">
-                  {plan.price}
-                  <span className="text-[15px] font-medium text-text-muted">
-                    {plan.period}
+                <p className="mb-5 min-h-[40px] text-[13.5px] leading-snug text-text-muted">
+                  {plan.desc}
+                </p>
+
+                <div className="flex flex-wrap items-baseline gap-x-1.5 font-heading text-text-main">
+                  <span className="text-[32px] leading-tight font-extrabold whitespace-nowrap">
+                    {interval === "year" && CATALOGUE[plan.code].yearlyCents
+                      ? formatAud(CATALOGUE[plan.code].yearlyCents!)
+                      : plan.price}
+                  </span>
+                  <span className="text-sm font-medium whitespace-nowrap text-text-muted">
+                    {interval === "year" && CATALOGUE[plan.code].yearlyCents ? "/ year" : plan.period}
                   </span>
                 </div>
-                <p className="mb-8 text-sm text-text-muted">{plan.desc}</p>
+                <p className="mt-1 mb-6 min-h-[20px] text-[13px] text-text-muted">
+                  {interval === "year" && CATALOGUE[plan.code].yearlyCents
+                    ? `That's ${formatAud(Math.round(CATALOGUE[plan.code].yearlyCents! / 12))} / month, billed yearly`
+                    : plan.yearly}
+                </p>
 
-                <ul className="mb-10 flex flex-1 list-none flex-col gap-3">
+                <PlanCta
+                  code={plan.code}
+                  interval={interval}
+                  label={plan.cta}
+                  variant={plan.variant}
+                  freeHref={plan.href}
+                />
+
+                <ul className="mt-6 flex flex-1 list-none flex-col gap-3 border-t border-line pt-6">
                   {plan.features.map((feature) => (
                     <li
                       key={feature}
                       className={cn(
-                        "pricing-check flex items-center gap-2.5 text-[13.5px]",
+                        "pricing-check flex items-start gap-2.5 text-[13.5px] leading-snug",
                         plan.featured && "pricing-check-accent",
                       )}
                     >
                       {feature}
                     </li>
                   ))}
+                  {plan.excluded?.map((feature) => (
+                    <li
+                      key={feature}
+                      className="pricing-cross flex items-start gap-2.5 text-[13.5px] leading-snug text-text-muted opacity-60"
+                    >
+                      {feature}
+                    </li>
+                  ))}
                 </ul>
-
-                <Link
-                  href={plan.href}
-                  className={buttonClasses(plan.variant, "md", "w-full")}
-                >
-                  {plan.cta}
-                </Link>
               </div>
             ))}
           </div>

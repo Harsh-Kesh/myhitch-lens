@@ -25,6 +25,7 @@ const PORTAL_PREFIXES = [
   "/article",
   "/profile",
   "/company",
+  "/billing",
 ];
 
 /**
@@ -43,7 +44,7 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
   // there's no reason for them to reach the authoring workspace itself.
   { prefix: "/submit", roles: ["author"] },
   { prefix: "/author-dashboard", roles: ["author"] },
-  { prefix: "/analytics", roles: ["author", "editor", "admin"] },
+  { prefix: "/analytics", roles: ["author", "editor", "admin", "corporate"] },
   // Not author-facing: these toggles are a single, platform-wide switch (no
   // per-author or per-article scoping behind them yet), so exposing them to
   // authors implies personal control that doesn't actually exist.
@@ -67,7 +68,7 @@ const ROLE_RULES: { prefix: string; roles: UserRole[] }[] = [
 
 export const authConfig = {
   session: { strategy: "jwt" },
-  pages: { signIn: "/auth" },
+  pages: { signIn: "/auth/login" },
   trustHost: true,
   providers: [], // real provider added in auth.ts
   callbacks: {
@@ -91,17 +92,14 @@ export const authConfig = {
       }
       return true;
     },
-    jwt({ token, user, trigger, session }) {
+    jwt({ token, user }) {
       if (user) {
         token.uid = user.id as string;
         token.role = (user as { role: UserRole }).role;
       }
-      // Lets a server action push a role change into the live session
-      // (e.g. becomeAuthor()) without forcing the user to log back in —
-      // see updateSession() in auth.ts.
-      if (trigger === "update" && session?.user?.role) {
-        token.role = session.user.role as UserRole;
-      }
+      // Session UPDATES are deliberately not handled here: the update payload
+      // can be sent by any signed-in browser, so it must never be trusted. The
+      // Node-runtime config in auth.ts re-derives the role from the database.
       return token;
     },
     session({ session, token }) {

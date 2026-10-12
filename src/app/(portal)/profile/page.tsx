@@ -3,12 +3,14 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConnectStatus } from "@/app/(portal)/author-dashboard/payoutActions";
+import { getEntitlements } from "@/lib/entitlements";
+import { PlanInfo } from "./PlanInfo";
 import { ProfileSettings } from "./ProfileSettings";
 
 /** Account settings — open to every signed-in role. */
 export default async function ProfilePage() {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -19,9 +21,12 @@ export default async function ProfilePage() {
       profile: { select: { bio: true, website: true, country: true, abn: true, avatarUrl: true } },
     },
   });
-  if (!user) redirect("/auth");
+  if (!user) redirect("/auth/login");
 
-  const connectStatus = session.user.role === "author" ? await getConnectStatus() : null;
+  // Payouts belong to monetisation (Professional and above); Free sees a locked note instead.
+  const canMonetise = session.user.role !== "author" || (await getEntitlements(session.user.id)).monetisation;
+  const connectStatus = session.user.role === "author" && canMonetise ? await getConnectStatus() : null;
+  const payoutsLocked = session.user.role === "author" && !canMonetise;
 
   return (
     <ProfileSettings
@@ -33,8 +38,13 @@ export default async function ProfilePage() {
       country={user.profile?.country ?? ""}
       abn={user.profile?.abn ?? ""}
       avatarUrl={user.profile?.avatarUrl ?? null}
-      role={session.user.role}
       connectStatus={connectStatus}
+      planSection={
+        session.user.role === "editor" || session.user.role === "admin" ? null : (
+          <PlanInfo userId={session.user.id} />
+        )
+      }
+      payoutsLocked={payoutsLocked}
     />
   );
 }

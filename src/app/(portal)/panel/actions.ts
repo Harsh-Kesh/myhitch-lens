@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
+import { getEntitlements, upgradeMessage } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { MARKETPLACE_DEFAULTS } from "@/lib/platformConfig";
 import { feeFor, round2 } from "@/lib/marketplace";
@@ -61,6 +62,10 @@ export async function createListing(input: {
   durationDays?: number;
 }): Promise<ActionResult> {
   const user = await requireUser();
+
+  if (!(await getEntitlements(user.id)).monetisation) {
+    return { error: upgradeMessage("Monetisation tools (selling your articles) aren't included in your plan.") };
+  }
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },

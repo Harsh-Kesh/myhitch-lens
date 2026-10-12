@@ -338,11 +338,18 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
                     AI Score: {item.aiScore}
                   </span>
                 </div>
-                {item.destination === "exchange_hub" && (
-                  <span className="inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning uppercase">
-                    Exchange Hub
-                  </span>
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {item.priority && (
+                    <span className="inline-flex rounded-full bg-primary-glow px-2 py-0.5 text-[10px] font-bold text-primary uppercase">
+                      Priority review
+                    </span>
+                  )}
+                  {item.destination === "exchange_hub" && (
+                    <span className="inline-flex rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-bold text-warning uppercase">
+                      Exchange Hub
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
           </div>

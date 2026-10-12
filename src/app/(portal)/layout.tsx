@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SessionSync } from "@/components/providers/SessionSync";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { getEntitlements } from "@/lib/entitlements";
 import { getMyNotifications } from "@/lib/notifications";
 import type { UserRole } from "@/lib/types";
 
@@ -15,10 +16,12 @@ import type { UserRole } from "@/lib/types";
  */
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const session = await auth();
-  if (!session?.user) redirect("/auth");
+  if (!session?.user) redirect("/auth/login");
 
   const role = session.user.role as UserRole;
   const name = session.user.name ?? "";
+  const isStaff = role === "editor" || role === "admin";
+  const showExchange = isStaff || role === "corporate" || (await getEntitlements(session.user.id)).sponsoredArticles;
   const [pendingReviewCount, { items: notifications, unreadCount }, profile] = await Promise.all([
     ["editor", "admin"].includes(role)
       ? prisma.article.count({ where: { status: "in_review", author: { role: { not: "corporate" } } } })
@@ -32,6 +35,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <SessionSync role={role} name={name} />
       <AppSidebar
         role={role}
+        showExchange={showExchange}
         name={name}
         avatarUrl={profile?.avatarUrl ?? null}
         pendingReviewCount={pendingReviewCount}

@@ -47,7 +47,7 @@ export function LandingHero({
             {subtitle}
           </p>
           <div className="hero-actions flex flex-wrap gap-3 max-[768px]:justify-center">
-            <ButtonLink href="/auth?mode=signup">Get Started Today</ButtonLink>
+            <ButtonLink href="/auth/login?mode=signup">Get Started Today</ButtonLink>
             <ButtonLink href="/contact" variant="secondary">
               Contact Support
             </ButtonLink>

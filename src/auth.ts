@@ -1,46 +1,62 @@
 import NextAuth from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
 
 import { authConfig } from "@/auth.config";
 import { prisma } from "@/lib/prisma";
-
-// A precomputed bcrypt hash with no matching plaintext, compared against on
-// every failed lookup so "unknown username" and "wrong password" take the
-// same amount of time — otherwise the missing bcrypt.compare on an unknown
-// username is a measurable timing side-channel for username enumeration.
-const DUMMY_HASH = "$2a$10$CwTycUXWue0Thq9StjUM0uJ8xRc0OTb0K1WlrBM9uWyfoU/GX7SZW";
+import { consumeTicket } from "@/lib/portalDb";
+import { signInPortalUser } from "@/lib/portalSignIn";
 
 /**
  * Full Auth.js (NextAuth v5) instance (Node runtime). Extends the edge-safe
- * base config with the Credentials provider that verifies against Postgres.
+ * base config with the portal SSO provider (the only way to sign in).
  *
  * NOTE: the role in the session is the source of truth for authorization —
  * never the client-side localStorage role (now only a UI convenience).
  */
 export const { handlers, auth, signIn, signOut, unstable_update: updateSession } = NextAuth({
   ...authConfig,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt(params) {
+      const token = ((await authConfig.callbacks.jwt(params)) ?? params.token) as JWT;
+
+      // A session UPDATE can be triggered with arbitrary data by any signed-in
+      // browser (POST /api/auth/session), so the payload is never trusted: the
+      // role is always re-read from the database.
+      if (params.trigger === "update" && token.uid) {
+        const row = await prisma.user.findUnique({ where: { id: token.uid }, select: { role: true } });
+        if (row) token.role = row.role;
+      }
+      return token;
+    },
+  },
   providers: [
+    // MYHitch Business portal SSO. The ONLY credential is a one-time ticket the
+    // portal minted for "lens"; it is redeemed atomically against the portal DB
+    // and then the Lens user is found, linked or created. `intent` is an
+    // unauthenticated UI hint, validated again inside signInPortalUser.
     Credentials({
-      credentials: {
-        username: { label: "Username" },
-        password: { label: "Password", type: "password" },
-      },
+      id: "portal-sso",
+      name: "MYHitch",
+      credentials: { ticket: {}, intent: {} },
       authorize: async (credentials) => {
-        const username = String(credentials?.username ?? "").trim().toLowerCase();
-        const password = String(credentials?.password ?? "");
-        if (!username || !password) return null;
+        const ticket = String(credentials?.ticket ?? "");
+        if (!ticket) return null;
 
-        const user = await prisma.user.findUnique({ where: { username } });
-        const valid = await bcrypt.compare(password, user?.passwordHash ?? DUMMY_HASH);
-        if (!user?.passwordHash || !valid) return null;
+        let auth0UserId: string | null;
+        try {
+          auth0UserId = await consumeTicket(ticket);
+        } catch (error) {
+          console.error("[sso] ticket redemption failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return null; // portal unavailable → fail closed
+        }
+        if (!auth0UserId) return null; // unknown, expired, used, or wrong audience
 
-        return {
-          id: user.id,
-          name: user.displayName,
-          email: user.email,
-          role: user.role,
-        };
+        const user = await signInPortalUser(auth0UserId, String(credentials?.intent ?? ""));
+        return user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null;
       },
     }),
   ],

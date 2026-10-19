@@ -95,9 +95,39 @@ async function freeUsername(base: string): Promise<string> {
 }
 
 /**
+ * Makes [userId] a company account: the hub only opens a session for a
+ * business MYHitch has approved, so its Lens account is a company even when
+ * it started as an author (e.g. it signed in on the website before the
+ * approval). A user already in a company keeps that membership; otherwise a
+ * company is made for the business, with them as its owner. Their own
+ * articles stay theirs. A suspended account stays refused.
+ */
+async function ensureCompany(userId: string, business: { name: string; abn: string | null }) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, suspended: true } });
+  if (!user || user.suspended) throw new HubError(401, "Please open your Lens account again.");
+  const membership = await prisma.orgMembership.findFirst({ where: { userId }, select: { id: true } });
+  if (user.role === "corporate" && membership) return;
+  if (membership) {
+    await prisma.user.update({ where: { id: userId }, data: { role: "corporate" } });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.organization.create({
+      data: {
+        name: business.name,
+        abn: business.abn,
+        members: { create: { userId, orgRole: "owner", isAdmin: true } },
+      },
+    }),
+    prisma.user.update({ where: { id: userId }, data: { role: "corporate" } }),
+  ]);
+}
+
+/**
  * The Lens company account of a MYHitch business: found by its MYHitch id,
- * else by its email if that's already a Lens company account (it's linked
- * then), else made new - a corporate user who owns a new organization.
+ * else by its email (it's linked then), else made new - a corporate user who
+ * owns a new organization. An author account found either way becomes the
+ * business's company account (see ensureCompany).
  */
 export async function openHubSession(input: {
   myhitchId: string;
@@ -111,30 +141,30 @@ export async function openHubSession(input: {
   const businessName = input.businessName.trim() || input.name.trim();
   if (!myhitchId || !email || !businessName) throw new HubError(400, "myhitchId, email and businessName are required.");
 
-  const linked = await prisma.platformIdentity.findUnique({ where: { myhitchId }, select: { userId: true } });
-  if (linked) {
-    await companyFor(linked.userId);
-    return linked.userId;
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
-  if (existing) {
-    const membership =
-      existing.role === "corporate"
-        ? await prisma.orgMembership.findFirst({ where: { userId: existing.id }, select: { id: true } })
-        : null;
-    const identity = await prisma.platformIdentity.findUnique({ where: { userId: existing.id }, select: { id: true } });
-    if (!membership || identity) {
-      throw new HubError(409, "This email already has a Lens account that isn't a company account. Log in on the Lens website instead.");
-    }
-    await prisma.platformIdentity.create({ data: { userId: existing.id, myhitchId } });
-    return existing.id;
-  }
-
   let abn: string | null = null;
   if (input.abn?.trim()) {
     const normalized = normalizeAbn(input.abn);
     if (/^\d{11}$/.test(normalized)) abn = normalized;
+  }
+  const business = { name: businessName, abn };
+
+  const linked = await prisma.platformIdentity.findUnique({ where: { myhitchId }, select: { userId: true } });
+  if (linked) {
+    await ensureCompany(linked.userId, business);
+    await companyFor(linked.userId);
+    return linked.userId;
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (existing) {
+    // Already linked to a different MYHitch account: not this business's.
+    const identity = await prisma.platformIdentity.findUnique({ where: { userId: existing.id }, select: { myhitchId: true } });
+    if (identity && identity.myhitchId !== myhitchId) {
+      throw new HubError(409, "This email's Lens account belongs to another MYHitch account. Log in on the Lens website instead.");
+    }
+    await ensureCompany(existing.id, business);
+    if (!identity) await prisma.platformIdentity.create({ data: { userId: existing.id, myhitchId } });
+    return existing.id;
   }
 
   const user = await prisma.user.create({

@@ -22,7 +22,7 @@ import {
 import { MAX_EXCERPT_CHARS, suggestTitleAndExcerpt, type TitleExcerptResult } from "@/lib/titleExcerpt";
 import { suggestTags, type TagSuggestionResult } from "@/lib/tagSuggestions";
 import { suggestImageText, type ImageTextResult } from "@/lib/imageText";
-import { isRewriteAction, MAX_REWRITE_CHARS, rewriteText } from "@/lib/rewrite";
+import { isRewriteAction, MAX_INSTRUCTION_CHARS, MAX_REWRITE_CHARS, MIN_INSTRUCTION_CHARS, rewriteText } from "@/lib/rewrite";
 import { pageBreakdown, suggestLayout, type LayoutHints, type PageBreakdown } from "@/lib/layoutHints";
 import { cleanSeo, suggestSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import {
@@ -667,12 +667,20 @@ export async function getLayoutHints(
 export async function rewriteSelectedText(
   text: string,
   action: string,
+  instruction?: string,
 ): Promise<{ error: string } | { text: string }> {
   const session = await requireAuthorSession();
   const suspendedError = await checkNotSuspended(session.user.id);
   if (suspendedError) return suspendedError;
 
   if (!isRewriteAction(action)) return { error: "Choose a rewrite option." };
+  const wanted = String(instruction ?? "").replace(/\s+/g, " ").trim();
+  if (action === "custom" && wanted.length < MIN_INSTRUCTION_CHARS) {
+    return { error: "Type what you want the AI to change, in a few words." };
+  }
+  if (wanted.length > MAX_INSTRUCTION_CHARS) {
+    return { error: `Keep your instruction under ${MAX_INSTRUCTION_CHARS} characters.` };
+  }
   const passage = String(text ?? "").trim();
   if (passage.split(/\s+/).filter(Boolean).length < 3) return { error: "Select a few more words to rewrite." };
   if (passage.length > MAX_REWRITE_CHARS) {
@@ -684,7 +692,7 @@ export async function rewriteSelectedText(
   if (!slot.ok) return { error: slot.error };
 
   try {
-    return { text: await rewriteText(passage, action) };
+    return { text: await rewriteText(passage, action, wanted) };
   } catch (err) {
     console.error("[rewriteSelectedText]", err);
     return { error: err instanceof Error ? err.message : "Rewrite failed. Please try again." };

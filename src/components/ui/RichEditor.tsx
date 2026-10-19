@@ -23,7 +23,12 @@ import { MagazinePage } from "@/components/ui/MagazinePage";
 import { applyRewrite, readRewriteSelection, type RewriteSelection } from "@/lib/editorRewrite";
 
 /** Optional AI helper that rewrites a passage; `action` is one of the options in the toolbar's AI menu. */
-export type TextRewriter = (text: string, action: string) => Promise<{ text: string } | { error: string }>;
+export type TextRewriter = (
+  text: string,
+  action: string,
+  /** The author's own wording, for the "custom" action. */
+  instruction?: string,
+) => Promise<{ text: string } | { error: string }>;
 
 /** Optional AI helper that proposes alt text + a caption for an uploaded image. */
 export type MediaTextSuggester = (src: string) => Promise<{ alt: string; caption: string } | { error: string }>;
@@ -723,6 +728,12 @@ const TONE_OPTIONS = [
   { value: "professional", label: "Professional" },
 ];
 
+/** What the author picked: a preset, or their own wording (value "custom" with `instruction`). */
+type RewriteChoice = { value: string; label: string; instruction?: string };
+
+const CUSTOM_MIN = 3;
+const CUSTOM_MAX = 200; // keep in sync with MAX_INSTRUCTION_CHARS in lib/rewrite.ts
+
 function AiRewriteMenu({
   editor,
   onRewriteText,
@@ -733,7 +744,8 @@ function AiRewriteMenu({
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"menu" | "loading" | "result" | "error">("menu");
   const [selection, setSelection] = useState<RewriteSelection | null>(null);
-  const [action, setAction] = useState<{ value: string; label: string } | null>(null);
+  const [action, setAction] = useState<RewriteChoice | null>(null);
+  const [customText, setCustomText] = useState("");
   const [result, setResult] = useState("");
   const [message, setMessage] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -742,6 +754,7 @@ function AiRewriteMenu({
     setOpen(false);
     setPhase("menu");
     setSelection(null);
+    setCustomText("");
     setResult("");
     setMessage("");
   }, []);
@@ -777,12 +790,12 @@ function AiRewriteMenu({
     }
   }
 
-  async function run(opt: { value: string; label: string }) {
+  async function run(opt: RewriteChoice) {
     if (!selection) return;
     setAction(opt);
     setPhase("loading");
     try {
-      const res = await onRewriteText(selection.text, opt.value);
+      const res = await onRewriteText(selection.text, opt.value, opt.instruction);
       if ("error" in res) {
         setMessage(res.error);
         setPhase("error");
@@ -840,6 +853,37 @@ function AiRewriteMenu({
               <p className="px-2.5 pt-1 pb-1.5 text-[11px] text-text-muted">
                 Rewrite the selected {selection.text.split(/\s+/).filter(Boolean).length} words:
               </p>
+              {/* Your own instruction. data-selectable lets the field take focus without losing the selection. */}
+              <form
+                data-selectable
+                className="mb-1.5 flex items-center gap-1.5 px-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const instruction = customText.trim();
+                  if (instruction.length >= CUSTOM_MIN) run({ value: "custom", label: "Your instruction", instruction });
+                }}
+              >
+                <input
+                  type="text"
+                  data-selectable
+                  value={customText}
+                  maxLength={CUSTOM_MAX}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  placeholder="Tell AI what to change, e.g. make it more exciting"
+                  aria-label="Tell the AI how to rewrite the selected text"
+                  className="min-w-0 flex-1 rounded-md border border-line bg-bg-primary px-2.5 py-1.5 text-[12.5px] text-text-main outline-none placeholder:text-text-muted/70 focus:border-primary"
+                />
+                <button
+                  type="submit"
+                  disabled={customText.trim().length < CUSTOM_MIN}
+                  className="shrink-0 cursor-pointer rounded-md bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-hover disabled:cursor-default disabled:opacity-50"
+                >
+                  Go
+                </button>
+              </form>
+              <p className="mt-2 border-t border-line px-2.5 pt-2 pb-1 text-[10px] font-bold tracking-wide text-text-muted uppercase">
+                Or choose
+              </p>
               {REWRITE_OPTIONS.map((o) => (
                 <button key={o.value} type="button" onClick={() => run(o)} className={optionClass}>
                   {o.label}
@@ -887,6 +931,11 @@ function AiRewriteMenu({
               </div>
               {selection.blocks.length > 0 && (
                 <p className="mt-1.5 text-[10.5px] text-text-muted">Bold, italics and links inside these paragraphs are reset.</p>
+              )}
+              {action?.value === "custom" && (
+                <p className="mt-1.5 text-[10.5px] text-text-muted">
+                  The AI followed your wording and may add details you didn&apos;t write. Check they&apos;re true before you replace.
+                </p>
               )}
               <div className="mt-2.5 flex items-center gap-3">
                 <button

@@ -126,7 +126,10 @@ export default function SubmitPage() {
   useEffect(() => {
     titleRef.current = title;
   }, [title]);
-  const handleRewriteText = useCallback((text: string, action: string) => rewriteSelectedText(text, action), []);
+  const handleRewriteText = useCallback(
+    (text: string, action: string, instruction?: string) => rewriteSelectedText(text, action, instruction),
+    [],
+  );
   const handleSuggestMediaText = useCallback(
     async (src: string) => {
       const res = await suggestMediaText(src, titleRef.current);

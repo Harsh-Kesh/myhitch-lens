@@ -22,6 +22,7 @@ import { cn } from "@/lib/cn";
 import type { ArticleDetail } from "@/lib/articles";
 import type { OwnershipInfo } from "@/lib/marketplace";
 import { licenseShort } from "@/lib/licenses";
+import { PromoteTools } from "./PromoteTools";
 import { postComment, recordArticleShare, recordArticleView, reportCopyright, toggleBookmark, toggleFollow, toggleLike } from "./actions";
 
 const AUDIO_DURATION_SECONDS = 154;
@@ -294,6 +295,8 @@ export function ArticleView({
         </div>
 
         {widgets.length > 0 && <div className="mb-8 flex flex-col gap-4 border-y border-line py-6">{widgets}</div>}
+
+        {article.isOwnArticle && <PromoteTools articleId={article.id} />}
 
         {/* Rights / copyright bar */}
         <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-bg-primary px-4 py-3 text-[12px] text-text-muted">

@@ -2,6 +2,7 @@ import "server-only";
 
 import { priorityAuthorIds } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
+import { cleanSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import type { FeedArticle } from "@/lib/types";
 
 /** Read the minutes-to-read we stored on the article's aiScores blob. */
@@ -158,6 +159,15 @@ export interface ArticleDetail {
   bookmarked: boolean;
   shares: number;
   comments: ArticleComment[];
+  /** Search title / description / keywords the author saved on submit, if any. */
+  seo: SeoMetadata | null;
+}
+
+/** The search metadata saved in an article's aiScores blob, if any. */
+function readSeo(aiScores: unknown): SeoMetadata | null {
+  if (!aiScores || typeof aiScores !== "object" || !("seo" in aiScores)) return null;
+  const seo = cleanSeo((aiScores as { seo: Record<string, unknown> }).seo ?? {});
+  return seo.title || seo.description || seo.keywords.length > 0 ? seo : null;
 }
 
 /** Full article for the reader page, with the current user's like/bookmark state. */
@@ -212,5 +222,6 @@ export async function getArticle(
       text: comment.text,
       date: comment.createdAt.toISOString().slice(0, 10),
     })),
+    seo: readSeo(row.aiScores),
   };
 }

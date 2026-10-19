@@ -6,12 +6,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import {
   BillingError,
-  createCheckoutUrl,
   createPortalUrl,
   freePlanSwitchEnabled,
-  hasActivePaidPlan,
-  isInterval,
-  isPaidPlan,
+  startCheckoutFor,
   switchPlanWithoutPayment,
 } from "@/lib/billing";
 import { isPlanCode } from "@/lib/plans";
@@ -30,18 +27,8 @@ export async function startCheckout(plan: string, interval: string): Promise<Che
   if (session.user.role === "editor" || session.user.role === "admin") {
     return { error: "Staff accounts don't need a plan." };
   }
-  if (!isPaidPlan(plan) || !isInterval(interval)) return { error: "Choose a valid plan." };
-
-  try {
-    if (await hasActivePaidPlan(session.user.id)) {
-      return { error: "You already have a paid plan. Use Manage billing to change or cancel it." };
-    }
-    return { url: await createCheckoutUrl(session.user.id, plan, interval) };
-  } catch (error) {
-    if (error instanceof BillingError) return { error: error.message };
-    console.error("[billing] checkout failed", { error: error instanceof Error ? error.message : String(error) });
-    return { error: "Couldn't start checkout. Please try again shortly." };
-  }
+  const result = await startCheckoutFor(session.user.id, plan, interval);
+  return "error" in result ? { error: result.error } : result;
 }
 
 /** Open the Stripe Billing Portal (change plan, payment method, invoices, cancel). */

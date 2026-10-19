@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { hubError, overview, requireHubCompany, updateDetails } from "@/lib/hubCompany";
 
-/** GET /api/hub/company - the company, your role and the team. */
+/** GET /api/hub/company - the company, your role, the team, seats and pending invites. */
 export async function GET(request: Request) {
   try {
     const ctx = await requireHubCompany(request);
@@ -12,12 +12,11 @@ export async function GET(request: Request) {
   }
 }
 
-/** PATCH /api/hub/company - the company's name and ABN (owner). */
+/** PATCH /api/hub/company - refused (403): the name and ABN come from MYHitch Business. */
 export async function PATCH(request: Request) {
   try {
-    const ctx = await requireHubCompany(request);
-    await updateDetails(ctx, await request.json().catch(() => ({})));
-    return NextResponse.json({ ok: true });
+    await requireHubCompany(request);
+    updateDetails();
   } catch (e) {
     return hubError(e);
   }

@@ -7,39 +7,8 @@ import { useState, useTransition } from "react";
 import { startCheckout, switchPlan } from "@/app/(portal)/billing/actions";
 import { buttonClasses } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
+import { PLAN_HIGHLIGHTS } from "@/lib/planBenefits";
 import { PLANS, PLAN_CODES, formatAud, type BillingInterval, type PlanCode } from "@/lib/plans";
-
-/** What each package gives, in plain words (only things Lens actually delivers today). */
-const HIGHLIGHTS: Record<PlanCode, string[]> = {
-  free: [
-    "2 article submissions a month",
-    "Magazine pages 121–124, 2 pages per article",
-    "1 Exchange Hub listing",
-    "Basic analytics",
-    "Editorial review",
-  ],
-  creator: [
-    "10 article submissions a month",
-    "Magazine pages 57–120, 2 pages per article",
-    "5 Exchange Hub listings",
-    "Verified Author badge",
-    "Standard analytics",
-  ],
-  professional: [
-    "Unlimited submissions",
-    "Magazine pages 9–120, up to 3 pages per article",
-    "Unlimited Exchange Hub listings",
-    "Monetisation and sponsored articles",
-    "Priority editorial review",
-    "Advanced analytics and audience insights",
-  ],
-  business: [
-    "Everything in Professional",
-    "Magazine pages 9–120, up to 4 pages per article",
-    "Unlimited Exchange Hub listings",
-    "5 team seats, extra users AU$5/month",
-  ],
-};
 
 /**
  * The four packages on the author's own dashboard, with the current one marked
@@ -175,7 +144,7 @@ export function PackagePicker({
                 </span>
               </p>
               <ul className="my-3 flex flex-1 flex-col gap-1.5 text-[12px] text-text-muted">
-                {HIGHLIGHTS[code].map((line) => (
+                {PLAN_HIGHLIGHTS[code].map((line) => (
                   <li key={line}>✓ {line}</li>
                 ))}
               </ul>

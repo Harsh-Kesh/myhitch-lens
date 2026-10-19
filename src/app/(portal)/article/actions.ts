@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
+import { appealTakedownFor, fileEditorialAppealFor, type EditorialAppealReason as Reason } from "@/lib/appeals";
 import { prisma } from "@/lib/prisma";
 import { syncContributorRank } from "@/lib/ranking";
 
@@ -98,51 +99,18 @@ export async function appealTakedown(
 ): Promise<{ error: string } | { ok: true }> {
   const session = await auth();
   if (!session?.user) return { error: "Please sign in." };
-  const text = appealText.trim();
-  if (!text) return { error: "Explain why the removal should be reversed." };
-
-  const article = await prisma.article.findUnique({
-    where: { id: articleId },
-    select: { authorId: true, status: true, title: true },
-  });
-  if (!article) return { error: "Article not found." };
-  if (article.authorId !== session.user.id) return { error: "Not your article." };
-  if (article.status !== "rejected") return { error: "This article hasn't been removed." };
-
-  const ticket = await prisma.disputeTicket.findFirst({
-    where: { subject: { startsWith: `${articleId} — ` }, reason: "copyright", status: "resolved" },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!ticket) return { error: "No copyright takedown found for this article." };
-  if (ticket.appealStatus !== "none") return { error: "An appeal has already been filed for this removal." };
-
-  await prisma.$transaction([
-    prisma.disputeTicket.update({
-      where: { id: ticket.id },
-      data: { appealStatus: "pending", appealText: text, appealedAt: new Date() },
-    }),
-    prisma.notification.createMany({
-      data: (
-        await prisma.user.findMany({ where: { role: { in: ["editor", "admin"] } }, select: { id: true } })
-      ).map((u) => ({
-        userId: u.id,
-        type: "appeal",
-        text: `${session.user.name ?? "An author"} appealed the removal of "${article.title}".`,
-      })),
-    }),
-  ]);
-
+  const result = await appealTakedownFor({ id: session.user.id, name: session.user.name }, articleId, appealText);
+  if ("error" in result) return { error: result.error };
   return { ok: true };
 }
 
-const EDITORIAL_APPEAL_REASONS = ["plagiarism", "category", "editorial", "other"] as const;
-export type EditorialAppealReason = (typeof EDITORIAL_APPEAL_REASONS)[number];
+export type EditorialAppealReason = Reason;
 
 /**
  * Author disputes a non-copyright editorial call on their own article — an
  * inaccurate plagiarism flag, a miscategorisation, a rejection they think was
  * unfair, or anything else. Separate from `appealTakedown`, which is only for
- * reversing a copyright takedown.
+ * reversing a copyright takedown. The rules are in src/lib/appeals.ts.
  */
 export async function fileEditorialAppeal(input: {
   articleId: string;
@@ -151,57 +119,8 @@ export async function fileEditorialAppeal(input: {
 }): Promise<{ error: string } | { ok: true }> {
   const session = await auth();
   if (!session?.user) return { error: "Please sign in." };
-  if (!EDITORIAL_APPEAL_REASONS.includes(input.reason)) return { error: "Choose a valid reason." };
-  const text = input.justify.trim();
-  if (!text) return { error: "Explain the issue so an editor can act on it." };
-
-  const article = await prisma.article.findUnique({
-    where: { id: input.articleId },
-    select: { authorId: true, title: true },
-  });
-  if (!article) return { error: "Article not found." };
-  if (article.authorId !== session.user.id) return { error: "Not your article." };
-
-  const existing = await prisma.disputeTicket.findFirst({
-    where: {
-      subject: { startsWith: `${input.articleId} — ` },
-      reason: input.reason,
-      status: { in: ["open", "under_review"] },
-    },
-  });
-  if (existing) return { error: "You already have an open appeal of this type for this article." };
-
-  // Cap total editorial appeal attempts per article, regardless of reason —
-  // prevents indefinite re-filing after each rejection.
-  const priorAppealCount = await prisma.disputeTicket.count({
-    where: {
-      subject: { startsWith: `${input.articleId} — ` },
-      reason: { in: [...EDITORIAL_APPEAL_REASONS] },
-    },
-  });
-  if (priorAppealCount >= 2) {
-    return { error: "You've reached the maximum of 2 appeals for this article." };
-  }
-
-  await prisma.$transaction([
-    prisma.disputeTicket.create({
-      data: {
-        userId: session.user.id,
-        subject: `${input.articleId} — ${article.title}`,
-        reason: input.reason,
-        justify: text,
-      },
-    }),
-    prisma.notification.createMany({
-      data: (
-        await prisma.user.findMany({ where: { role: { in: ["editor", "admin"] } }, select: { id: true } })
-      ).map((u) => ({
-        userId: u.id,
-        type: "appeal",
-        text: `${session.user.name ?? "An author"} filed an appeal on "${article.title}".`,
-      })),
-    }),
-  ]);
+  const result = await fileEditorialAppealFor({ id: session.user.id, name: session.user.name }, input);
+  if ("error" in result) return { error: result.error };
 
   revalidatePath("/author-dashboard");
   return { ok: true };

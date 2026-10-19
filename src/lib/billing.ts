@@ -173,6 +173,30 @@ export async function createCheckoutUrl(userId: string, plan: PaidPlan, interval
   return session.url;
 }
 
+/**
+ * Checkout for [userId], as the pricing page starts it (and the MYHitch app):
+ * the plan and interval are validated against the catalogue, someone already
+ * paying is sent to the billing portal instead, and the price is looked up on
+ * the server. `status` is the HTTP status the hub answers with.
+ */
+export async function startCheckoutFor(
+  userId: string,
+  plan: unknown,
+  interval: unknown,
+): Promise<{ url: string } | { error: string; status: number }> {
+  if (!isPaidPlan(plan) || !isInterval(interval)) return { error: "Choose a valid plan.", status: 400 };
+  try {
+    if (await hasActivePaidPlan(userId)) {
+      return { error: "You already have a paid plan. Use Manage billing to change or cancel it.", status: 409 };
+    }
+    return { url: await createCheckoutUrl(userId, plan, interval) };
+  } catch (error) {
+    if (error instanceof BillingError) return { error: error.message, status: 400 };
+    console.error("[billing] checkout failed", { error: error instanceof Error ? error.message : String(error) });
+    return { error: "Couldn't start checkout. Please try again shortly.", status: 502 };
+  }
+}
+
 function mapStatus(status: Stripe.Subscription.Status): "active" | "past_due" | "canceled" | "incomplete" {
   switch (status) {
     case "active":

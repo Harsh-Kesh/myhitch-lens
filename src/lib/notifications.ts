@@ -37,3 +37,20 @@ export async function getMyNotifications(userId: string, limit = 20): Promise<My
     unreadCount,
   };
 }
+
+/** Mark one of this user's own notifications as read. False when it isn't theirs (or doesn't exist). */
+export async function markNotificationReadFor(userId: string, id: string): Promise<boolean> {
+  const { count } = await prisma.notification.updateMany({
+    where: { id, userId },
+    data: { read: true },
+  });
+  return count > 0;
+}
+
+/** Mark every notification this user has as read. */
+export async function markAllNotificationsReadFor(userId: string): Promise<void> {
+  await prisma.notification.updateMany({
+    where: { userId, read: false },
+    data: { read: true },
+  });
+}

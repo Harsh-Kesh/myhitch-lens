@@ -4,10 +4,12 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import type { OrgRole } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { lookupAbn, normalizeAbn } from "@/lib/abn";
+import { normalizeAbn } from "@/lib/abn";
+import { BillingError, setExtraSeats } from "@/lib/billing";
+import { getSeatUsage, inviteToCompany, pendingInvites, resolveLegalEntity, revokeCompanyInvite } from "@/lib/companyTeam";
+import { MAX_EXTRA_SEATS } from "@/lib/plans";
 import { mintProvenance } from "@/lib/provenance";
 import { bearer, hubDenied, verifyHubToken } from "@/lib/hubAuth";
 
@@ -15,7 +17,8 @@ import { bearer, hubDenied, verifyHubToken } from "@/lib/hubAuth";
  * The company dashboard for businesses using the MYHitch app, through the
  * MYHitch hub. Mirrors src/app/(portal)/company/actions.ts. A business signed
  * in through the hub is its company's owner, so it can do all of it: team,
- * company details, writing articles and reviewing them.
+ * seats, writing articles and reviewing them. The company's name and ABN come
+ * from MYHitch Business and can't be changed here.
  */
 
 export class HubError extends Error {
@@ -52,16 +55,16 @@ export async function requireHubCompany(request: Request) {
   return companyFor(userId);
 }
 
-type Ability = "team" | "write" | "review";
+export type Ability = "team" | "write" | "review";
 
-function can(ctx: HubCompany, ability: Ability): boolean {
+export function can(ctx: HubCompany, ability: Ability): boolean {
   if (ctx.membership.isAdmin) return true;
   if (ability === "write") return ctx.membership.orgRole === "author";
   if (ability === "review") return ctx.membership.orgRole === "editor";
   return false;
 }
 
-function need(ctx: HubCompany, ability: Ability) {
+export function need(ctx: HubCompany, ability: Ability) {
   if (!can(ctx, ability)) {
     throw new HubError(
       403,
@@ -95,9 +98,39 @@ async function freeUsername(base: string): Promise<string> {
 }
 
 /**
+ * Makes [userId] a company account: the hub only opens a session for a
+ * business MYHitch has approved, so its Lens account is a company even when
+ * it started as an author (e.g. it signed in on the website before the
+ * approval). A user already in a company keeps that membership; otherwise a
+ * company is made for the business, with them as its owner. Their own
+ * articles stay theirs. A suspended account stays refused.
+ */
+async function ensureCompany(userId: string, business: { name: string; abn: string | null }) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, suspended: true } });
+  if (!user || user.suspended) throw new HubError(401, "Please open your Lens account again.");
+  const membership = await prisma.orgMembership.findFirst({ where: { userId }, select: { id: true } });
+  if (user.role === "corporate" && membership) return;
+  if (membership) {
+    await prisma.user.update({ where: { id: userId }, data: { role: "corporate" } });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.organization.create({
+      data: {
+        name: business.name,
+        abn: business.abn,
+        members: { create: { userId, orgRole: "owner", isAdmin: true } },
+      },
+    }),
+    prisma.user.update({ where: { id: userId }, data: { role: "corporate" } }),
+  ]);
+}
+
+/**
  * The Lens company account of a MYHitch business: found by its MYHitch id,
- * else by its email if that's already a Lens company account (it's linked
- * then), else made new - a corporate user who owns a new organization.
+ * else by its email (it's linked then), else made new - a corporate user who
+ * owns a new organization. An author account found either way becomes the
+ * business's company account (see ensureCompany).
  */
 export async function openHubSession(input: {
   myhitchId: string;
@@ -111,30 +144,30 @@ export async function openHubSession(input: {
   const businessName = input.businessName.trim() || input.name.trim();
   if (!myhitchId || !email || !businessName) throw new HubError(400, "myhitchId, email and businessName are required.");
 
-  const linked = await prisma.platformIdentity.findUnique({ where: { myhitchId }, select: { userId: true } });
-  if (linked) {
-    await companyFor(linked.userId);
-    return linked.userId;
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true, role: true } });
-  if (existing) {
-    const membership =
-      existing.role === "corporate"
-        ? await prisma.orgMembership.findFirst({ where: { userId: existing.id }, select: { id: true } })
-        : null;
-    const identity = await prisma.platformIdentity.findUnique({ where: { userId: existing.id }, select: { id: true } });
-    if (!membership || identity) {
-      throw new HubError(409, "This email already has a Lens account that isn't a company account. Log in on the Lens website instead.");
-    }
-    await prisma.platformIdentity.create({ data: { userId: existing.id, myhitchId } });
-    return existing.id;
-  }
-
   let abn: string | null = null;
   if (input.abn?.trim()) {
     const normalized = normalizeAbn(input.abn);
     if (/^\d{11}$/.test(normalized)) abn = normalized;
+  }
+  const business = { name: businessName, abn };
+
+  const linked = await prisma.platformIdentity.findUnique({ where: { myhitchId }, select: { userId: true } });
+  if (linked) {
+    await ensureCompany(linked.userId, business);
+    await companyFor(linked.userId);
+    return linked.userId;
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (existing) {
+    // Already linked to a different MYHitch account: not this business's.
+    const identity = await prisma.platformIdentity.findUnique({ where: { userId: existing.id }, select: { myhitchId: true } });
+    if (identity && identity.myhitchId !== myhitchId) {
+      throw new HubError(409, "This email's Lens account belongs to another MYHitch account. Log in on the Lens website instead.");
+    }
+    await ensureCompany(existing.id, business);
+    if (!identity) await prisma.platformIdentity.create({ data: { userId: existing.id, myhitchId } });
+    return existing.id;
   }
 
   const user = await prisma.user.create({
@@ -169,19 +202,31 @@ export async function openHubSession(input: {
 
 export async function overview(ctx: HubCompany) {
   const { membership } = ctx;
-  const members = await prisma.orgMembership.findMany({
-    where: { orgId: membership.orgId },
-    orderBy: { id: "asc" },
-    include: { user: { select: { username: true, displayName: true, email: true, createdAt: true } } },
-  });
+  // As the website's company dashboard: the owner's name and ABN come live from MYHitch Business.
+  const legal = membership.isAdmin
+    ? await resolveLegalEntity(ctx.user.id, membership.org)
+    : { name: membership.org.name, abn: membership.org.abn, fromPortal: false };
+  const [members, seatUsage, invites] = await Promise.all([
+    prisma.orgMembership.findMany({
+      where: { orgId: membership.orgId },
+      orderBy: { id: "asc" },
+      include: { user: { select: { username: true, displayName: true, email: true, createdAt: true } } },
+    }),
+    getSeatUsage(membership.orgId),
+    membership.isAdmin ? pendingInvites(membership.orgId) : Promise.resolve([]),
+  ]);
   return {
     orgId: membership.orgId,
-    orgName: membership.org.name,
-    abn: membership.org.abn,
-    seats: membership.org.seats,
+    orgName: legal.name,
+    abn: legal.abn,
+    fromPortal: legal.fromPortal,
     myRole: membership.orgRole,
     isOwner: membership.isAdmin,
     can: { team: can(ctx, "team"), write: can(ctx, "write"), review: can(ctx, "review") },
+    // Kept for older app builds: the seats the plan covers.
+    seats: seatUsage.total,
+    extraSeats: seatUsage.extra,
+    seatUsage,
     members: members.map((m) => ({
       id: m.userId,
       username: m.user.username,
@@ -192,69 +237,66 @@ export async function overview(ctx: HubCompany) {
       isMe: m.userId === ctx.user.id,
       createdAt: m.user.createdAt.toISOString(),
     })),
+    invites: invites.map((i) => ({
+      id: i.id,
+      email: i.email,
+      displayName: i.displayName,
+      orgRole: i.orgRole,
+      createdAt: i.createdAt.toISOString(),
+    })),
   };
 }
 
-export async function updateDetails(ctx: HubCompany, input: { name?: unknown; abn?: unknown }) {
+/** The company's name and ABN are MYHitch Business's; the app can't change them. */
+export function updateDetails(): never {
+  throw new HubError(403, "Your company's name and ABN come from your MYHitch Business details.");
+}
+
+/** The old username/password sub-accounts are gone: the team is built by invite. */
+export function addMember(): never {
+  throw new HubError(410, "Team members are added by invite now.");
+}
+
+/** Invites someone as an author or editor (owner); same rules as the website. */
+export async function inviteMember(
+  ctx: HubCompany,
+  input: { email?: unknown; displayName?: unknown; orgRole?: unknown },
+): Promise<string> {
   need(ctx, "team");
-  const name = String(input.name ?? "").trim();
-  if (!name) throw new HubError(400, "Company name can't be empty.");
-  // Left out: the ABN stays as it is. Sent empty: it's removed.
-  let abn: string | null | undefined = undefined;
-  if (input.abn !== undefined) {
-    const abnInput = String(input.abn ?? "").trim();
-    abn = null;
-    if (abnInput) {
-      const check = await lookupAbn(abnInput);
-      if (!check.valid) throw new HubError(400, check.error ?? "That ABN doesn't look valid.");
-      abn = normalizeAbn(abnInput);
-    }
-  }
-  await prisma.organization.update({ where: { id: ctx.membership.orgId }, data: { name, abn } });
-  // An owner named after the company (as the hub sets them up) follows it.
-  if (ctx.membership.isAdmin && ctx.user.displayName === ctx.membership.org.name) {
-    await prisma.user.update({ where: { id: ctx.user.id }, data: { displayName: name } });
-  }
+  const result = await inviteToCompany(
+    { userId: ctx.user.id, orgId: ctx.membership.orgId },
+    { email: String(input.email ?? ""), displayName: String(input.displayName ?? ""), orgRole: String(input.orgRole ?? "") },
+  );
+  if ("error" in result) throw new HubError(result.status, result.error);
+  refresh();
+  return result.id;
+}
+
+export async function revokeInvite(ctx: HubCompany, inviteId: string) {
+  need(ctx, "team");
+  const result = await revokeCompanyInvite(ctx.membership.orgId, inviteId);
+  if ("error" in result) throw new HubError(result.status, result.error);
   refresh();
 }
 
-export async function addMember(
-  ctx: HubCompany,
-  input: { username?: unknown; email?: unknown; password?: unknown; displayName?: unknown; orgRole?: unknown },
-) {
+/** Extra users on the owner's Business subscription (prorated by Stripe). */
+export async function setSeats(ctx: HubCompany, input: { extraSeats?: unknown }) {
   need(ctx, "team");
-  const username = String(input.username ?? "").trim().toLowerCase();
-  const email = String(input.email ?? "").trim().toLowerCase();
-  const displayName = String(input.displayName ?? "").trim();
-  const password = String(input.password ?? "");
-  const orgRole = input.orgRole === "editor" ? "editor" : input.orgRole === "author" ? "author" : null;
-  if (!username || !email || !displayName) throw new HubError(400, "Fill in username, email, and display name.");
-  if (!/^[a-z0-9_.-]{3,30}$/.test(username)) throw new HubError(400, "Usernames are 3-30 letters, numbers, dots, dashes or underscores.");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HubError(400, "That email doesn't look right.");
-  if (password.length < 8) throw new HubError(400, "Password must be at least 8 characters.");
-  if (!orgRole) throw new HubError(400, "Pick author or editor.");
-
-  const seatCount = await prisma.orgMembership.count({ where: { orgId: ctx.membership.orgId } });
-  if (seatCount >= ctx.membership.org.seats) {
-    throw new HubError(400, `You've used all ${ctx.membership.org.seats} seats on your plan.`);
+  const raw = input.extraSeats;
+  const count = typeof raw === "number" ? raw : typeof raw === "string" && /^\d+$/.test(raw.trim()) ? Number(raw) : Number.NaN;
+  if (!Number.isInteger(count) || count < 0 || count > MAX_EXTRA_SEATS) {
+    throw new HubError(400, `Choose between 0 and ${MAX_EXTRA_SEATS} extra users.`);
   }
-  const taken = await prisma.user.findFirst({ where: { OR: [{ username }, { email }] }, select: { id: true } });
-  if (taken) throw new HubError(409, "That username or email is already registered.");
-
-  await prisma.user.create({
-    data: {
-      username,
-      email,
-      passwordHash: await bcrypt.hash(password, 10),
-      role: "corporate",
-      displayName,
-      profile: { create: {} },
-      wallet: { create: {} },
-      rank: { create: {} },
-      memberships: { create: { orgId: ctx.membership.orgId, orgRole: orgRole as OrgRole, isAdmin: false } },
-    },
-  });
+  try {
+    await setExtraSeats(ctx.user.id, count);
+  } catch (error) {
+    if (error instanceof BillingError) throw new HubError(400, error.message);
+    console.error("[company] extra seats failed", { error: error instanceof Error ? error.message : String(error) });
+    throw new HubError(502, "Couldn't update your extra users right now. Please try again shortly.");
+  }
   refresh();
+  const seatUsage = await getSeatUsage(ctx.membership.orgId);
+  return { extraSeats: seatUsage.extra, seatUsage };
 }
 
 export async function removeMember(ctx: HubCompany, userId: string) {
@@ -464,6 +506,8 @@ export async function createArticle(ctx: HubCompany, input: { title?: unknown; c
       content: docOf(content),
       contentType: "Blog",
       status: "in_review",
+      // Counts in the month's submissions, as on the website.
+      submittedAt: new Date(),
       lane: "public",
       destination: "main_app",
       license: "all_rights_reserved",

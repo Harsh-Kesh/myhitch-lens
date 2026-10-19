@@ -84,7 +84,7 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
         }
         if (!auth0UserId) return null; // unknown, expired, used, or wrong audience
 
-        const user = await signInPortalUser(auth0UserId, String(credentials?.intent ?? ""));
+        const user = await signInPortalUser(auth0UserId);
         return user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null;
       },
     }),

@@ -21,10 +21,9 @@ export type PortalSignedInUser = {
 };
 
 /**
- * New accounts start as "author". "corporate" is granted only when the portal
- * says the business is approved (see `resolveNewUserRole`); the browser's role
- * hint can never raise it. "editor" and "admin" are never assignable through
- * SSO: staff are promoted internally (scripts/grantRole.ts).
+ * New accounts always start as "author" (see `resolveNewUserRole`). "editor"
+ * and "admin" are never assignable through SSO: staff are promoted internally
+ * (scripts/grantRole.ts).
  */
 
 const MAX_USERNAME_ATTEMPTS = 8;
@@ -61,24 +60,12 @@ async function uniqueUsername(email: string, displayName: string | null): Promis
 }
 
 /**
- * Decide the role of a brand-new Lens user.
- *  - "corporate" is NEVER taken from the browser. It requires an APPROVED
- *    portal business with a legal name; that business becomes the Organization.
- *  - Everyone else starts as an author (Lens no longer creates new reader
- *    accounts). Existing accounts keep whatever role they already have.
+ * Decide the role of a brand-new Lens user. Every new account is an author and
+ * lands on the Author Dashboard, whatever the browser's intent hint or the
+ * portal business status says. Existing accounts keep whatever role they
+ * already have.
  */
-async function resolveNewUserRole(
-  profile: PortalProfile,
-  intent: string,
-): Promise<{ role: UserRole; org?: { name: string; abn: string | null } }> {
-  if (intent === "corporate") {
-    const business = await loadPortalBusiness(profile.profileId);
-    const name = business?.legalEntityName || business?.tradingName || null;
-    if (business?.reviewStatus === "approved" && name) {
-      return { role: "corporate", org: { name, abn: business.abn ? normalizeAbn(business.abn) : null } };
-    }
-    return { role: "author" }; // not an approved business yet
-  }
+function resolveNewUserRole(): { role: UserRole; org?: { name: string; abn: string | null } } {
   return { role: "author" };
 }
 
@@ -98,12 +85,9 @@ async function resolveNewUserRole(
  *  4. Otherwise create a new user (+ profile, wallet, rank, identity).
  *  5. A pending company invite for the verified email is activated (see
  *     `activatePendingInvite`) on every successful sign-in path.
- *
- * `intent` is an unauthenticated UI hint and is only honoured on creation.
  */
 async function findLinkOrCreate(
   auth0UserId: string,
-  intent: string,
 ): Promise<PortalSignedInUser | null> {
   let profile: PortalProfile | null;
   try {
@@ -165,16 +149,7 @@ async function findLinkOrCreate(
   }
 
   // 4. New user.
-  let decided: Awaited<ReturnType<typeof resolveNewUserRole>>;
-  try {
-    decided = await resolveNewUserRole(profile, intent);
-  } catch (error) {
-    if (error instanceof PortalDbError) {
-      console.error("[sso] portal unavailable while resolving role", { error: error.message });
-      return null;
-    }
-    throw error;
-  }
+  const decided = resolveNewUserRole();
 
   const displayName = profile.displayName?.trim() || email.split("@")[0] || "Member";
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -326,11 +301,8 @@ async function autofillFromPortal(user: PortalSignedInUser, auth0UserId: string)
   }
 }
 
-export async function signInPortalUser(
-  auth0UserId: string,
-  intent = "",
-): Promise<PortalSignedInUser | null> {
-  const user = await findLinkOrCreate(auth0UserId, intent);
+export async function signInPortalUser(auth0UserId: string): Promise<PortalSignedInUser | null> {
+  const user = await findLinkOrCreate(auth0UserId);
   if (!user) return null;
   const upgraded = await upgradeLegacyReader(await activatePendingInvite(user));
   return autofillFromPortal(upgraded, auth0UserId);

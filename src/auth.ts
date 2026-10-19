@@ -14,6 +14,35 @@ import { signInPortalUser } from "@/lib/portalSignIn";
  * NOTE: the role in the session is the source of truth for authorization —
  * never the client-side localStorage role (now only a UI convenience).
  */
+/**
+ * Local-testing shortcut: signs in as DEV_LOGIN_EMAIL without the portal. It is
+ * registered ONLY under `next dev` (NODE_ENV === "development") AND when
+ * DEV_LOGIN_EMAIL is set, so a production build can never expose it.
+ */
+const devLoginEmail =
+  process.env.NODE_ENV === "development" ? process.env.DEV_LOGIN_EMAIL?.trim().toLowerCase() : undefined;
+
+async function devLoginUser(email: string) {
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return existing;
+  // No account yet: create a plain author. A later real portal sign-in with this
+  // verified email links to this row (see portalSignIn step 3).
+  const base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 24) || "dev";
+  return prisma.user.create({
+    data: {
+      username: `${base}_${Math.floor(1000 + Math.random() * 9000)}`,
+      email,
+      emailVerified: new Date(),
+      passwordHash: null,
+      role: "author",
+      displayName: base,
+      profile: { create: {} },
+      wallet: { create: {} },
+      rank: { create: {} },
+    },
+  });
+}
+
 export const { handlers, auth, signIn, signOut, unstable_update: updateSession } = NextAuth({
   ...authConfig,
   callbacks: {
@@ -59,5 +88,19 @@ export const { handlers, auth, signIn, signOut, unstable_update: updateSession }
         return user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null;
       },
     }),
+    ...(devLoginEmail
+      ? [
+          Credentials({
+            id: "dev-login",
+            name: "Dev login",
+            credentials: {},
+            authorize: async () => {
+              const user = await devLoginUser(devLoginEmail);
+              if (user.suspended) return null;
+              return { id: user.id, name: user.displayName, email: user.email, role: user.role };
+            },
+          }),
+        ]
+      : []),
   ],
 });

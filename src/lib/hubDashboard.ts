@@ -1,6 +1,7 @@
 import "server-only";
 
 import { revalidatePath } from "next/cache";
+import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { appealTakedownFor, fileEditorialAppealFor, listAppealsFor } from "@/lib/appeals";
@@ -13,7 +14,15 @@ import {
 } from "@/lib/billing";
 import { getTeamAnalytics } from "@/lib/dashboard";
 import { getPlan, getSubmissionAllowance } from "@/lib/entitlements";
-import { HubError, type HubCompany } from "@/lib/hubCompany";
+import { HubError, hubError, type HubCompany } from "@/lib/hubCompany";
+import {
+  changeInAppPlan,
+  confirmInAppSubscription,
+  createInAppSubscription,
+  defaultPaymentMethod,
+  InAppBillingError,
+  setCancelAtPeriodEnd,
+} from "@/lib/inAppBilling";
 import { StorageUploadError, storeUpload } from "@/lib/mediaUpload";
 import { getMyNotifications, markAllNotificationsReadFor, markNotificationReadFor } from "@/lib/notifications";
 import { PLAN_BENEFITS, PLAN_HIGHLIGHTS } from "@/lib/planBenefits";
@@ -35,7 +44,7 @@ const dollars = (cents: number | null) => (cents === null ? null : cents / 100);
 
 export async function billing(ctx: HubCompany) {
   const userId = ctx.user.id;
-  const [plan, sub, ownsPaidPlan, allowance] = await Promise.all([
+  const [plan, sub, ownsPaidPlan, allowance, card] = await Promise.all([
     getPlan(userId),
     prisma.subscription.findUnique({
       where: { userId },
@@ -43,6 +52,7 @@ export async function billing(ctx: HubCompany) {
     }),
     hasActivePaidPlan(userId),
     getSubmissionAllowance(userId),
+    defaultPaymentMethod(userId),
   ]);
   // Their own subscription, when it's the plan they're on (not one inherited from a company).
   const own = sub && sub.plan === plan.code && plan.code !== "free" ? sub : null;
@@ -55,6 +65,7 @@ export async function billing(ctx: HubCompany) {
     cancelAtPeriodEnd: own?.cancelAtPeriodEnd ?? false,
     extraSeats: own?.extraSeats ?? 0,
     ownsPaidPlan,
+    defaultPaymentMethod: card,
     submissions: { used: allowance.used, limit: allowance.limit },
     extraSeatPrice: { month: dollars(EXTRA_SEAT_MONTHLY_CENTS), year: dollars(EXTRA_SEAT_YEARLY_CENTS) },
     plans: PLAN_CODES.map((code) => {
@@ -102,6 +113,51 @@ export async function portal(ctx: HubCompany) {
     console.error("[billing] portal failed", { error: error instanceof Error ? error.message : String(error) });
     throw new HubError(502, "We couldn't open billing right now. Please try again shortly.");
   }
+}
+
+// ---------------------------------------------------------------------------
+// Paying in the app (Stripe PaymentSheet) - src/lib/inAppBilling.ts
+// ---------------------------------------------------------------------------
+
+/** hubError, plus the in-app billing refusals with their status and extra fields (code, PaymentSheet keys). */
+export function billingError(e: unknown): NextResponse {
+  if (e instanceof InAppBillingError) return NextResponse.json({ ...e.extra, error: e.message }, { status: e.status });
+  if (e instanceof BillingError) return NextResponse.json({ error: e.message }, { status: 400 });
+  return hubError(e);
+}
+
+function afterBillingChange() {
+  revalidatePath("/", "layout");
+}
+
+/** A new subscription waiting for its first payment, and the PaymentSheet's keys. */
+export async function subscribe(ctx: HubCompany, input: { plan?: unknown; interval?: unknown }) {
+  const sheet = await createInAppSubscription(ctx.user.id, input.plan, input.interval);
+  return {
+    clientSecret: sheet.clientSecret,
+    publishableKey: sheet.publishableKey,
+    customerId: sheet.customerId,
+    ephemeralKey: sheet.ephemeralKey,
+    subscriptionId: sheet.subscriptionId,
+  };
+}
+
+export async function confirmSubscription(ctx: HubCompany, input: { subscriptionId?: unknown }) {
+  await confirmInAppSubscription(ctx.user.id, input.subscriptionId);
+  afterBillingChange();
+  return billing(ctx);
+}
+
+export async function changePlan(ctx: HubCompany, input: { plan?: unknown; interval?: unknown }) {
+  await changeInAppPlan(ctx.user.id, input.plan, input.interval);
+  afterBillingChange();
+  return billing(ctx);
+}
+
+export async function cancelPlan(ctx: HubCompany, cancel: boolean) {
+  await setCancelAtPeriodEnd(ctx.user.id, cancel);
+  afterBillingChange();
+  return billing(ctx);
 }
 
 // ---------------------------------------------------------------------------

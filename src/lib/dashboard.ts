@@ -2,7 +2,9 @@ import "server-only";
 
 import { Prisma } from "@prisma/client";
 
+import { getEntitlements } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
+import type { PlanEntitlements } from "@/lib/plans";
 
 export interface SavedArticle {
   id: string;
@@ -710,4 +712,32 @@ export async function getAudienceInsights(userIds: string | string[]): Promise<A
     engagementRate: views > 0 ? Math.round((engagements / views) * 1000) / 10 : 0,
     avgReadSeconds: views > 0 ? Math.round((readTime._sum.value ?? 0) / views) : 0,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Team analytics (a company member, Lens Business)
+// ---------------------------------------------------------------------------
+
+export interface TeamAnalytics {
+  data: AnalyticsData;
+  level: PlanEntitlements["analytics"];
+  insights: AudienceInsights | null;
+}
+
+/**
+ * The whole company's analytics for one of its members, or null when locked:
+ * not in a company, or the plan doesn't include advanced analytics. Used by the
+ * Analytics Hub and the MYHitch app.
+ */
+export async function getTeamAnalytics(userId: string): Promise<TeamAnalytics | null> {
+  const entitlements = await getEntitlements(userId);
+  const membership = await prisma.orgMembership.findFirst({ where: { userId }, select: { orgId: true } });
+  if (!membership || entitlements.analytics !== "advanced") return null;
+  const members = await prisma.orgMembership.findMany({ where: { orgId: membership.orgId }, select: { userId: true } });
+  const ids = members.map((m) => m.userId);
+  const [data, insights] = await Promise.all([
+    getAnalyticsData(ids),
+    entitlements.audienceInsights ? getAudienceInsights(ids) : Promise.resolve(null),
+  ]);
+  return { data, level: entitlements.analytics, insights };
 }

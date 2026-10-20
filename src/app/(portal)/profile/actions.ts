@@ -3,13 +3,10 @@
 import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
-import { ABN_COUNTRY } from "@/lib/platformConfig";
-import { lookupAbn, normalizeAbn } from "@/lib/abn";
-import { syncVerification } from "@/lib/verification";
+import { setAvatarFor, updateProfileFor, type ProfileUpdateResult as UpdateResult } from "@/lib/profile";
 
 export type ActionResult = { error: string } | { ok: true };
-export type ProfileUpdateResult = { error: string } | { ok: true; abnEntityName?: string };
+export type ProfileUpdateResult = UpdateResult;
 
 async function requireUser() {
   const session = await auth();
@@ -25,58 +22,18 @@ export async function updateProfile(input: {
   abn: string;
 }): Promise<ProfileUpdateResult> {
   const user = await requireUser();
-
-  const displayName = input.displayName.trim();
-  if (!displayName) return { error: "Display name can't be empty." };
-
-  const country = input.country.trim();
-  const abnInput = country === ABN_COUNTRY ? input.abn.trim() || null : null;
-
-  let abn: string | null = null;
-  let abnEntityName: string | undefined;
-  if (abnInput) {
-    const check = await lookupAbn(abnInput);
-    if (!check.valid) return { error: check.error ?? "That ABN doesn't look valid." };
-    abn = normalizeAbn(abnInput);
-    abnEntityName = check.entityName;
-  }
-
-  await prisma.$transaction([
-    prisma.user.update({ where: { id: user.id }, data: { displayName } }),
-    prisma.profile.upsert({
-      where: { userId: user.id },
-      update: {
-        bio: input.bio.trim() || null,
-        website: input.website.trim() || null,
-        country: country || null,
-        abn,
-      },
-      create: {
-        userId: user.id,
-        bio: input.bio.trim() || null,
-        website: input.website.trim() || null,
-        country: country || null,
-        abn,
-      },
-    }),
-  ]);
-  await syncVerification(user.id);
+  const result = await updateProfileFor(user.id, input);
+  if ("error" in result) return result;
 
   revalidatePath("/profile", "layout");
-  return { ok: true, abnEntityName };
+  return result;
 }
 
 /** Persists the URL of a photo already uploaded via /api/upload. */
 export async function updateAvatar(avatarUrl: string): Promise<ActionResult> {
   const user = await requireUser();
-  if (!avatarUrl.trim()) return { error: "No photo URL provided." };
-
-  await prisma.profile.upsert({
-    where: { userId: user.id },
-    update: { avatarUrl },
-    create: { userId: user.id, avatarUrl },
-  });
-  await syncVerification(user.id);
+  const result = await setAvatarFor(user.id, avatarUrl);
+  if ("error" in result) return result;
 
   revalidatePath("/", "layout");
   return { ok: true };

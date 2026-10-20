@@ -32,19 +32,19 @@ export function priceLookupKey(plan: PaidPlan, interval: BillingInterval): strin
 }
 
 const LOOKUP_RE = /^lens_(creator|professional|business)_(month|year)$/;
-const SEAT_RE = /^lens_business_extra_seat_(month|year)$/;
+export const SEAT_RE = /^lens_business_extra_seat_(month|year)$/;
 
 /** Price key of the "extra company user" add-on; it must bill on the plan's own interval. */
 export function seatLookupKey(interval: BillingInterval): string {
   return `lens_business_extra_seat_${interval}`;
 }
 
-function parseLookupKey(key: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
+export function parseLookupKey(key: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
   const match = key ? LOOKUP_RE.exec(key) : null;
   return match ? { plan: match[1] as PaidPlan, interval: match[2] as BillingInterval } : null;
 }
 
-function requireStripe(): Stripe {
+export function requireStripe(): Stripe {
   const stripe = getBillingStripe();
   if (!stripe) throw new BillingError("Billing isn't set up yet. Please try again later.");
   return stripe;
@@ -53,7 +53,7 @@ function requireStripe(): Stripe {
 /** An error whose message is safe to show to the customer. */
 export class BillingError extends Error {}
 
-async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInterval): Promise<string> {
+export async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInterval): Promise<string> {
   const prices = await stripe.prices.list({ lookup_keys: [priceLookupKey(plan, interval)], active: true, limit: 1 });
   const price = prices.data[0];
   if (!price) throw new BillingError("This plan isn't available to purchase yet.");
@@ -61,7 +61,7 @@ async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInte
 }
 
 /** The customer's Stripe customer id, creating the customer (and our row) on first use. */
-async function ensureCustomer(stripe: Stripe, userId: string): Promise<string> {
+export async function ensureCustomer(stripe: Stripe, userId: string): Promise<string> {
   const existing = await prisma.subscription.findUnique({ where: { userId }, select: { stripeCustomerId: true } });
   if (existing?.stripeCustomerId) return existing.stripeCustomerId;
 
@@ -171,6 +171,30 @@ export async function createCheckoutUrl(userId: string, plan: PaidPlan, interval
   });
   if (!session.url) throw new BillingError("Couldn't start checkout. Please try again.");
   return session.url;
+}
+
+/**
+ * Checkout for [userId], as the pricing page starts it (and the MYHitch app):
+ * the plan and interval are validated against the catalogue, someone already
+ * paying is sent to the billing portal instead, and the price is looked up on
+ * the server. `status` is the HTTP status the hub answers with.
+ */
+export async function startCheckoutFor(
+  userId: string,
+  plan: unknown,
+  interval: unknown,
+): Promise<{ url: string } | { error: string; status: number }> {
+  if (!isPaidPlan(plan) || !isInterval(interval)) return { error: "Choose a valid plan.", status: 400 };
+  try {
+    if (await hasActivePaidPlan(userId)) {
+      return { error: "You already have a paid plan. Use Manage billing to change or cancel it.", status: 409 };
+    }
+    return { url: await createCheckoutUrl(userId, plan, interval) };
+  } catch (error) {
+    if (error instanceof BillingError) return { error: error.message, status: 400 };
+    console.error("[billing] checkout failed", { error: error instanceof Error ? error.message : String(error) });
+    return { error: "Couldn't start checkout. Please try again shortly.", status: 502 };
+  }
 }
 
 function mapStatus(status: Stripe.Subscription.Status): "active" | "past_due" | "canceled" | "incomplete" {
@@ -366,7 +390,7 @@ export async function setExtraSeats(userId: string, count: number): Promise<void
   await syncSubscription(updated);
 }
 
-async function priceIdByKey(stripe: Stripe, key: string): Promise<string> {
+export async function priceIdByKey(stripe: Stripe, key: string): Promise<string> {
   const prices = await stripe.prices.list({ lookup_keys: [key], active: true, limit: 1 });
   if (!prices.data[0]) throw new BillingError("Extra users aren't available to purchase yet.");
   return prices.data[0].id;

@@ -32,19 +32,19 @@ export function priceLookupKey(plan: PaidPlan, interval: BillingInterval): strin
 }
 
 const LOOKUP_RE = /^lens_(creator|professional|business)_(month|year)$/;
-const SEAT_RE = /^lens_business_extra_seat_(month|year)$/;
+export const SEAT_RE = /^lens_business_extra_seat_(month|year)$/;
 
 /** Price key of the "extra company user" add-on; it must bill on the plan's own interval. */
 export function seatLookupKey(interval: BillingInterval): string {
   return `lens_business_extra_seat_${interval}`;
 }
 
-function parseLookupKey(key: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
+export function parseLookupKey(key: string | null | undefined): { plan: PaidPlan; interval: BillingInterval } | null {
   const match = key ? LOOKUP_RE.exec(key) : null;
   return match ? { plan: match[1] as PaidPlan, interval: match[2] as BillingInterval } : null;
 }
 
-function requireStripe(): Stripe {
+export function requireStripe(): Stripe {
   const stripe = getBillingStripe();
   if (!stripe) throw new BillingError("Billing isn't set up yet. Please try again later.");
   return stripe;
@@ -53,7 +53,7 @@ function requireStripe(): Stripe {
 /** An error whose message is safe to show to the customer. */
 export class BillingError extends Error {}
 
-async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInterval): Promise<string> {
+export async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInterval): Promise<string> {
   const prices = await stripe.prices.list({ lookup_keys: [priceLookupKey(plan, interval)], active: true, limit: 1 });
   const price = prices.data[0];
   if (!price) throw new BillingError("This plan isn't available to purchase yet.");
@@ -61,7 +61,7 @@ async function findPriceId(stripe: Stripe, plan: PaidPlan, interval: BillingInte
 }
 
 /** The customer's Stripe customer id, creating the customer (and our row) on first use. */
-async function ensureCustomer(stripe: Stripe, userId: string): Promise<string> {
+export async function ensureCustomer(stripe: Stripe, userId: string): Promise<string> {
   const existing = await prisma.subscription.findUnique({ where: { userId }, select: { stripeCustomerId: true } });
   if (existing?.stripeCustomerId) return existing.stripeCustomerId;
 
@@ -390,7 +390,7 @@ export async function setExtraSeats(userId: string, count: number): Promise<void
   await syncSubscription(updated);
 }
 
-async function priceIdByKey(stripe: Stripe, key: string): Promise<string> {
+export async function priceIdByKey(stripe: Stripe, key: string): Promise<string> {
   const prices = await stripe.prices.list({ lookup_keys: [key], active: true, limit: 1 });
   if (!prices.data[0]) throw new BillingError("Extra users aren't available to purchase yet.");
   return prices.data[0].id;

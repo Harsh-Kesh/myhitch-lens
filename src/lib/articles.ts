@@ -2,6 +2,7 @@ import "server-only";
 
 import { priorityAuthorIds } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
+import type { LegalAcceptance, LegalReview, ReviewLegalSummary } from "@/lib/legalReviewTypes";
 import { cleanSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import type { FeedArticle } from "@/lib/types";
 
@@ -77,6 +78,24 @@ export interface ReviewQueueItem {
   destination: "main_app" | "exchange_hub";
   /** The author's plan includes priority editorial review: shown first in the queue. */
   priority: boolean;
+  /** The legal and compliance check and the author's acceptance of the terms; null for older submissions. */
+  legal: ReviewLegalSummary | null;
+}
+
+/** The legal review and acceptance saved in an article's aiScores blob, if present. */
+function readLegal(aiScores: unknown): ReviewLegalSummary | null {
+  if (!aiScores || typeof aiScores !== "object") return null;
+  const blob = aiScores as { legalReview?: Partial<LegalReview> | null; legalAcceptance?: Partial<LegalAcceptance> | null };
+  const review = blob.legalReview;
+  if (!review || !Array.isArray(review.checks) || typeof review.available !== "boolean") return null;
+  const a = blob.legalAcceptance;
+  return {
+    review: review as LegalReview,
+    acceptance:
+      a && typeof a.termsVersion === "string" && typeof a.acceptedAt === "string"
+        ? { termsVersion: a.termsVersion, acceptedAt: a.acceptedAt }
+        : null,
+  };
 }
 
 function scoreField(aiScores: unknown, key: string, fallback: string | number) {
@@ -129,6 +148,7 @@ export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
     sentiment: String(scoreField(row.aiScores, "sentiment", "Analytical")),
     content: row.content,
     destination: row.destination,
+    legal: readLegal(row.aiScores),
   }));
 }
 

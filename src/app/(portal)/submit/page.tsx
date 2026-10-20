@@ -17,6 +17,7 @@ import { LICENSE_OPTIONS } from "@/lib/licenses";
 
 import type { ArticleDestination } from "@prisma/client";
 
+import { LegalReviewModal } from "./LegalReviewModal";
 import type { WritingCheckResult } from "@/lib/writingCheck";
 import type { TagSuggestionResult } from "@/lib/tagSuggestions";
 import type { ChecklistItem } from "@/lib/preSubmitCheck";
@@ -82,6 +83,9 @@ export default function SubmitPage() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [showSubmitPanel, setShowSubmitPanel] = useState(false);
   const [isSubmitting, startSubmit] = useTransition();
+  // Legal and compliance popup, shown when the author clicks Submit
+  const [showLegal, setShowLegal] = useState(false);
+  const [legalOpening, setLegalOpening] = useState(false);
 
   // AI writing check state
   const [showWritingCheck, setShowWritingCheck] = useState(false);
@@ -146,13 +150,14 @@ export default function SubmitPage() {
     if (!showSubmitPanel && !showWritingCheck && !showLayout) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      if (showLegal) return; // the legal popup handles its own Escape and leaves this panel open
       setShowSubmitPanel(false);
       setShowWritingCheck(false);
       setShowLayout(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [showSubmitPanel, showWritingCheck, showLayout]);
+  }, [showSubmitPanel, showWritingCheck, showLayout, showLegal]);
 
   // Load available tags
   useEffect(() => {
@@ -401,8 +406,32 @@ export default function SubmitPage() {
     setReplaceState((prev) => ({ ...prev, [index]: done ? "replaced" : "missing" }));
   }
 
-  // Submit for review
-  function handleSubmit() {
+  // Clicking Submit first saves the draft, then opens the legal and compliance popup. The article is only
+  // really submitted from that popup, once the terms are accepted.
+  async function openLegalReview() {
+    setLegalOpening(true);
+    try {
+      const id = await ensureDraft();
+      if (!id) {
+        alert("Couldn't save your draft. Please try again.");
+        return;
+      }
+      // The check reviews the saved copy, so save the latest title and text first.
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const saved = await saveDraft({ articleId: id, title, content });
+      if (saved?.error) {
+        alert(saved.error);
+        return;
+      }
+      setSaveStatus("saved");
+      setShowLegal(true);
+    } finally {
+      setLegalOpening(false);
+    }
+  }
+
+  // Submit for review (called from the legal popup with the author's acceptance)
+  function handleSubmit(legal: { termsAccepted: true; termsVersion: string }) {
     if (!articleId) return;
     startSubmit(async () => {
       const result = await submitForReview({
@@ -418,6 +447,7 @@ export default function SubmitPage() {
           description: seoDescription,
           keywords: seoKeywords.split(",").map((k) => k.trim()).filter(Boolean),
         },
+        legal,
       });
       if (result?.error) {
         alert(result.error);
@@ -865,6 +895,17 @@ export default function SubmitPage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Legal and compliance popup: opens from the Submit button; the article is only submitted from here */}
+      {showLegal && articleId && (
+        <LegalReviewModal
+          articleId={articleId}
+          destination={destination}
+          submitting={isSubmitting}
+          onCancel={() => setShowLegal(false)}
+          onConfirm={handleSubmit}
+        />
       )}
 
       {/* Submit panel (overlay) */}
@@ -1337,10 +1378,10 @@ export default function SubmitPage() {
               </Button>
               <Button
                 className="flex-1"
-                onClick={handleSubmit}
-                disabled={isSubmitting || outOfSubmissions || !title.trim() || selectedTags.length === 0 || !rightsAttested}
+                onClick={openLegalReview}
+                disabled={isSubmitting || legalOpening || outOfSubmissions || !title.trim() || selectedTags.length === 0 || !rightsAttested}
               >
-                {isSubmitting ? "Submitting..." : draftStatus === "changes_requested" ? "Resubmit" : "Submit"}
+                {isSubmitting ? "Submitting..." : legalOpening ? "Saving..." : draftStatus === "changes_requested" ? "Resubmit" : "Submit"}
               </Button>
             </div>
           </div>

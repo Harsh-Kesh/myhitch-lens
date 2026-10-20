@@ -25,6 +25,9 @@ import { suggestImageText, type ImageTextResult } from "@/lib/imageText";
 import { isRewriteAction, MAX_INSTRUCTION_CHARS, MAX_REWRITE_CHARS, MIN_INSTRUCTION_CHARS, rewriteText } from "@/lib/rewrite";
 import { pageBreakdown, suggestLayout, type LayoutHints, type PageBreakdown } from "@/lib/layoutHints";
 import { cleanSeo, suggestSeo, type SeoMetadata } from "@/lib/seoMetadata";
+import { AUTHOR_TERMS_VERSION } from "@/lib/authorTerms";
+import { legalContentHash, reviewLegal } from "@/lib/legalReview";
+import { worstStatus, type LegalReview } from "@/lib/legalReviewTypes";
 import {
   countImagesMissingAlt,
   countWords,
@@ -32,7 +35,7 @@ import {
   reviewContent,
   type ChecklistItem,
 } from "@/lib/preSubmitCheck";
-import type { ArticleDestination } from "@prisma/client";
+import type { ArticleDestination, Prisma } from "@prisma/client";
 
 export type ActionResult = { error: string } | undefined;
 
@@ -134,6 +137,8 @@ export async function submitForReview(input: {
   summary?: string;
   /** Optional search title / description / keywords, stored with the article. */
   seo?: { title?: string; description?: string; keywords?: string[] };
+  /** The author's acceptance of the Author Content Terms, after the legal and compliance check. */
+  legal?: { termsAccepted: boolean; termsVersion: string };
 }): Promise<ActionResult> {
   const session = await requireAuthorSession();
   const suspendedError = await checkNotSuspended(session.user.id);
@@ -206,6 +211,28 @@ export async function submitForReview(input: {
     };
   }
 
+  // Legal and compliance gate. The server only trusts the review it saved itself (runLegalReview), and only
+  // if the article, title and destination are unchanged since then.
+  if (
+    !input.legal ||
+    input.legal.termsAccepted !== true ||
+    input.legal.termsVersion !== AUTHOR_TERMS_VERSION
+  ) {
+    return { error: "Please review and accept the Author Content Terms before submitting." };
+  }
+  const storedReview = storedLegalReview(article.aiScores);
+  const reviewedHash = legalContentHash(article.title, input.destination, articleJsonToText(article.content) || article.content);
+  if (!storedReview || storedReview.contentHash !== reviewedHash) {
+    return { error: "Your article changed since the legal check ran. Run the check again, then submit." };
+  }
+  // Any issue in the legal report stops the submission until the author has fixed it and the check comes back clear.
+  if (storedReview.available && worstStatus(storedReview.checks) !== "clear") {
+    return {
+      error:
+        "Your article has legal or compliance issues to fix before it can be submitted. Edit it, then click Submit again to re-run the check.",
+    };
+  }
+
   const tagIds: string[] = [];
   for (const name of input.tagNames) {
     const tag = await prisma.tag.upsert({
@@ -248,7 +275,13 @@ export async function submitForReview(input: {
         readability: "Good (Flesch: 65)",
         sentiment: "Highly Analytical",
         ...(seo ? { seo } : {}),
-      },
+        // What was checked and what the author agreed to, kept with the article for editors and for the record.
+        legalReview: storedReview,
+        legalAcceptance: {
+          termsVersion: AUTHOR_TERMS_VERSION,
+          acceptedAt: new Date().toISOString(),
+        },
+      } as unknown as Prisma.InputJsonObject,
     },
   });
 
@@ -392,6 +425,14 @@ async function deriveCategoryFromTags(tagNames: string[]): Promise<string> {
   if (category) return category.id;
   const fallback = await prisma.category.findFirst();
   return fallback!.id;
+}
+
+/** The legal review saved with an article, if it has the expected shape. */
+function storedLegalReview(aiScores: unknown): LegalReview | null {
+  if (!aiScores || typeof aiScores !== "object" || !("legalReview" in aiScores)) return null;
+  const r = (aiScores as { legalReview: unknown }).legalReview as Partial<LegalReview> | null;
+  if (!r || typeof r.contentHash !== "string" || !Array.isArray(r.checks) || typeof r.available !== "boolean") return null;
+  return r as LegalReview;
 }
 
 /** The search metadata saved in an article's aiScores blob, if any. */
@@ -598,6 +639,64 @@ export async function runPreSubmitChecklist(input: {
   }
 
   return { items };
+}
+
+/**
+ * The legal and compliance check shown before an article is submitted. It reviews the SAVED draft (the page
+ * saves first), and stores its result with the article, so what the submit gate and the editors see is this
+ * server-side result and never something the browser sent.
+ */
+export async function runLegalReview(input: {
+  articleId: string;
+  destination: ArticleDestination;
+}): Promise<{ error: string } | { review: LegalReview; termsVersion: string }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  if (input.destination !== "main_app" && input.destination !== "exchange_hub") {
+    return { error: "Choose where this article should go once approved." };
+  }
+
+  const article = await prisma.article.findUnique({
+    where: { id: String(input.articleId) },
+    select: { authorId: true, status: true, title: true, content: true, aiScores: true },
+  });
+  if (!article || article.authorId !== session.user.id) return { error: "Article not found." };
+  if (article.status !== "draft" && article.status !== "changes_requested") {
+    return { error: "This article can't be submitted in its current state." };
+  }
+  if (!article.title.trim()) return { error: "Please add a title before submitting." };
+
+  const text = articleJsonToText(article.content) || article.content;
+  if (text.split(/\s+/).filter(Boolean).length < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before submitting.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "legal");
+  if (!slot.ok) return { error: slot.error };
+
+  const author = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { displayName: true },
+  });
+  const review = await reviewLegal({
+    title: article.title,
+    text,
+    destination: input.destination,
+    authorName: author?.displayName ?? "Author",
+  });
+
+  const base =
+    article.aiScores && typeof article.aiScores === "object" && !Array.isArray(article.aiScores)
+      ? (article.aiScores as Record<string, unknown>)
+      : {};
+  await prisma.article.update({
+    where: { id: input.articleId },
+    data: { aiScores: { ...base, legalReview: review } as unknown as Prisma.InputJsonObject },
+  });
+
+  return { review, termsVersion: AUTHOR_TERMS_VERSION };
 }
 
 /** AI search title, description and keywords for the draft in the editor. Suggestions only; nothing is saved. */

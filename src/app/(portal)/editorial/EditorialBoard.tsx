@@ -202,6 +202,63 @@ export function EditorialBoard({ queue }: { queue: ReviewQueueItem[] }) {
               </div>
             </div>
 
+            {/* Legal and compliance review, plus what the author agreed to */}
+            <div className="rounded-xl border border-line bg-bg-secondary p-5">
+              <h4 className="mb-3 font-heading text-[13.5px] font-bold text-text-main">Legal &amp; Compliance Review</h4>
+              {!selected.legal ? (
+                <p className="text-[12px] text-text-muted">Not screened. This article was submitted before the legal check existed.</p>
+              ) : (
+                <>
+                  {!selected.legal.review.available && (
+                    <p className="mb-3 rounded-md border border-warning/40 bg-warning/5 p-2.5 text-[11.5px] text-warning">
+                      The automated check couldn&apos;t run for this article, so it was not screened. Review it manually.
+                    </p>
+                  )}
+                  <ul className="flex flex-col gap-2.5">
+                    {selected.legal.review.checks.map((check) => (
+                      <li key={check.id} className="text-[12px]">
+                        <p className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-text-main">{check.label}</span>
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+                              check.status === "clear" && "bg-success/10 text-success",
+                              check.status === "review" && "bg-warning/10 text-warning",
+                              check.status === "risk" && "bg-danger/10 text-danger",
+                            )}
+                          >
+                            {check.status === "clear" ? "Clear" : check.status === "review" ? "Check" : "Risk"}
+                          </span>
+                        </p>
+                        {check.findings.map((f, i) => (
+                          <div key={i} className="mt-1.5 rounded-md border border-line bg-bg-primary p-2 text-[11.5px]">
+                            {f.quote && <p className="text-text-main italic">&ldquo;{f.quote}&rdquo;</p>}
+                            <p className="text-text-muted">{f.reason}</p>
+                          </div>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                  {selected.legal.review.jurisdictions.length > 0 && (
+                    <p className="mt-2.5 text-[11.5px] text-text-muted">
+                      Touches: <strong className="text-text-main">{selected.legal.review.jurisdictions.join(", ")}</strong>
+                    </p>
+                  )}
+                  <p className="mt-3 border-t border-line pt-2.5 text-[11.5px] text-text-muted">
+                    {selected.legal.acceptance ? (
+                      <>
+                        Author accepted the Author Content Terms (v{selected.legal.acceptance.termsVersion}) on{" "}
+                        {localDateTime(selected.legal.acceptance.acceptedAt)}.
+                      </>
+                    ) : (
+                      "No record of the author accepting the terms."
+                    )}
+                  </p>
+                  <p className="mt-1 text-[10.5px] text-text-muted">Automated screening, not legal advice.</p>
+                </>
+              )}
+            </div>
+
             {/* Editor actions */}
             <div className="rounded-xl border border-line bg-bg-secondary p-5">
               <h4 className="mb-3 font-heading text-[13.5px] font-bold text-text-main">

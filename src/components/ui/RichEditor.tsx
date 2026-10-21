@@ -16,10 +16,25 @@ import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Superscript from "@tiptap/extension-superscript";
 import Subscript from "@tiptap/extension-subscript";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 import { MagazinePage } from "@/components/ui/MagazinePage";
+import { applyRewrite, readRewriteSelection, type RewriteSelection } from "@/lib/editorRewrite";
+
+/** Optional AI helper that rewrites a passage; `action` is one of the options in the toolbar's AI menu. */
+export type TextRewriter = (
+  text: string,
+  action: string,
+  /** The author's own wording, for the "custom" action. */
+  instruction?: string,
+) => Promise<{ text: string } | { error: string }>;
+
+/** Optional AI helper that proposes alt text + a caption for an uploaded image. */
+export type MediaTextSuggester = (src: string) => Promise<{ alt: string; caption: string } | { error: string }>;
+
+// Media node views render inside the editor's React tree, so context reaches them.
+const MediaTextSuggesterContext = createContext<MediaTextSuggester | undefined>(undefined);
 
 // ---------------------------------------------------------------------------
 // Media node: resizable image / video with caption + source reference
@@ -209,6 +224,7 @@ function MediaNodeView(props: NodeViewProps) {
       {showDetails && (
         <MediaDetailsDialog
           kind={kind}
+          src={attrs.src}
           initial={attrs}
           onSubmit={(d) => {
             updateAttributes(d);
@@ -509,8 +525,11 @@ function BrandingWarningModal({
 // Media details dialog (caption + source) — used on upload and via Edit
 // ---------------------------------------------------------------------------
 
+type MediaDetails = { alt: string; caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean };
+
 function MediaDetailsDialog({
   kind,
+  src,
   initial,
   nearDuplicateOf,
   onSubmit,
@@ -518,12 +537,37 @@ function MediaDetailsDialog({
   onSkip,
 }: {
   kind: string;
+  src?: string | null;
   initial?: Partial<MediaAttrs>;
   nearDuplicateOf?: string | null;
-  onSubmit: (data: { caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean }) => void;
+  onSubmit: (data: MediaDetails) => void;
   onClose: () => void;
   onSkip?: () => void;
 }) {
+  const suggestMediaText = useContext(MediaTextSuggesterContext);
+  const [alt, setAlt] = useState(initial?.alt ?? "");
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  async function handleSuggest() {
+    if (!suggestMediaText || !src) return;
+    setSuggesting(true);
+    setSuggestError(null);
+    try {
+      const res = await suggestMediaText(src);
+      if ("error" in res) {
+        setSuggestError(res.error);
+      } else {
+        setAlt(res.alt);
+        setCaption(res.caption);
+      }
+    } catch {
+      setSuggestError("Suggestions failed. Please try again.");
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   const [caption, setCaption] = useState(initial?.caption ?? "");
   const [sourceUrl, setSourceUrl] = useState(initial?.sourceUrl ?? "");
   const [sourceLabel, setSourceLabel] = useState(initial?.sourceLabel ?? "");
@@ -543,6 +587,33 @@ function MediaDetailsDialog({
           <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-3 text-[11.5px] text-warning">
             This image looks similar to one already on the platform. That’s fine if it’s yours or licensed —
             just flagging it in case it isn’t.
+          </div>
+        )}
+        {kind === "image" && suggestMediaText && src && (
+          <div className="mb-3 flex items-center justify-between rounded-lg border border-line bg-bg-primary px-3 py-2">
+            <span className="text-[11.5px] text-text-muted">Let AI describe this image. You can edit the result.</span>
+            <button
+              type="button"
+              onClick={handleSuggest}
+              disabled={suggesting}
+              className="cursor-pointer text-[11.5px] font-semibold whitespace-nowrap text-primary hover:underline disabled:cursor-default disabled:opacity-60 disabled:no-underline"
+            >
+              {suggesting ? "Looking..." : "Suggest with AI"}
+            </button>
+          </div>
+        )}
+        {suggestError && <p className="mb-3 text-[12px] text-danger">{suggestError}</p>}
+        {kind === "image" && (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-semibold text-text-muted">Alt text (for screen readers &amp; SEO)</label>
+            <input
+              type="text"
+              value={alt}
+              maxLength={200}
+              onChange={(e) => setAlt(e.target.value)}
+              placeholder="Describe what is in the image..."
+              className="w-full rounded border border-line bg-bg-primary px-3 py-2 text-sm text-text-main outline-none focus:border-primary"
+            />
           </div>
         )}
         <div className="mb-3">
@@ -597,7 +668,7 @@ function MediaDetailsDialog({
           </button>
           <button
             type="button"
-            onClick={() => onSubmit({ caption, sourceUrl: sourceUrl.trim(), sourceLabel: sourceLabel.trim(), showSource })}
+            onClick={() => onSubmit({ alt: alt.trim(), caption, sourceUrl: sourceUrl.trim(), sourceLabel: sourceLabel.trim(), showSource })}
             className="flex-1 cursor-pointer rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover"
           >
             {onSkip ? "Add" : "Save"}
@@ -640,14 +711,268 @@ async function uploadFile(
 // Toolbar
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// AI rewrite menu: rewrite the selected passage, preview it, then apply
+// ---------------------------------------------------------------------------
+
+const REWRITE_OPTIONS = [
+  { value: "improve", label: "Improve writing" },
+  { value: "shorten", label: "Shorten" },
+  { value: "expand", label: "Expand" },
+  { value: "simplify", label: "Simplify" },
+];
+const TONE_OPTIONS = [
+  { value: "formal", label: "Formal" },
+  { value: "casual", label: "Casual" },
+  { value: "friendly", label: "Friendly" },
+  { value: "professional", label: "Professional" },
+];
+
+/** What the author picked: a preset, or their own wording (value "custom" with `instruction`). */
+type RewriteChoice = { value: string; label: string; instruction?: string };
+
+const CUSTOM_MIN = 3;
+const CUSTOM_MAX = 200; // keep in sync with MAX_INSTRUCTION_CHARS in lib/rewrite.ts
+
+function AiRewriteMenu({
+  editor,
+  onRewriteText,
+}: {
+  editor: Editor;
+  onRewriteText: TextRewriter;
+}) {
+  const [open, setOpen] = useState(false);
+  const [phase, setPhase] = useState<"menu" | "loading" | "result" | "error">("menu");
+  const [selection, setSelection] = useState<RewriteSelection | null>(null);
+  const [action, setAction] = useState<RewriteChoice | null>(null);
+  const [customText, setCustomText] = useState("");
+  const [result, setResult] = useState("");
+  const [message, setMessage] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setPhase("menu");
+    setSelection(null);
+    setCustomText("");
+    setResult("");
+    setMessage("");
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as globalThis.Node)) close();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, close]);
+
+  function toggle() {
+    if (open) return close();
+    const sel = readRewriteSelection(editor);
+    setOpen(true);
+    if ("error" in sel) {
+      setSelection(null);
+      setMessage(sel.error);
+      setPhase("error");
+    } else {
+      setSelection(sel);
+      setMessage("");
+      setPhase("menu");
+    }
+  }
+
+  async function run(opt: RewriteChoice) {
+    if (!selection) return;
+    setAction(opt);
+    setPhase("loading");
+    try {
+      const res = await onRewriteText(selection.text, opt.value, opt.instruction);
+      if ("error" in res) {
+        setMessage(res.error);
+        setPhase("error");
+      } else {
+        setResult(res.text);
+        setPhase("result");
+      }
+    } catch {
+      setMessage("The rewrite failed. Please try again.");
+      setPhase("error");
+    }
+  }
+
+  function apply() {
+    if (!selection) return;
+    const problem = applyRewrite(editor, selection, result);
+    if (problem) {
+      setMessage(problem);
+      setPhase("error");
+      return;
+    }
+    close();
+  }
+
+  const optionClass =
+    "block w-full cursor-pointer rounded-md px-2.5 py-1.5 text-left text-[12.5px] text-text-main hover:bg-surface-hover";
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          toggle();
+        }}
+        className={cn(tbtn, "w-auto gap-1 px-2 font-semibold", open && tbtnActive)}
+        title="Rewrite the selected text with AI"
+      >
+        <svg className="size-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2zm7 11l.9 2.6L22.5 16l-2.6.9L19 19.5l-.9-2.6-2.6-.9 2.6-.9L19 13z" />
+        </svg>
+        AI
+      </button>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 z-50 mt-1 w-[min(340px,86vw)] rounded-lg border border-line bg-bg-secondary p-2 shadow-card"
+          onMouseDown={(e) => {
+            // Keep the editor's selection while clicking inside the panel (but let the result text be selected).
+            if (!(e.target as HTMLElement).closest("[data-selectable]")) e.preventDefault();
+          }}
+        >
+          {phase === "menu" && selection && (
+            <>
+              <p className="px-2.5 pt-1 pb-1.5 text-[11px] text-text-muted">
+                Rewrite the selected {selection.text.split(/\s+/).filter(Boolean).length} words:
+              </p>
+              {/* Your own instruction. data-selectable lets the field take focus without losing the selection. */}
+              <form
+                data-selectable
+                className="mb-1.5 flex items-center gap-1.5 px-1.5"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const instruction = customText.trim();
+                  if (instruction.length >= CUSTOM_MIN) run({ value: "custom", label: "Your instruction", instruction });
+                }}
+              >
+                <input
+                  type="text"
+                  data-selectable
+                  value={customText}
+                  maxLength={CUSTOM_MAX}
+                  onChange={(e) => setCustomText(e.target.value)}
+                  placeholder="Tell AI what to change, e.g. make it more exciting"
+                  aria-label="Tell the AI how to rewrite the selected text"
+                  className="min-w-0 flex-1 rounded-md border border-line bg-bg-primary px-2.5 py-1.5 text-[12.5px] text-text-main outline-none placeholder:text-text-muted/70 focus:border-primary"
+                />
+                <button
+                  type="submit"
+                  disabled={customText.trim().length < CUSTOM_MIN}
+                  className="shrink-0 cursor-pointer rounded-md bg-primary px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-hover disabled:cursor-default disabled:opacity-50"
+                >
+                  Go
+                </button>
+              </form>
+              <p className="mt-2 border-t border-line px-2.5 pt-2 pb-1 text-[10px] font-bold tracking-wide text-text-muted uppercase">
+                Or choose
+              </p>
+              {REWRITE_OPTIONS.map((o) => (
+                <button key={o.value} type="button" onClick={() => run(o)} className={optionClass}>
+                  {o.label}
+                </button>
+              ))}
+              <p className="mt-1 border-t border-line px-2.5 pt-2 pb-1 text-[10px] font-bold tracking-wide text-text-muted uppercase">
+                Change tone
+              </p>
+              {TONE_OPTIONS.map((o) => (
+                <button key={o.value} type="button" onClick={() => run({ value: o.value, label: `${o.label} tone` })} className={optionClass}>
+                  {o.label}
+                </button>
+              ))}
+            </>
+          )}
+
+          {phase === "loading" && (
+            <p className="px-2.5 py-3 text-[12.5px] text-text-muted">{action?.label ?? "Rewriting"}... one moment.</p>
+          )}
+
+          {phase === "error" && (
+            <div className="px-2.5 py-2">
+              <p className="text-[12.5px] text-danger">{message}</p>
+              <div className="mt-2 flex gap-3">
+                {selection && (
+                  <button type="button" onClick={() => setPhase("menu")} className="cursor-pointer text-[11.5px] font-semibold text-primary hover:underline">
+                    Back
+                  </button>
+                )}
+                <button type="button" onClick={close} className="cursor-pointer text-[11.5px] font-semibold text-text-muted hover:underline">
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
+          {phase === "result" && selection && (
+            <div className="px-1.5 py-1">
+              <p className="mb-1 text-[10px] font-bold tracking-wide text-primary uppercase">{action?.label}</p>
+              <div
+                data-selectable
+                className="max-h-56 overflow-auto rounded-md border border-line bg-bg-primary p-2.5 text-[12.5px] leading-relaxed whitespace-pre-wrap text-text-main"
+              >
+                {result}
+              </div>
+              {selection.blocks.length > 0 && (
+                <p className="mt-1.5 text-[10.5px] text-text-muted">Bold, italics and links inside these paragraphs are reset.</p>
+              )}
+              {action?.value === "custom" && (
+                <p className="mt-1.5 text-[10.5px] text-text-muted">
+                  The AI followed your wording and may add details you didn&apos;t write. Check they&apos;re true before you replace.
+                </p>
+              )}
+              <div className="mt-2.5 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={apply}
+                  className="cursor-pointer rounded-md bg-primary px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-primary-hover"
+                >
+                  Replace
+                </button>
+                <button type="button" onClick={() => action && run(action)} className="cursor-pointer text-[11.5px] font-semibold text-primary hover:underline">
+                  Try again
+                </button>
+                <button type="button" onClick={() => setPhase("menu")} className="cursor-pointer text-[11.5px] font-semibold text-primary hover:underline">
+                  Other option
+                </button>
+                <button type="button" onClick={close} className="ml-auto cursor-pointer text-[11.5px] text-text-muted hover:underline">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toolbar({
   editor,
   onUploadMedia,
   allowRichMedia,
+  onRewriteText,
 }: {
   editor: Editor;
   onUploadMedia: (type: string) => void;
   allowRichMedia: boolean;
+  onRewriteText?: TextRewriter;
 }) {
   const [showLinkDialog, setShowLinkDialog] = useState(false);
 
@@ -672,6 +997,12 @@ function Toolbar({
 
   return (
     <div className="relative flex flex-wrap items-center gap-0.5 border-b border-line bg-bg-tertiary px-3 py-1.5">
+      {onRewriteText && (
+        <>
+          <AiRewriteMenu editor={editor} onRewriteText={onRewriteText} />
+          <Separator />
+        </>
+      )}
       <ToolbarButton action={() => editor.chain().focus().toggleBold().run()} isActive={editor.isActive("bold")} title="Bold">
         <strong>B</strong>
       </ToolbarButton>
@@ -794,6 +1125,35 @@ export interface RichEditorProps {
   editable?: boolean;
   /** Show the video and audio upload buttons (plans without video embedding hide them). Default true. */
   allowRichMedia?: boolean;
+  /** Called with the live Tiptap editor once it exists (and with null when it goes away). */
+  onEditorReady?: (editor: Editor | null) => void;
+  /** Adds a "Suggest with AI" button for image alt text + caption when provided. */
+  onSuggestMediaText?: MediaTextSuggester;
+  /** Adds an AI menu to the toolbar that rewrites the selected text (shorten, expand, simplify, tone). */
+  onRewriteText?: TextRewriter;
+}
+
+/**
+ * Replace the first occurrence of `original` (within a single paragraph/heading)
+ * with `replacement`, keeping the surrounding formatting. Returns false when the
+ * text can't be found, e.g. because the author has since edited it.
+ */
+export function replaceTextInEditor(editor: Editor, original: string, replacement: string): boolean {
+  if (!original) return false;
+  let range: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (range) return false;
+    if (!node.isTextblock) return true;
+    // Non-text inline nodes (images) become one placeholder char so offsets map 1:1 to positions.
+    const text = node.textBetween(0, node.content.size, undefined, "￼");
+    const idx = text.indexOf(original);
+    if (idx !== -1) range = { from: pos + 1 + idx, to: pos + 1 + idx + original.length };
+    return false;
+  });
+  if (!range) return false;
+  const { from, to } = range;
+  editor.view.dispatch(editor.state.tr.insertText(replacement, from, to));
+  return true;
 }
 
 type PendingUpload = {
@@ -810,6 +1170,9 @@ export function RichEditor({
   className,
   editable = true,
   allowRichMedia = true,
+  onEditorReady,
+  onSuggestMediaText,
+  onRewriteText,
 }: RichEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -854,6 +1217,11 @@ export function RichEditor({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   const handleUploadMedia = useCallback((mediaType: string) => {
     setPendingMediaType(mediaType);
@@ -907,7 +1275,7 @@ export function RichEditor({
   );
 
   const insertPending = useCallback(
-    (details: { caption: string; sourceUrl: string; sourceLabel: string; showSource: boolean }) => {
+    (details: MediaDetails) => {
       if (!editor || !pendingUpload) return;
       editor
         .chain()
@@ -916,7 +1284,7 @@ export function RichEditor({
           type: pendingUpload.kind,
           attrs: {
             src: pendingUpload.url,
-            alt: pendingUpload.name,
+            alt: details.alt || pendingUpload.name,
             caption: details.caption,
             sourceUrl: details.sourceUrl,
             sourceLabel: details.sourceLabel,
@@ -933,10 +1301,11 @@ export function RichEditor({
   if (!editor) return null;
 
   return (
+    <MediaTextSuggesterContext.Provider value={onSuggestMediaText}>
     <div className={cn("overflow-hidden rounded-xl border border-line bg-bg-secondary", className)}>
       {editable && (
         <>
-          <Toolbar editor={editor} onUploadMedia={handleUploadMedia} allowRichMedia={allowRichMedia} />
+          <Toolbar editor={editor} onUploadMedia={handleUploadMedia} allowRichMedia={allowRichMedia} onRewriteText={onRewriteText} />
           {uploading && (
             <div className="border-b border-line bg-primary-glow px-4 py-1.5 text-xs font-semibold text-primary">
               Uploading media...
@@ -956,6 +1325,7 @@ export function RichEditor({
       {pendingUpload && (
         <MediaDetailsDialog
           kind={pendingUpload.kind}
+          src={pendingUpload.url}
           nearDuplicateOf={pendingUpload.nearDuplicateOf}
           onSubmit={insertPending}
           onClose={() => {
@@ -963,11 +1333,12 @@ export function RichEditor({
             setPendingMediaType(null);
           }}
           onSkip={() =>
-            insertPending({ caption: "", sourceUrl: "", sourceLabel: "", showSource: true })
+            insertPending({ alt: "", caption: "", sourceUrl: "", sourceLabel: "", showSource: true })
           }
         />
       )}
     </div>
+    </MediaTextSuggesterContext.Provider>
   );
 }
 

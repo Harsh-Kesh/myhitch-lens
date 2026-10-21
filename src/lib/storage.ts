@@ -55,6 +55,17 @@ function getClient(): SupabaseClient {
   return client;
 }
 
+/**
+ * Public-URL prefix of our own media bucket, or null when Supabase Storage isn't
+ * configured. Lets server code fetch an uploaded file by URL while refusing any
+ * URL that isn't ours (no server-side request to an arbitrary address).
+ */
+export function ownStoragePublicPrefix(): string | null {
+  const rawUrl = process.env.SUPABASE_URL;
+  if (!rawUrl) return null;
+  return `${normalizeSupabaseUrl(rawUrl)}/storage/v1/object/public/${BUCKET}/`;
+}
+
 /** Upload a file to the storage bucket and return its public URL. */
 export async function uploadToStorage(
   path: string,

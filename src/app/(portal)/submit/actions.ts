@@ -12,6 +12,26 @@ import { articleHasVideoOrAudio } from "@/lib/articleMedia";
 import { getEntitlements, getSubmissionAllowance, upgradeMessage } from "@/lib/entitlements";
 import { pagesNeeded } from "@/lib/magazinePagination";
 import { isEligibleToSubmit } from "@/lib/verification";
+import { takeAiSlot } from "@/lib/aiClient";
+import {
+  articleJsonToText,
+  checkWriting,
+  MIN_CHECK_WORDS,
+  type WritingCheckResult,
+} from "@/lib/writingCheck";
+import { MAX_EXCERPT_CHARS, suggestTitleAndExcerpt, type TitleExcerptResult } from "@/lib/titleExcerpt";
+import { suggestTags, type TagSuggestionResult } from "@/lib/tagSuggestions";
+import { suggestImageText, type ImageTextResult } from "@/lib/imageText";
+import { isRewriteAction, MAX_INSTRUCTION_CHARS, MAX_REWRITE_CHARS, MIN_INSTRUCTION_CHARS, rewriteText } from "@/lib/rewrite";
+import { pageBreakdown, suggestLayout, type LayoutHints, type PageBreakdown } from "@/lib/layoutHints";
+import { cleanSeo, suggestSeo, type SeoMetadata } from "@/lib/seoMetadata";
+import {
+  countImagesMissingAlt,
+  countWords,
+  findPlaceholders,
+  reviewContent,
+  type ChecklistItem,
+} from "@/lib/preSubmitCheck";
 import type { ArticleDestination } from "@prisma/client";
 
 export type ActionResult = { error: string } | undefined;
@@ -110,6 +130,10 @@ export async function submitForReview(input: {
   license: string;
   rightsAttested: boolean;
   destination: ArticleDestination;
+  /** Author-written (or AI-suggested, then edited) excerpt. Blank falls back to the start of the article. */
+  summary?: string;
+  /** Optional search title / description / keywords, stored with the article. */
+  seo?: { title?: string; description?: string; keywords?: string[] };
 }): Promise<ActionResult> {
   const session = await requireAuthorSession();
   const suspendedError = await checkNotSuspended(session.user.id);
@@ -132,7 +156,7 @@ export async function submitForReview(input: {
 
   const article = await prisma.article.findUnique({
     where: { id: input.articleId },
-    select: { authorId: true, status: true, title: true, content: true, submittedAt: true },
+    select: { authorId: true, status: true, title: true, content: true, submittedAt: true, aiScores: true },
   });
   if (!article) return { error: "Article not found." };
   if (article.authorId !== session.user.id) return { error: "Not your article." };
@@ -193,6 +217,14 @@ export async function submitForReview(input: {
   }
 
   const bestCategory = await deriveCategoryFromTags(input.tagNames);
+  const customSummary = (input.summary ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_EXCERPT_CHARS);
+  // Search metadata lives in the article's aiScores JSON (no schema change). Keep an earlier value when
+  // the author didn't touch it on a resubmission.
+  const submittedSeo = input.seo ? cleanSeo(input.seo) : null;
+  const seo =
+    submittedSeo && (submittedSeo.title || submittedSeo.description || submittedSeo.keywords.length > 0)
+      ? submittedSeo
+      : storedSeo(article.aiScores);
 
   await prisma.article.update({
     where: { id: input.articleId },
@@ -204,7 +236,7 @@ export async function submitForReview(input: {
       license: input.license,
       rightsAttested: true,
       destination: input.destination,
-      summary: `${contentText.slice(0, 140)}${contentText.length > 140 ? "…" : ""}`,
+      summary: customSummary || `${contentText.slice(0, 140)}${contentText.length > 140 ? "…" : ""}`,
       tags: {
         deleteMany: {},
         create: tagIds.map((tagId) => ({ tagId })),
@@ -215,6 +247,7 @@ export async function submitForReview(input: {
         plagiarism: "0.4% detected",
         readability: "Good (Flesch: 65)",
         sentiment: "Highly Analytical",
+        ...(seo ? { seo } : {}),
       },
     },
   });
@@ -272,6 +305,7 @@ export async function loadDraft(articleId: string) {
       license: true,
       destination: true,
       authorId: true,
+      aiScores: true,
       tags: { include: { tag: true } },
       revisions: {
         orderBy: { createdAt: "desc" },
@@ -291,6 +325,7 @@ export async function loadDraft(articleId: string) {
     license: article.license,
     destination: article.destination,
     tags: article.tags.map((t) => t.tag.name),
+    seo: storedSeo(article.aiScores),
     revisionNotes: article.revisions
       .filter((r) => r.note)
       .map((r) => r.note as string),
@@ -359,6 +394,13 @@ async function deriveCategoryFromTags(tagNames: string[]): Promise<string> {
   return fallback!.id;
 }
 
+/** The search metadata saved in an article's aiScores blob, if any. */
+function storedSeo(aiScores: unknown): SeoMetadata | null {
+  if (!aiScores || typeof aiScores !== "object" || !("seo" in aiScores)) return null;
+  const seo = cleanSeo((aiScores as { seo: Record<string, unknown> }).seo ?? {});
+  return seo.title || seo.description || seo.keywords.length > 0 ? seo : null;
+}
+
 function extractText(node: unknown): string {
   if (!node || typeof node !== "object") return "";
   const n = node as Record<string, unknown>;
@@ -367,4 +409,362 @@ function extractText(node: unknown): string {
     return n.content.map(extractText).join(" ");
   }
   return "";
+}
+
+/** AI grammar & clarity check of the draft currently in the editor. Suggestions only; nothing is saved. */
+export async function checkArticleWriting(
+  content: string,
+): Promise<{ error: string } | { result: WritingCheckResult }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  const text = articleJsonToText(content);
+  if (text.split(/\s+/).filter(Boolean).length < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before running a writing check.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "writing-check");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { result: await checkWriting(text) };
+  } catch (err) {
+    console.error("[checkArticleWriting]", err);
+    return { error: err instanceof Error ? err.message : "Writing check failed. Please try again." };
+  }
+}
+
+/**
+ * Pre-submit checklist for the draft as it is right now: the same rules
+ * `submitForReview` enforces (so the author learns about them first), a few
+ * quality checks, and one AI content review. Advisory; nothing is saved.
+ */
+export async function runPreSubmitChecklist(input: {
+  articleId: string | null;
+  title: string;
+  content: string;
+  excerpt: string;
+  tagCount: number;
+  rightsAttested: boolean;
+}): Promise<{ error: string } | { items: ChecklistItem[] }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+  const userId = session.user.id;
+
+  const title = input.title.trim();
+  const text = articleJsonToText(input.content);
+  const words = countWords(text);
+  const items: ChecklistItem[] = [];
+
+  // Title
+  if (!title) items.push({ id: "title", status: "fail", label: "Add a title" });
+  else if (title.length < 10 || title.length > 100)
+    items.push({
+      id: "title",
+      status: "warn",
+      label: "Title length",
+      detail: `Your title is ${title.length} characters. Between 10 and 100 reads best on cards.`,
+    });
+  else items.push({ id: "title", status: "pass", label: "Title is set" });
+
+  // Body
+  if (text.length < 50) items.push({ id: "body", status: "fail", label: "Article body is too short", detail: "Write at least a few sentences." });
+  else if (words < 100)
+    items.push({ id: "body", status: "warn", label: "Short article", detail: `${words} words. Most published articles are longer than 100.` });
+  else items.push({ id: "body", status: "pass", label: `Article body (${words} words)` });
+
+  // Leftover placeholder text
+  const placeholders = findPlaceholders(`${title}\n${text}`);
+  items.push(
+    placeholders.length
+      ? { id: "placeholders", status: "fail", label: "Leftover placeholder text", detail: `Found ${placeholders.join(", ")}. Replace or remove it.` }
+      : { id: "placeholders", status: "pass", label: "No leftover placeholder text" },
+  );
+
+  // Tags, excerpt, rights
+  items.push(
+    input.tagCount > 0
+      ? { id: "tags", status: "pass", label: `Tags selected (${input.tagCount})` }
+      : { id: "tags", status: "fail", label: "Select at least one tag" },
+  );
+  items.push(
+    input.excerpt.trim()
+      ? { id: "excerpt", status: "pass", label: "Excerpt written" }
+      : {
+          id: "excerpt",
+          status: "warn",
+          label: "No excerpt",
+          detail: "Cards will show the first words of your article instead. Write one, or use the AI suggestion.",
+        },
+  );
+  items.push(
+    input.rightsAttested
+      ? { id: "rights", status: "pass", label: "Rights confirmation ticked" }
+      : { id: "rights", status: "fail", label: "Confirm you own or are licensed for all content", detail: "Tick the box in the panel below." },
+  );
+
+  // Images
+  const images = countImagesMissingAlt(input.content);
+  if (images.total > 0) {
+    items.push(
+      images.missing > 0
+        ? {
+            id: "alt",
+            status: "warn",
+            label: `Alt text missing on ${images.missing} of ${images.total} image${images.total === 1 ? "" : "s"}`,
+            detail: "Select the image, click ✎, and add alt text (the AI can suggest it).",
+          }
+        : { id: "alt", status: "pass", label: `All ${images.total} image${images.total === 1 ? " has" : "s have"} alt text` },
+    );
+  }
+
+  // Account + plan rules (same checks submitForReview applies)
+  const { eligible, missing } = await isEligibleToSubmit(userId);
+  items.push(
+    eligible
+      ? { id: "verified", status: "pass", label: "Profile is verified for submitting" }
+      : { id: "verified", status: "fail", label: "Get verified before submitting", detail: `Complete your profile: ${missing.join(", ")}.` },
+  );
+
+  const entitlements = await getEntitlements(userId);
+  const pages = pagesNeeded(text);
+  items.push(
+    pages > entitlements.maxPagesPerArticle
+      ? {
+          id: "pages",
+          status: "fail",
+          label: "Too long for your plan",
+          detail: `Runs to ${pages} magazine pages; your plan includes up to ${entitlements.maxPagesPerArticle}. Shorten it or upgrade.`,
+        }
+      : { id: "pages", status: "pass", label: `Fits your plan (${pages} of ${entitlements.maxPagesPerArticle} magazine pages)` },
+  );
+  if (articleHasVideoOrAudio(input.content) && !entitlements.videoEmbeds) {
+    items.push({
+      id: "media",
+      status: "fail",
+      label: "Video or audio isn't in your plan",
+      detail: "Remove the video or audio clips, or upgrade, to submit.",
+    });
+  }
+
+  let alreadySubmitted = false;
+  if (input.articleId) {
+    const article = await prisma.article.findUnique({
+      where: { id: input.articleId },
+      select: { authorId: true, submittedAt: true },
+    });
+    alreadySubmitted = Boolean(article && article.authorId === userId && article.submittedAt !== null);
+  }
+  if (!alreadySubmitted) {
+    const allowance = await getSubmissionAllowance(userId);
+    if (!allowance.allowed) {
+      items.push({
+        id: "allowance",
+        status: "fail",
+        label: "Monthly submissions used up",
+        detail: `Your plan includes ${allowance.limit} per month. They reset on the 1st.`,
+      });
+    }
+  }
+
+  // AI content review
+  if (words < 20) {
+    items.push({ id: "ai-review", status: "warn", label: "AI content review skipped", detail: "Write at least 20 words first." });
+  } else {
+    const slot = takeAiSlot(userId, "presubmit-review");
+    if (!slot.ok) {
+      items.push({ id: "ai-review", status: "warn", label: "AI content review skipped", detail: slot.error });
+    } else {
+      try {
+        const concerns = await reviewContent(text, title);
+        items.push(
+          concerns.length === 0
+            ? { id: "ai-review", status: "pass", label: "AI content review: no concerns found" }
+            : {
+                id: "ai-review",
+                status: "warn",
+                label: `AI content review: ${concerns.length} thing${concerns.length === 1 ? "" : "s"} to check`,
+                detail: "An editor will review your article too. Fix anything that is a genuine problem.",
+                notes: concerns.map((c) => `${c.category}${c.quote ? ` — “${c.quote}”` : ""}: ${c.reason}`),
+              },
+        );
+      } catch (err) {
+        console.error("[runPreSubmitChecklist] AI review failed", err);
+        items.push({ id: "ai-review", status: "warn", label: "AI content review couldn't run", detail: "Try again in a moment." });
+      }
+    }
+  }
+
+  return { items };
+}
+
+/** AI search title, description and keywords for the draft in the editor. Suggestions only; nothing is saved. */
+export async function suggestArticleSeo(
+  content: string,
+  title: string,
+  excerpt: string,
+): Promise<{ error: string } | { result: SeoMetadata }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  const text = articleJsonToText(content);
+  if (text.split(/\s+/).filter(Boolean).length < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before asking for search metadata.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "seo");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { result: await suggestSeo(text, title.slice(0, 300), excerpt.slice(0, 400)) };
+  } catch (err) {
+    console.error("[suggestArticleSeo]", err);
+    return { error: err instanceof Error ? err.message : "Suggestions failed. Please try again." };
+  }
+}
+
+/**
+ * Layout hints for the draft in the editor: pull quotes, section headings and
+ * structure notes from the AI, plus where the magazine's page breaks fall and
+ * how that compares with the plan's page limit. Suggestions only; nothing is saved.
+ */
+export async function getLayoutHints(
+  content: string,
+  title: string,
+): Promise<{ error: string } | { hints: LayoutHints; pages: PageBreakdown; maxPages: number }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  // The page readout counts everything the magazine page prints, quotes included; the AI reviews
+  // the article without its pull quotes, so it doesn't flag them as repeated text.
+  const text = articleJsonToText(content);
+  const reviewText = articleJsonToText(content, { skipBlockquotes: true });
+  const words = reviewText.split(/\s+/).filter(Boolean).length;
+  if (words < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before asking for layout hints.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "layout");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    const [hints, entitlements] = await Promise.all([
+      suggestLayout(reviewText, title.slice(0, 300), words),
+      getEntitlements(session.user.id),
+    ]);
+    return { hints, pages: pageBreakdown(text), maxPages: entitlements.maxPagesPerArticle };
+  } catch (err) {
+    console.error("[getLayoutHints]", err);
+    return { error: err instanceof Error ? err.message : "Layout hints failed. Please try again." };
+  }
+}
+
+/** AI rewrite of the passage selected in the editor. Returns the proposal only; the author applies it. */
+export async function rewriteSelectedText(
+  text: string,
+  action: string,
+  instruction?: string,
+): Promise<{ error: string } | { text: string }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  if (!isRewriteAction(action)) return { error: "Choose a rewrite option." };
+  const wanted = String(instruction ?? "").replace(/\s+/g, " ").trim();
+  if (action === "custom" && wanted.length < MIN_INSTRUCTION_CHARS) {
+    return { error: "Type what you want the AI to change, in a few words." };
+  }
+  if (wanted.length > MAX_INSTRUCTION_CHARS) {
+    return { error: `Keep your instruction under ${MAX_INSTRUCTION_CHARS} characters.` };
+  }
+  const passage = String(text ?? "").trim();
+  if (passage.split(/\s+/).filter(Boolean).length < 3) return { error: "Select a few more words to rewrite." };
+  if (passage.length > MAX_REWRITE_CHARS) {
+    return { error: `That selection is too long to rewrite at once. Select up to about ${Math.round(MAX_REWRITE_CHARS / 6)} words.` };
+  }
+
+  // Rewriting is iterative (try, tweak, try again), so allow a quicker cadence than the other tools.
+  const slot = takeAiSlot(session.user.id, "rewrite", { dailyLimit: 100, cooldownMs: 1_500 });
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { text: await rewriteText(passage, action, wanted) };
+  } catch (err) {
+    console.error("[rewriteSelectedText]", err);
+    return { error: err instanceof Error ? err.message : "Rewrite failed. Please try again." };
+  }
+}
+
+/** AI alt text + caption for an image uploaded into the article. Suggestions only; nothing is saved. */
+export async function suggestMediaText(
+  src: string,
+  articleTitle: string,
+): Promise<{ error: string } | { result: ImageTextResult }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  const slot = takeAiSlot(session.user.id, "image-text");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { result: await suggestImageText(String(src), articleTitle.slice(0, 300)) };
+  } catch (err) {
+    console.error("[suggestMediaText]", err);
+    return { error: err instanceof Error ? err.message : "Suggestions failed. Please try again." };
+  }
+}
+
+/** AI tag + content-type suggestions for the draft in the editor. Suggestions only; nothing is saved. */
+export async function suggestArticleTags(
+  content: string,
+  title: string,
+): Promise<{ error: string } | { result: TagSuggestionResult }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  const text = articleJsonToText(content);
+  if (text.split(/\s+/).filter(Boolean).length < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before asking for tag ideas.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "tags");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { result: await suggestTags(text, title.slice(0, 300), await listTags()) };
+  } catch (err) {
+    console.error("[suggestArticleTags]", err);
+    return { error: err instanceof Error ? err.message : "Suggestions failed. Please try again." };
+  }
+}
+
+/** AI title options + an excerpt for the draft in the editor. Suggestions only; nothing is saved. */
+export async function suggestArticleTitleAndExcerpt(
+  content: string,
+  currentTitle: string,
+): Promise<{ error: string } | { result: TitleExcerptResult }> {
+  const session = await requireAuthorSession();
+  const suspendedError = await checkNotSuspended(session.user.id);
+  if (suspendedError) return suspendedError;
+
+  const text = articleJsonToText(content);
+  if (text.split(/\s+/).filter(Boolean).length < MIN_CHECK_WORDS) {
+    return { error: `Write at least ${MIN_CHECK_WORDS} words before asking for title and excerpt ideas.` };
+  }
+
+  const slot = takeAiSlot(session.user.id, "title-excerpt");
+  if (!slot.ok) return { error: slot.error };
+
+  try {
+    return { result: await suggestTitleAndExcerpt(text, currentTitle.slice(0, 300)) };
+  } catch (err) {
+    console.error("[suggestArticleTitleAndExcerpt]", err);
+    return { error: err instanceof Error ? err.message : "Suggestions failed. Please try again." };
+  }
 }

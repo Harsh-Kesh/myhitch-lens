@@ -16,6 +16,7 @@ import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Superscript from "@tiptap/extension-superscript";
 import Subscript from "@tiptap/extension-subscript";
+import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
@@ -1190,6 +1191,10 @@ export function RichEditor({
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Superscript,
       Subscript,
+      Table,
+      TableRow,
+      TableHeader,
+      TableCell,
       ImageNode,
       FigureNode,
       VideoNode,

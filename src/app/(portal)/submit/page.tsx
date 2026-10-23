@@ -18,6 +18,7 @@ import { LICENSE_OPTIONS } from "@/lib/licenses";
 import type { ArticleDestination } from "@prisma/client";
 
 import { LegalReviewModal } from "./LegalReviewModal";
+import { ImportDocumentModal, type ImportApply } from "./ImportDocumentModal";
 import type { WritingCheckResult } from "@/lib/writingCheck";
 import type { TagSuggestionResult } from "@/lib/tagSuggestions";
 import type { ChecklistItem } from "@/lib/preSubmitCheck";
@@ -72,6 +73,10 @@ export default function SubmitPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [draftLoading, setDraftLoading] = useState(!!editId);
   const [showPreview, setShowPreview] = useState(false);
+  // Import a document written elsewhere: the modal, a file dropped on the page, and the page-wide drop overlay
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [draggingFile, setDraggingFile] = useState(false);
 
   // Revision feedback state
   const [revisionNotes, setRevisionNotes] = useState<string[]>([]);
@@ -159,6 +164,54 @@ export default function SubmitPage() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showSubmitPanel, showWritingCheck, showLayout, showLegal]);
 
+  function openImport(file: File | null = null) {
+    setImportFile(file);
+    setShowImport(true);
+  }
+
+  // A file dragged anywhere onto the page opens the import dialog (capture phase, so the editor never sees it).
+  useEffect(() => {
+    if (showImport || draftLoading) return;
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    function onEnter(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth++;
+      setDraggingFile(true);
+    }
+    function onOver(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    }
+    function onLeave(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDraggingFile(false);
+    }
+    function onDrop(e: DragEvent) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      depth = 0;
+      setDraggingFile(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (file) openImport(file);
+    }
+    window.addEventListener("dragenter", onEnter, true);
+    window.addEventListener("dragover", onOver, true);
+    window.addEventListener("dragleave", onLeave, true);
+    window.addEventListener("drop", onDrop, true);
+    return () => {
+      window.removeEventListener("dragenter", onEnter, true);
+      window.removeEventListener("dragover", onOver, true);
+      window.removeEventListener("dragleave", onLeave, true);
+      window.removeEventListener("drop", onDrop, true);
+      setDraggingFile(false);
+    };
+  }, [showImport, draftLoading]);
+
   // Load available tags
   useEffect(() => {
     listTags().then(setAvailableTags);
@@ -241,6 +294,17 @@ export default function SubmitPage() {
   function handleContentUpdate(json: string) {
     setContent(json);
     scheduleAutoSave("content", json);
+  }
+
+  // Put an imported document into the editor. The editor's own update handler then autosaves it, and Ctrl+Z undoes it.
+  function handleImportApply({ html, title: documentTitle, mode }: ImportApply) {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (mode === "replace") editor.commands.setContent(html, { emitUpdate: true });
+    else editor.chain().focus("end").insertContent(html).run();
+    if (documentTitle && !title.trim()) handleTitleChange(documentTitle);
+    setShowImport(false);
+    setImportFile(null);
   }
 
   // Tag management
@@ -500,6 +564,9 @@ export default function SubmitPage() {
                 {saveLabel[saveStatus]}
               </span>
             )}
+            <Button variant="secondary" size="sm" onClick={() => openImport()} disabled={draftLoading}>
+              Import Document
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -565,6 +632,22 @@ export default function SubmitPage() {
         className="mb-4 w-full border-none bg-transparent font-heading text-3xl font-bold text-text-main outline-none placeholder:text-text-muted/40"
       />
 
+      {/* Import strip: always shown so the editor never jumps; dropping a file anywhere on the page works too */}
+      {!draftLoading && (
+        <button
+          type="button"
+          onClick={() => openImport()}
+          className="mb-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-line px-4 py-2 text-[12px] text-text-muted transition-colors hover:border-primary/60 hover:bg-surface-hover hover:text-text-main"
+        >
+          <svg className="size-4 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          Already written it elsewhere? <span className="font-semibold text-primary">Import a document</span> or drop a file anywhere on this page.
+        </button>
+      )}
+
       {/* Editor — deferred until draft loads so Tiptap gets the saved content */}
       {draftLoading ? (
         <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-line bg-bg-secondary text-sm text-text-muted">
@@ -588,6 +671,26 @@ export default function SubmitPage() {
         <span>{wordCount} words</span>
         <span>{readingLabel}</span>
       </div>
+
+      {showImport && (
+        <ImportDocumentModal
+          key={importFile ? `${importFile.name}-${importFile.size}-${importFile.lastModified}` : "choose"}
+          initialFile={importFile}
+          hasContent={wordCount > 0}
+          titleEmpty={!title.trim()}
+          onApply={handleImportApply}
+          onClose={() => {
+            setShowImport(false);
+            setImportFile(null);
+          }}
+        />
+      )}
+
+      {draggingFile && (
+        <div className="pointer-events-none fixed inset-3 z-[70] flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px]">
+          <p className="rounded-lg bg-bg-secondary px-5 py-3 text-sm font-semibold text-text-main shadow-card">Drop your document to import it</p>
+        </div>
+      )}
 
       {/* Preview modal */}
       {showPreview && (

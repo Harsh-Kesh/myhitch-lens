@@ -318,6 +318,29 @@
     border-top: 1px solid var(--border-color);
     margin: 1.5em 0;
   }
+  .tiptap table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+    table-layout: fixed;
+    font-size: 0.95em;
+  }
+  .tiptap th,
+  .tiptap td {
+    border: 1px solid var(--border-color);
+    padding: 0.4em 0.6em;
+    vertical-align: top;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .tiptap th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+  }
+  .tiptap td > p,
+  .tiptap th > p {
+    margin: 0;
+  }
   .tiptap img {
     max-width: 100%;
     height: auto;

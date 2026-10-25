@@ -558,7 +558,8 @@ export default function SubmitPage() {
         title="Write Article"
         subtitle="Focus on your writing. Your draft saves automatically."
         actions={
-          <div className="flex items-center gap-3">
+          // flex-1 keeps the buttons beside the title; if they don't fit they wrap among themselves, right-aligned
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3 max-[640px]:justify-start">
             {saveStatus !== "idle" && (
               <span
                 className={cn(

@@ -150,6 +150,7 @@ async function storeImage(bytes: Buffer, type: string, who: UploadAs): Promise<s
     return stored.url;
   } catch (err) {
     if (err instanceof StorageUploadError) throw new ImportError("Your images couldn't be saved. Please try again.");
+    console.error("[importDocument] image skipped", err);
     return null;
   }
 }
@@ -252,6 +253,7 @@ async function importDocx(bytes: Buffer, who: UploadAs): Promise<ImportResult> {
 
   const html = result.value
     .replace(/<img\b[^>]*\bsrc=""[^>]*>/g, "")
+    .replace(/<p>\s*<\/p>/g, "") // a paragraph that only held a skipped image
     .replace(/<(p|h[1-6]|li|blockquote)((?:\s[^>]*)?)>([CRJ])/g, (_m, tag: string, attrs: string, code: string) => {
       const style = `text-align:${ALIGN_CSS[code]}`;
       return /\sstyle="/.test(attrs) ? `<${tag}${attrs.replace(/\sstyle="/, ` style="${style};`)}>` : `<${tag}${attrs} style="${style}">`;

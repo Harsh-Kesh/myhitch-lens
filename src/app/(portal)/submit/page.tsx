@@ -148,6 +148,7 @@ export default function SubmitPage() {
   );
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{ title?: string; content?: string }>({});
   const initialLoadRef = useRef(false);
 
   // Escape closes the submit / writing-check panel, matching the app's other modals/panels.
@@ -265,21 +266,27 @@ export default function SubmitPage() {
     const result = await createDraft();
     if ("error" in result) return null;
     setArticleId(result.id);
+    // Put the draft in the address so a refresh reopens it instead of a blank page. The load-draft effect
+    // must not run for it: the editor already holds this content.
+    initialLoadRef.current = true;
+    window.history.replaceState(null, "", `?draft=${result.id}`);
     return result.id;
   }, [articleId]);
 
   // Auto-save
   const scheduleAutoSave = useCallback(
     (field: "title" | "content", value: string) => {
+      // Changes made together (an import sets both the title and the text) are saved together.
+      pendingSaveRef.current[field] = value;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
         const id = await ensureDraft();
         if (!id) return;
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = {};
         setSaveStatus("saving");
-        const result = await saveDraft({
-          articleId: id,
-          ...(field === "title" ? { title: value } : { content: value }),
-        });
+        const result = await saveDraft({ articleId: id, ...pending });
+        if (result?.error) pendingSaveRef.current = { ...pending, ...pendingSaveRef.current };
         setSaveStatus(result?.error ? "error" : "saved");
       }, 2000);
     },
@@ -564,9 +571,6 @@ export default function SubmitPage() {
                 {saveLabel[saveStatus]}
               </span>
             )}
-            <Button variant="secondary" size="sm" onClick={() => openImport()} disabled={draftLoading}>
-              Import Document
-            </Button>
             <Button
               variant="secondary"
               size="sm"

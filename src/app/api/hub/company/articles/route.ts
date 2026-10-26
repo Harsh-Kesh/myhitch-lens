@@ -12,12 +12,15 @@ export async function GET(request: Request) {
   }
 }
 
-/** POST /api/hub/company/articles - { title, content } in plain text; goes to review. */
+/**
+ * POST /api/hub/company/articles - { title, content (plain text), category?, type?, summary?, tags? };
+ * goes to review. reviewers = how many others can approve it (0: invite an editor first).
+ */
 export async function POST(request: Request) {
   try {
     const ctx = await requireHubCompany(request);
-    const id = await createArticle(ctx, await request.json().catch(() => ({})));
-    return NextResponse.json({ id, status: "in_review" }, { status: 201 });
+    const { id, reviewers } = await createArticle(ctx, await request.json().catch(() => ({})));
+    return NextResponse.json({ id, status: "in_review", reviewers }, { status: 201 });
   } catch (e) {
     return hubError(e);
   }

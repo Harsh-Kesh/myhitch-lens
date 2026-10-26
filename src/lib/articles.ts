@@ -1,6 +1,7 @@
 import "server-only";
 
 import { priorityAuthorIds } from "@/lib/entitlements";
+import { notCompanyArticle } from "@/lib/companyArticles";
 import { prisma } from "@/lib/prisma";
 import { cleanSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import type { FeedArticle } from "@/lib/types";
@@ -94,7 +95,7 @@ function scoreField(aiScores: unknown, key: string, fallback: string | number) {
  */
 export async function listReviewQueue(): Promise<ReviewQueueItem[]> {
   const rows = await prisma.article.findMany({
-    where: { status: "in_review", author: { role: { not: "corporate" } } },
+    where: { status: "in_review", ...notCompanyArticle },
     orderBy: { createdAt: "asc" },
     include: {
       category: { select: { name: true } },

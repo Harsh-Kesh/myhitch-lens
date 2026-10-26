@@ -3,6 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 
 import { takeAiSlot } from "@/lib/aiClient";
+import { companyArticleWhere } from "@/lib/companyArticles";
 import { hubError, HubError, need, type HubCompany } from "@/lib/hubCompany";
 import { countWords, findPlaceholders, reviewContent, type ChecklistItem } from "@/lib/preSubmitCheck";
 import { prisma } from "@/lib/prisma";
@@ -203,7 +204,7 @@ export async function checklist(ctx: HubCompany, input: { title?: unknown; conte
 
 async function publishedArticle(ctx: HubCompany, id: string) {
   const article = await prisma.article.findFirst({
-    where: { id, author: { memberships: { some: { orgId: ctx.membership.orgId } } } },
+    where: { id, ...companyArticleWhere(ctx.membership.orgId) },
     select: { authorId: true, title: true, summary: true, content: true, status: true },
   });
   // Same answer for "missing" and "not yours", so ids can't be probed.

@@ -4,30 +4,19 @@ import { revalidatePath } from "next/cache";
 
 import { auth } from "@/auth";
 import { appealTakedownFor, fileEditorialAppealFor, type EditorialAppealReason as Reason } from "@/lib/appeals";
+import { countArticleShare, countArticleView } from "@/lib/articleStats";
 import { prisma } from "@/lib/prisma";
 import { syncContributorRank } from "@/lib/ranking";
 
 /**
  * Record a read: increment the article's view counter and log an analytics
  * event. The author's own views are ignored so metrics stay honest. Called
- * once per session per article from the client (deduped there).
+ * once per session per article from the client (deduped there). The counting
+ * is shared with the MYHitch app (src/lib/articleStats.ts).
  */
 export async function recordArticleView(articleId: string): Promise<void> {
   const session = await auth();
-  const article = await prisma.article.findUnique({
-    where: { id: articleId },
-    select: { authorId: true, status: true },
-  });
-  if (!article || article.status !== "published") return;
-  // Don't let the author inflate their own view count.
-  if (session?.user && session.user.id === article.authorId) return;
-
-  await prisma.$transaction([
-    prisma.article.update({ where: { id: articleId }, data: { viewsCount: { increment: 1 } } }),
-    prisma.analyticsEvent.create({
-      data: { articleId, userId: session?.user?.id ?? null, kind: "view" },
-    }),
-  ]);
+  await countArticleView(articleId, session?.user?.id ?? null);
 }
 
 /**
@@ -37,20 +26,7 @@ export async function recordArticleView(articleId: string): Promise<void> {
  */
 export async function recordArticleShare(articleId: string): Promise<void> {
   const session = await auth();
-  const article = await prisma.article.findUnique({
-    where: { id: articleId },
-    select: { authorId: true, status: true },
-  });
-  if (!article || article.status !== "published") return;
-  if (session?.user && session.user.id === article.authorId) return;
-
-  await prisma.$transaction([
-    prisma.article.update({ where: { id: articleId }, data: { sharesCount: { increment: 1 } } }),
-    prisma.analyticsEvent.create({
-      data: { articleId, userId: session?.user?.id ?? null, kind: "share" },
-    }),
-  ]);
-  await syncContributorRank(article.authorId);
+  await countArticleShare(articleId, session?.user?.id ?? null);
 }
 
 /** File a copyright/infringement report against an article → moderation queue. */

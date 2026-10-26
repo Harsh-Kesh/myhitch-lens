@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SessionSync } from "@/components/providers/SessionSync";
 import { auth } from "@/auth";
+import { notCompanyArticle } from "@/lib/companyArticles";
 import { prisma } from "@/lib/prisma";
 import { getEntitlements } from "@/lib/entitlements";
 import { getMyNotifications } from "@/lib/notifications";
@@ -24,7 +25,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   const showExchange = isStaff || role === "corporate" || (await getEntitlements(session.user.id)).sponsoredArticles;
   const [pendingReviewCount, { items: notifications, unreadCount }, profile] = await Promise.all([
     ["editor", "admin"].includes(role)
-      ? prisma.article.count({ where: { status: "in_review", author: { role: { not: "corporate" } } } })
+      ? prisma.article.count({ where: { status: "in_review", ...notCompanyArticle } })
       : Promise.resolve(0),
     getMyNotifications(session.user.id),
     prisma.profile.findUnique({ where: { userId: session.user.id }, select: { avatarUrl: true } }),

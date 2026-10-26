@@ -7,18 +7,30 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { normalizeAbn } from "@/lib/abn";
+import { blocksOf, coverOf, docOf, plainOf } from "@/lib/articleBlocks";
+import { deriveCategoryFromTags, findCategory } from "@/lib/articleCategory";
 import { BillingError, setExtraSeats } from "@/lib/billing";
+import {
+  companyArticleWhere,
+  companyCan,
+  ownArticleError,
+  submissionAllowanceError,
+  type CompanyAbility,
+} from "@/lib/companyArticles";
 import { getSeatUsage, inviteToCompany, pendingInvites, resolveLegalEntity, revokeCompanyInvite } from "@/lib/companyTeam";
 import { MAX_EXTRA_SEATS } from "@/lib/plans";
 import { mintProvenance } from "@/lib/provenance";
 import { bearer, hubDenied, verifyHubToken } from "@/lib/hubAuth";
+import { CONTENT_TYPES } from "@/lib/tagSuggestions";
+import { MAX_EXCERPT_CHARS } from "@/lib/titleExcerpt";
 
 /**
  * The company dashboard for businesses using the MYHitch app, through the
- * MYHitch hub. Mirrors src/app/(portal)/company/actions.ts. A business signed
- * in through the hub is its company's owner, so it can do all of it: team,
- * seats, writing articles and reviewing them. The company's name and ABN come
- * from MYHitch Business and can't be changed here.
+ * MYHitch hub. Mirrors src/app/(portal)/company/actions.ts and shares its
+ * rules (src/lib/companyArticles.ts). A business signed in through the hub is
+ * its company's owner: team, seats, writing articles and reviewing the team's
+ * articles - but never its own, which an editor has to approve. The company's
+ * name and ABN come from MYHitch Business and can't be changed here.
  */
 
 export class HubError extends Error {
@@ -40,9 +52,14 @@ async function companyFor(userId: string) {
     where: { id: userId },
     select: { id: true, displayName: true, role: true, suspended: true },
   });
-  if (!user || user.role !== "corporate" || user.suspended) throw new HubError(401, "Please open your Lens account again.");
+  // A company account, or an individual author who also owns a company (see ensureCompany).
+  if (!user || (user.role !== "corporate" && user.role !== "author") || user.suspended) {
+    throw new HubError(401, "Please open your Lens account again.");
+  }
   const membership = await prisma.orgMembership.findFirst({ where: { userId }, include: { org: true } });
-  if (!membership) throw new HubError(403, "No company account found for this user.");
+  if (!membership || (user.role === "author" && !membership.isAdmin)) {
+    throw new HubError(403, "No company account found for this user.");
+  }
   return { user, membership };
 }
 
@@ -55,13 +72,11 @@ export async function requireHubCompany(request: Request) {
   return companyFor(userId);
 }
 
-export type Ability = "team" | "write" | "review";
+export type Ability = CompanyAbility;
 
+/** The website's rules: authors write, editors review, the owner does both. */
 export function can(ctx: HubCompany, ability: Ability): boolean {
-  if (ctx.membership.isAdmin) return true;
-  if (ability === "write") return ctx.membership.orgRole === "author";
-  if (ability === "review") return ctx.membership.orgRole === "editor";
-  return false;
+  return companyCan(ctx.membership, ability);
 }
 
 export function need(ctx: HubCompany, ability: Ability) {
@@ -98,20 +113,32 @@ async function freeUsername(base: string): Promise<string> {
 }
 
 /**
- * Makes [userId] a company account: the hub only opens a session for a
- * business MYHitch has approved, so its Lens account is a company even when
- * it started as an author (e.g. it signed in on the website before the
- * approval). A user already in a company keeps that membership; otherwise a
- * company is made for the business, with them as its owner. Their own
- * articles stay theirs. A suspended account stays refused.
+ * Gives the business a company with [userId] as its owner. The hub only opens
+ * a session for a business MYHitch has approved.
+ *  - A company account stays one; a legacy reader becomes one (as before).
+ *  - An individual author keeps their author account exactly as it is: their
+ *    role, /submit, Author Studio, payouts, the Exchange and the staff review
+ *    of their own articles. They also own the company; its articles carry the
+ *    company (Article.orgId), so the two never mix.
+ *  - Lens staff (editor/admin) are refused: a staff account can't also be a
+ *    company, so the business needs a different email.
+ * A user already in a company keeps that membership. A suspended account
+ * stays refused.
  */
 async function ensureCompany(userId: string, business: { name: string; abn: string | null }) {
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true, suspended: true } });
   if (!user || user.suspended) throw new HubError(401, "Please open your Lens account again.");
+  if (user.role === "editor" || user.role === "admin") {
+    throw new HubError(
+      409,
+      "This email's Lens account is a Lens staff account, so it can't also be your company's. Use a different email for your MYHitch business, or contact Lens support.",
+    );
+  }
+  // Only a reader is turned into a company account; an author's role is never changed.
+  const becomeCorporate = user.role === "reader";
   const membership = await prisma.orgMembership.findFirst({ where: { userId }, select: { id: true } });
-  if (user.role === "corporate" && membership) return;
   if (membership) {
-    await prisma.user.update({ where: { id: userId }, data: { role: "corporate" } });
+    if (becomeCorporate) await prisma.user.update({ where: { id: userId }, data: { role: "corporate" } });
     return;
   }
   await prisma.$transaction([
@@ -122,15 +149,15 @@ async function ensureCompany(userId: string, business: { name: string; abn: stri
         members: { create: { userId, orgRole: "owner", isAdmin: true } },
       },
     }),
-    prisma.user.update({ where: { id: userId }, data: { role: "corporate" } }),
+    ...(becomeCorporate ? [prisma.user.update({ where: { id: userId }, data: { role: "corporate" } })] : []),
   ]);
 }
 
 /**
  * The Lens company account of a MYHitch business: found by its MYHitch id,
  * else by its email (it's linked then), else made new - a corporate user who
- * owns a new organization. An author account found either way becomes the
- * business's company account (see ensureCompany).
+ * owns a new organization. An author account found either way stays an
+ * author and owns the company too (see ensureCompany).
  */
 export async function openHubSession(input: {
   myhitchId: string;
@@ -316,102 +343,7 @@ export async function removeMember(ctx: HubCompany, userId: string) {
 // paragraphs split by blank lines.
 // ---------------------------------------------------------------------------
 
-type Node = { type?: string; text?: string; attrs?: Record<string, unknown>; content?: Node[] };
-
-function parseDoc(content: string): Node | null {
-  try {
-    const doc = JSON.parse(content);
-    return doc && typeof doc === "object" ? (doc as Node) : null;
-  } catch {
-    return null;
-  }
-}
-
-function textOf(node: Node): string {
-  if (node.type === "text") return node.text ?? "";
-  if (node.type === "hardBreak") return "\n";
-  return (node.content ?? []).map(textOf).join("");
-}
-
-export type Block =
-  | { type: "heading"; level: number; text: string }
-  | { type: "paragraph"; text: string }
-  | { type: "quote"; text: string }
-  | { type: "list"; ordered: boolean; items: string[] }
-  | { type: "image"; src: string; alt: string }
-  | { type: "code"; text: string }
-  | { type: "divider" };
-
-/** The article as simple blocks the app can show. */
-export function blocksOf(content: string): Block[] {
-  const doc = parseDoc(content);
-  if (!doc) return content.trim() ? [{ type: "paragraph", text: content.trim() }] : [];
-  const blocks: Block[] = [];
-  for (const node of doc.content ?? []) {
-    switch (node.type) {
-      case "heading":
-        blocks.push({ type: "heading", level: Number(node.attrs?.level ?? 2), text: textOf(node) });
-        break;
-      case "blockquote":
-        blocks.push({ type: "quote", text: (node.content ?? []).map(textOf).join("\n") });
-        break;
-      case "bulletList":
-      case "orderedList":
-        blocks.push({
-          type: "list",
-          ordered: node.type === "orderedList",
-          items: (node.content ?? []).map((li) => (li.content ?? []).map(textOf).join("\n")),
-        });
-        break;
-      case "image": {
-        const src = String(node.attrs?.src ?? "");
-        if (/^https:\/\//.test(src)) blocks.push({ type: "image", src, alt: String(node.attrs?.alt ?? "") });
-        break;
-      }
-      case "codeBlock":
-        blocks.push({ type: "code", text: textOf(node) });
-        break;
-      case "horizontalRule":
-        blocks.push({ type: "divider" });
-        break;
-      default: {
-        const text = textOf(node);
-        if (text.trim()) blocks.push({ type: "paragraph", text });
-      }
-    }
-  }
-  return blocks.filter((b) => !("text" in b) || b.text.trim() || b.type === "code");
-}
-
-/** The first picture in the article, for its card. */
-export function coverOf(content: string): string | null {
-  return blocksOf(content).find((b): b is Extract<Block, { type: "image" }> => b.type === "image")?.src ?? null;
-}
-
-/** Plain text - and whether the app can edit it without losing formatting. */
-function plainOf(content: string): { text: string; editable: boolean } {
-  const doc = parseDoc(content);
-  if (!doc) return { text: content, editable: true };
-  const nodes = doc.content ?? [];
-  const editable = nodes.every(
-    (n) =>
-      n.type === "paragraph" &&
-      (n.content ?? []).every((c) => (c.type === "text" && !(c as { marks?: unknown[] }).marks?.length) || c.type === "hardBreak"),
-  );
-  return { text: blocksOf(content).map((b) => ("text" in b ? b.text : "")).filter(Boolean).join("\n\n"), editable };
-}
-
-function docOf(text: string): string {
-  const paragraphs = text
-    .replace(/\r\n/g, "\n")
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  return JSON.stringify({
-    type: "doc",
-    content: paragraphs.map((p) => ({ type: "paragraph", content: [{ type: "text", text: p }] })),
-  });
-}
+export { blocksOf, coverOf, readingOf, type Block, type Span } from "@/lib/articleBlocks";
 
 function summaryOf(text: string) {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -428,12 +360,83 @@ function checkArticle(input: { title?: unknown; content?: unknown }) {
   return { title, content };
 }
 
-const companyArticle = (orgId: string) => ({ author: { memberships: { some: { orgId } } } });
+export type ArticleInput = {
+  title?: unknown;
+  content?: unknown;
+  /** A category's slug (or name), from GET /api/hub/categories. */
+  category?: unknown;
+  /** Blog, News, Report or Research Paper. */
+  type?: unknown;
+  /** The excerpt shown on cards; blank = the start of the article. */
+  summary?: unknown;
+  /** Up to MAX_TAGS tag names. */
+  tags?: unknown;
+};
+
+/** As the website's submit page. */
+const MAX_TAGS = 5;
+const MAX_TAG_CHARS = 40;
+
+/**
+ * The category, type, summary and tags the app sent, checked. A field that
+ * wasn't sent is undefined (an older app build): it's left as it is.
+ */
+async function articleMeta(input: ArticleInput) {
+  let type: string | undefined;
+  if (input.type !== undefined && input.type !== null && input.type !== "") {
+    type = String(input.type).trim();
+    if (!(CONTENT_TYPES as readonly string[]).includes(type)) {
+      throw new HubError(400, `Choose a type: ${CONTENT_TYPES.join(", ")}.`);
+    }
+  }
+
+  let categoryId: string | undefined;
+  if (input.category !== undefined && input.category !== null && input.category !== "") {
+    const category = await findCategory(String(input.category));
+    if (!category) throw new HubError(400, "Choose one of Lens's categories.");
+    categoryId = category.id;
+  }
+
+  let summary: string | undefined;
+  if (input.summary !== undefined && input.summary !== null) {
+    summary = String(input.summary).replace(/\s+/g, " ").trim();
+    if (summary.length > MAX_EXCERPT_CHARS) {
+      throw new HubError(400, `Keep the summary to ${MAX_EXCERPT_CHARS} characters.`);
+    }
+  }
+
+  let tags: string[] | undefined;
+  if (input.tags !== undefined && input.tags !== null) {
+    if (!Array.isArray(input.tags)) throw new HubError(400, "Tags should be a list.");
+    const seen = new Set<string>();
+    tags = [];
+    for (const raw of input.tags) {
+      const name = String(raw ?? "").replace(/\s+/g, " ").trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      if (name.length > MAX_TAG_CHARS) throw new HubError(400, `Keep each tag to ${MAX_TAG_CHARS} characters.`);
+      seen.add(name.toLowerCase());
+      tags.push(name);
+    }
+    if (tags.length > MAX_TAGS) throw new HubError(400, `Maximum ${MAX_TAGS} tags.`);
+  }
+  return { type, categoryId, summary, tags };
+}
+
+/** Tag ids for these names, reusing a tag that differs only in case. */
+async function tagIds(names: string[]): Promise<string[]> {
+  const ids: string[] = [];
+  for (const name of names) {
+    const existing = await prisma.tag.findFirst({ where: { name: { equals: name, mode: "insensitive" } }, select: { id: true } });
+    ids.push(existing?.id ?? (await prisma.tag.upsert({ where: { name }, update: {}, create: { name }, select: { id: true } })).id);
+  }
+  return ids;
+}
 
 /** Your company's articles - all of them for the owner, else your own. */
 export async function listArticles(ctx: HubCompany) {
+  const company = companyArticleWhere(ctx.membership.orgId);
   const rows = await prisma.article.findMany({
-    where: ctx.membership.isAdmin ? companyArticle(ctx.membership.orgId) : { authorId: ctx.user.id },
+    where: ctx.membership.isAdmin ? company : { authorId: ctx.user.id, ...company },
     orderBy: { updatedAt: "desc" },
     take: 200,
     select: {
@@ -442,12 +445,15 @@ export async function listArticles(ctx: HubCompany) {
       title: true,
       summary: true,
       content: true,
+      contentType: true,
       status: true,
       createdAt: true,
       updatedAt: true,
       publishedAt: true,
       likesCount: true,
       viewsCount: true,
+      category: { select: { slug: true, name: true } },
+      tags: { select: { tag: { select: { name: true } } } },
       author: { select: { id: true, displayName: true } },
       revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { note: true } },
     },
@@ -463,6 +469,10 @@ export async function listArticles(ctx: HubCompany) {
       editableInApp: plain.editable,
       cover: coverOf(r.content),
       status: r.status,
+      type: r.contentType,
+      category: r.category.slug,
+      categoryName: r.category.name,
+      tags: r.tags.map((t) => t.tag.name),
       authorId: r.author.id,
       authorName: r.author.displayName,
       mine: r.author.id === ctx.user.id,
@@ -476,7 +486,8 @@ export async function listArticles(ctx: HubCompany) {
   });
 }
 
-async function notifyReviewers(ctx: HubCompany, title: string) {
+/** Tells the company's reviewers (not the writer); how many there are. */
+async function notifyReviewers(ctx: HubCompany, title: string): Promise<number> {
   const editors = await prisma.orgMembership.findMany({
     where: { orgId: ctx.membership.orgId, OR: [{ orgRole: "editor" }, { isAdmin: true }], userId: { not: ctx.user.id } },
     select: { userId: true },
@@ -490,21 +501,33 @@ async function notifyReviewers(ctx: HubCompany, title: string) {
       })),
     });
   }
+  return editors.length;
 }
 
-/** Writes an article and sends it to the company's review queue. */
-export async function createArticle(ctx: HubCompany, input: { title?: unknown; content?: unknown }) {
+/**
+ * Writes an article and sends it to the company's review queue. [reviewers]
+ * is how many others can approve it: 0 means the owner wrote it and has no
+ * editor yet, so it waits until they invite one.
+ */
+export async function createArticle(ctx: HubCompany, input: ArticleInput): Promise<{ id: string; reviewers: number }> {
   need(ctx, "write");
   const { title, content } = checkArticle(input);
-  const category = await prisma.category.findFirst({ orderBy: { name: "asc" } });
-  if (!category) throw new HubError(500, "No categories configured - contact support.");
+  const meta = await articleMeta(input);
+  // A first submission counts against the plan's monthly allowance, as on the website.
+  const overAllowance = await submissionAllowanceError(ctx.user.id);
+  if (overAllowance) throw new HubError(403, overAllowance);
+
+  const categoryId =
+    meta.categoryId ??
+    (meta.tags?.length ? await deriveCategoryFromTags(meta.tags) : (await prisma.category.findFirst({ orderBy: { name: "asc" } }))?.id);
+  if (!categoryId) throw new HubError(500, "No categories configured - contact support.");
   const article = await prisma.article.create({
     data: {
       slug: `${slug(ctx.membership.org.name) || "company"}-${Date.now().toString(36)}`,
       title,
-      summary: summaryOf(content),
+      summary: meta.summary || summaryOf(content),
       content: docOf(content),
-      contentType: "Blog",
+      contentType: meta.type ?? "Blog",
       status: "in_review",
       // Counts in the month's submissions, as on the website.
       submittedAt: new Date(),
@@ -513,18 +536,20 @@ export async function createArticle(ctx: HubCompany, input: { title?: unknown; c
       license: "all_rights_reserved",
       rightsAttested: true,
       authorId: ctx.user.id,
-      categoryId: category.id,
+      categoryId,
+      orgId: ctx.membership.orgId,
+      ...(meta.tags?.length ? { tags: { create: (await tagIds(meta.tags)).map((tagId) => ({ tagId })) } } : {}),
     },
     select: { id: true },
   });
-  await notifyReviewers(ctx, title);
+  const reviewers = await notifyReviewers(ctx, title);
   refresh();
-  return article.id;
+  return { id: article.id, reviewers };
 }
 
 async function companyArticleOf(ctx: HubCompany, id: string) {
   const article = await prisma.article.findFirst({
-    where: { id, ...companyArticle(ctx.membership.orgId) },
+    where: { id, ...companyArticleWhere(ctx.membership.orgId) },
     select: { id: true, title: true, content: true, status: true, authorId: true, provenance: { select: { id: true } } },
   });
   if (!article) throw new HubError(404, "Article not found.");
@@ -538,8 +563,11 @@ async function editableArticle(ctx: HubCompany, id: string) {
   return article;
 }
 
-/** Edits an article; it goes back to the review queue. */
-export async function updateArticle(ctx: HubCompany, id: string, input: { title?: unknown; content?: unknown }) {
+/**
+ * Edits an article; it goes back to the review queue. A published article is
+ * taken off Lens until it's approved again (the app warns before saving).
+ */
+export async function updateArticle(ctx: HubCompany, id: string, input: ArticleInput): Promise<{ reviewers: number }> {
   need(ctx, "write");
   const article = await editableArticle(ctx, id);
   if (article.status === "archived") throw new HubError(400, "This article was removed.");
@@ -547,12 +575,22 @@ export async function updateArticle(ctx: HubCompany, id: string, input: { title?
     throw new HubError(400, "This article has formatting or pictures - edit it on the Lens website.");
   }
   const { title, content } = checkArticle(input);
+  const meta = await articleMeta(input);
   await prisma.article.update({
     where: { id },
-    data: { title, summary: summaryOf(content), content: docOf(content), status: "in_review" },
+    data: {
+      title,
+      summary: meta.summary || summaryOf(content),
+      content: docOf(content),
+      status: "in_review",
+      ...(meta.type ? { contentType: meta.type } : {}),
+      ...(meta.categoryId ? { categoryId: meta.categoryId } : {}),
+      ...(meta.tags ? { tags: { deleteMany: {}, create: (await tagIds(meta.tags)).map((tagId) => ({ tagId })) } } : {}),
+    },
   });
-  await notifyReviewers(ctx, title);
+  const reviewers = await notifyReviewers(ctx, title);
   refresh();
+  return { reviewers };
 }
 
 /**
@@ -578,13 +616,13 @@ export async function deleteArticle(ctx: HubCompany, id: string): Promise<"delet
 }
 
 // ---------------------------------------------------------------------------
-// Review queue
+// Review queue - the team's articles; your own wait for someone else.
 // ---------------------------------------------------------------------------
 
 export async function reviewQueue(ctx: HubCompany) {
   need(ctx, "review");
   const rows = await prisma.article.findMany({
-    where: { status: "in_review", ...companyArticle(ctx.membership.orgId) },
+    where: { status: "in_review", authorId: { not: ctx.user.id }, ...companyArticleWhere(ctx.membership.orgId) },
     orderBy: { updatedAt: "asc" },
     select: { id: true, title: true, content: true, updatedAt: true, author: { select: { displayName: true } } },
   });
@@ -597,20 +635,26 @@ export async function reviewQueue(ctx: HubCompany) {
   }));
 }
 
-export async function approveArticle(ctx: HubCompany, id: string) {
+/** A company article [ctx] may review now: not their own, and waiting for review. */
+async function reviewableArticle(ctx: HubCompany, id: string) {
   need(ctx, "review");
   const article = await companyArticleOf(ctx, id);
+  const own = ownArticleError(article, ctx.user.id);
+  if (own) throw new HubError(403, own);
   if (article.status !== "in_review") throw new HubError(400, "This article isn't waiting for review.");
+  return article;
+}
+
+export async function approveArticle(ctx: HubCompany, id: string) {
+  const article = await reviewableArticle(ctx, id);
   await prisma.article.update({
     where: { id },
     data: { status: "published", verified: true, publishedAt: new Date() },
   });
   await mintProvenance(id);
-  if (article.authorId !== ctx.user.id) {
-    await prisma.notification.create({
-      data: { userId: article.authorId, type: "publish", text: `"${article.title}" was approved and published.` },
-    });
-  }
+  await prisma.notification.create({
+    data: { userId: article.authorId, type: "publish", text: `"${article.title}" was approved and published.` },
+  });
   refresh();
 }
 
@@ -619,8 +663,7 @@ export async function rejectArticle(ctx: HubCompany, id: string, reason: unknown
   const text = String(reason ?? "").trim();
   if (!text) throw new HubError(400, "A reason is required.");
   if (text.length > 2000) throw new HubError(400, "That reason is too long.");
-  const article = await companyArticleOf(ctx, id);
-  if (article.status !== "in_review") throw new HubError(400, "This article isn't waiting for review.");
+  const article = await reviewableArticle(ctx, id);
   await prisma.$transaction([
     prisma.article.update({ where: { id }, data: { status: "rejected" } }),
     prisma.revision.create({ data: { articleId: id, editorId: ctx.user.id, note: text } }),

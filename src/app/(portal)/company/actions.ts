@@ -5,6 +5,13 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { BillingError, setExtraSeats } from "@/lib/billing";
+import {
+  companyArticleWhere,
+  companyCan,
+  ownArticleError,
+  submissionAllowanceError,
+  type CompanyAbility,
+} from "@/lib/companyArticles";
 import { inviteToCompany, pendingInvites, resolveLegalEntity, revokeCompanyInvite } from "@/lib/companyTeam";
 import { getOrgSeatCapacity } from "@/lib/entitlements";
 import { mintProvenance } from "@/lib/provenance";
@@ -17,7 +24,9 @@ export type ActionResult = { error: string } | { ok: true };
  * "author"/"editor" — so they're automatically excluded from every existing
  * author/editor-gated route (submit, editorial queue, trust & safety,
  * analytics, etc). What a member can actually do is determined entirely by
- * their OrgMembership.orgRole (owner/editor/author), checked here.
+ * their OrgMembership.orgRole (owner/editor/author), checked here with the
+ * rules shared with the MYHitch app (src/lib/companyArticles.ts): authors
+ * write, editors review, the owner does both, and nobody reviews their own.
  */
 async function requireMembership() {
   const session = await auth();
@@ -36,9 +45,9 @@ async function requireOwner() {
   return ctx;
 }
 
-async function requireOrgRole(role: OrgRole) {
+async function requireAbility(ability: CompanyAbility) {
   const ctx = await requireMembership();
-  if (ctx.membership.orgRole !== role) throw new Error("Not authorized for this action.");
+  if (!companyCan(ctx.membership, ability)) throw new Error("Not authorized for this action.");
   return ctx;
 }
 
@@ -63,6 +72,8 @@ export interface CompanyOverview {
   plan: { onBusiness: boolean; includedSeats: number; extraSeats: number; interval: "month" | "year" | null };
   myRole: OrgRole;
   isOwner: boolean;
+  /** What the viewer may do here: write articles, review the team's. */
+  can: { write: boolean; review: boolean };
   members: CompanyMember[];
   /** Owner-only: invitations not yet accepted. Empty for everyone else. */
   invites: CompanyInvite[];
@@ -104,6 +115,7 @@ export async function getCompanyOverview(): Promise<CompanyOverview> {
     plan: { onBusiness: capacity.onBusiness, includedSeats: capacity.included, extraSeats: capacity.extra, interval },
     myRole: membership.orgRole,
     isOwner: membership.isAdmin,
+    can: { write: companyCan(membership, "write"), review: companyCan(membership, "review") },
     members: members.map((m) => ({
       id: m.userId,
       username: m.user.username,
@@ -180,11 +192,11 @@ export interface CompanyArticle {
   createdAt: string;
 }
 
-/** The signed-in author sub-account's own articles. */
+/** The signed-in member's own company articles. */
 export async function listMyCompanyArticles(): Promise<CompanyArticle[]> {
-  const { user } = await requireOrgRole("author");
+  const { user, membership } = await requireAbility("write");
   const rows = await prisma.article.findMany({
-    where: { authorId: user.id },
+    where: { authorId: user.id, ...companyArticleWhere(membership.orgId) },
     orderBy: { createdAt: "desc" },
     select: { id: true, title: true, status: true, createdAt: true, author: { select: { displayName: true } } },
   });
@@ -197,14 +209,16 @@ export async function listMyCompanyArticles(): Promise<CompanyArticle[]> {
   }));
 }
 
-/** Author sub-account: write and submit an article in one step. */
+/** Author (or owner): write and submit an article in one step. */
 export async function submitCompanyArticle(input: { title: string; content: string }): Promise<ActionResult> {
-  const { user, membership } = await requireOrgRole("author");
+  const { user, membership } = await requireAbility("write");
 
   const title = input.title.trim();
   const content = input.content.trim();
   if (!title) return { error: "Add a title." };
   if (content.length < 50) return { error: "Write at least a few sentences." };
+  const overAllowance = await submissionAllowanceError(user.id);
+  if (overAllowance) return { error: overAllowance };
 
   const category = await prisma.category.findFirst();
   if (!category) return { error: "No categories configured — contact support." };
@@ -224,12 +238,13 @@ export async function submitCompanyArticle(input: { title: string; content: stri
       rightsAttested: true,
       authorId: user.id,
       categoryId: category.id,
+      orgId: membership.orgId,
     },
   });
 
-  // Notify this company's own editors — not platform staff.
+  // Notify this company's own reviewers (editors and the owner) — not platform staff.
   const editors = await prisma.orgMembership.findMany({
-    where: { orgId: membership.orgId, orgRole: "editor" },
+    where: { orgId: membership.orgId, OR: [{ orgRole: "editor" }, { isAdmin: true }], userId: { not: user.id } },
     select: { userId: true },
   });
   if (editors.length > 0) {
@@ -263,11 +278,13 @@ export interface CompanyReviewItem {
 }
 
 export async function listCompanyReviewQueue(): Promise<CompanyReviewItem[]> {
-  const { membership } = await requireOrgRole("editor");
+  const { user, membership } = await requireAbility("review");
   const rows = await prisma.article.findMany({
     where: {
       status: "in_review",
-      author: { memberships: { some: { orgId: membership.orgId } } },
+      // Your own articles wait for someone else.
+      authorId: { not: user.id },
+      ...companyArticleWhere(membership.orgId),
     },
     orderBy: { createdAt: "asc" },
     select: { id: true, title: true, content: true, createdAt: true, author: { select: { displayName: true } } },
@@ -281,21 +298,28 @@ export async function listCompanyReviewQueue(): Promise<CompanyReviewItem[]> {
   }));
 }
 
-async function requireSameOrgArticle(membership: { orgId: string }, articleId: string) {
-  const article = await prisma.article.findUnique({
-    where: { id: articleId },
-    select: { id: true, title: true, authorId: true, author: { select: { memberships: { select: { orgId: true } } } } },
+/** A company article waiting for review that [userId] may review (not their own). */
+async function reviewableArticle(
+  userId: string,
+  membership: { orgId: string },
+  articleId: string,
+): Promise<{ error: string } | { article: { id: string; title: string; authorId: string } }> {
+  const article = await prisma.article.findFirst({
+    where: { id: articleId, ...companyArticleWhere(membership.orgId) },
+    select: { id: true, title: true, authorId: true, status: true },
   });
-  if (!article) throw new Error("Article not found.");
-  if (!article.author.memberships.some((m) => m.orgId === membership.orgId)) {
-    throw new Error("Not your company's article.");
-  }
-  return article;
+  if (!article) return { error: "Not your company's article." };
+  const own = ownArticleError(article, userId);
+  if (own) return { error: own };
+  if (article.status !== "in_review") return { error: "This article isn't waiting for review." };
+  return { article };
 }
 
 export async function approveCompanyArticle(articleId: string): Promise<ActionResult> {
-  const { membership } = await requireOrgRole("editor");
-  const article = await requireSameOrgArticle(membership, articleId);
+  const { user, membership } = await requireAbility("review");
+  const found = await reviewableArticle(user.id, membership, articleId);
+  if ("error" in found) return { error: found.error };
+  const { article } = found;
 
   await prisma.article.update({
     where: { id: articleId },
@@ -312,10 +336,12 @@ export async function approveCompanyArticle(articleId: string): Promise<ActionRe
 }
 
 export async function rejectCompanyArticle(articleId: string, reason: string): Promise<ActionResult> {
-  const { user, membership } = await requireOrgRole("editor");
+  const { user, membership } = await requireAbility("review");
   const text = reason.trim();
   if (!text) return { error: "A reason is required." };
-  const article = await requireSameOrgArticle(membership, articleId);
+  const found = await reviewableArticle(user.id, membership, articleId);
+  if ("error" in found) return { error: found.error };
+  const { article } = found;
 
   await prisma.$transaction([
     prisma.article.update({ where: { id: articleId }, data: { status: "rejected" } }),

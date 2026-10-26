@@ -4,12 +4,12 @@ import { deleteArticle, hubError, requireHubCompany, updateArticle } from "@/lib
 
 type Params = { params: Promise<{ id: string }> };
 
-/** PATCH /api/hub/company/articles/:id - { title, content }; goes back to review. */
+/** PATCH /api/hub/company/articles/:id - { title, content, category?, type?, summary?, tags? }; goes back to review. */
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const ctx = await requireHubCompany(request);
-    await updateArticle(ctx, (await params).id, await request.json().catch(() => ({})));
-    return NextResponse.json({ ok: true, status: "in_review" });
+    const { reviewers } = await updateArticle(ctx, (await params).id, await request.json().catch(() => ({})));
+    return NextResponse.json({ ok: true, status: "in_review", reviewers });
   } catch (e) {
     return hubError(e);
   }

@@ -54,15 +54,15 @@ export function CompanyDashboard({
         title={overview.orgName}
         subtitle={
           overview.isOwner
-            ? "Manage your team's seats and sub-accounts."
+            ? "Manage your team, write articles and review your team's submissions. Your own articles are reviewed by your editor."
             : overview.myRole === "editor"
               ? "Review and publish your team's submissions."
               : "Write and submit articles for your team's editor to review."
         }
       />
       {overview.isOwner && <OwnerPanel overview={overview} />}
-      {overview.myRole === "author" && <AuthorPanel articles={articles} />}
-      {overview.myRole === "editor" && <EditorPanel queue={reviewQueue} />}
+      {overview.can.write && <AuthorPanel articles={articles} />}
+      {overview.can.review && <EditorPanel queue={reviewQueue} />}
     </>
   );
 }

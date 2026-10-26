@@ -278,6 +278,7 @@ model Organization {
   createdAt DateTime        @default(now())
   members   OrgMembership[]
   invites   OrgInvite[]
+  articles  Article[]
 }
 
 model OrgMembership {
@@ -374,6 +375,10 @@ model Article {
   owner       User?         @relation("ArticleOwner", fields: [ownerId], references: [id])
   categoryId  String
   category    Category      @relation(fields: [categoryId], references: [id])
+  /// The company the article was written for (company dashboard, web or app). Null = the author's own
+  /// article. Older company articles have no orgId: they are found by their corporate author's company.
+  orgId       String?
+  org         Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
 
   likesCount  Int           @default(0)
   viewsCount  Int           @default(0)
@@ -406,6 +411,7 @@ model Article {
   @@index([categoryId])
   @@index([authorId])
   @@index([authorId, submittedAt])
+  @@index([orgId])
 }
 
 model ArticleTag {

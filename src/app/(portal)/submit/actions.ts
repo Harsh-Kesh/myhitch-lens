@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
+import { deriveCategoryFromTags } from "@/lib/articleCategory";
 import { isLicenseCode } from "@/lib/licenses";
 import { isSuspended } from "@/lib/authGuards";
 import { articleHasVideoOrAudio } from "@/lib/articleMedia";
@@ -355,44 +356,6 @@ export async function deleteDraft(articleId: string): Promise<ActionResult> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const TAG_CATEGORY_MAP: Record<string, string[]> = {
-  "AI": ["artificial intelligence", "machine learning", "deep learning", "nlp", "llm", "neural network", "generative ai", "computer vision", "ai"],
-  "Supply Chain": ["supply chain", "logistics", "warehousing", "fleet", "shipping", "freight", "procurement", "inventory"],
-  "Technology": ["software", "hardware", "cloud", "devops", "cybersecurity", "blockchain", "iot", "api", "technology"],
-  "Business": ["business", "strategy", "management", "startup", "entrepreneurship", "marketing", "leadership"],
-  "Finance": ["finance", "fintech", "banking", "investment", "cryptocurrency", "trading", "economics"],
-  "Healthcare": ["healthcare", "medical", "biotech", "pharma", "clinical", "telemedicine", "health"],
-  "Education": ["education", "e-learning", "academic", "university", "training", "teaching"],
-  "Travel": ["travel", "aviation", "tourism", "hospitality", "saf", "sustainable aviation"],
-  "Lifestyle": ["lifestyle", "wellness", "remote work", "culture", "design", "creative"],
-  "Research": ["research", "scientific", "laboratory", "academic paper", "methodology"],
-  "Community": ["community", "governance", "discussion", "panel", "contributor"],
-};
-
-async function deriveCategoryFromTags(tagNames: string[]): Promise<string> {
-  const lower = tagNames.map((t) => t.toLowerCase());
-  let bestCategory = "Research";
-  let bestScore = 0;
-
-  for (const [categoryName, keywords] of Object.entries(TAG_CATEGORY_MAP)) {
-    let score = 0;
-    for (const tag of lower) {
-      for (const keyword of keywords) {
-        if (tag.includes(keyword) || keyword.includes(tag)) score++;
-      }
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      bestCategory = categoryName;
-    }
-  }
-
-  const category = await prisma.category.findFirst({ where: { name: bestCategory } });
-  if (category) return category.id;
-  const fallback = await prisma.category.findFirst();
-  return fallback!.id;
-}
 
 /** The search metadata saved in an article's aiScores blob, if any. */
 function storedSeo(aiScores: unknown): SeoMetadata | null {

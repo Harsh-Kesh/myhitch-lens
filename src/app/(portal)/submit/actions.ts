@@ -2,8 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 
 import { auth } from "@/auth";
+import { startReview } from "@/lib/articleReview";
 import { prisma } from "@/lib/prisma";
 import { slugify } from "@/lib/slug";
 import { isLicenseCode } from "@/lib/licenses";
@@ -27,7 +29,7 @@ import { pageBreakdown, suggestLayout, type LayoutHints, type PageBreakdown } fr
 import { cleanSeo, suggestSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import { AUTHOR_TERMS_VERSION } from "@/lib/authorTerms";
 import { legalContentHash, reviewLegal } from "@/lib/legalReview";
-import { worstStatus, type LegalReview } from "@/lib/legalReviewTypes";
+import { blockingIssues, type LegalReview } from "@/lib/legalReviewTypes";
 import {
   countImagesMissingAlt,
   countWords,
@@ -226,7 +228,7 @@ export async function submitForReview(input: {
     return { error: "Your article changed since the legal check ran. Run the check again, then submit." };
   }
   // Any issue in the legal report stops the submission until the author has fixed it and the check comes back clear.
-  if (storedReview.available && worstStatus(storedReview.checks) !== "clear") {
+  if (storedReview.available && blockingIssues(storedReview.checks).length > 0) {
     return {
       error:
         "Your article has legal or compliance issues to fix before it can be submitted. Edit it, then click Submit again to re-run the check.",
@@ -284,6 +286,9 @@ export async function submitForReview(input: {
       } as unknown as Prisma.InputJsonObject,
     },
   });
+
+  // The originality review (Copyleaks) runs after the response, so submitting isn't held up by it.
+  after(() => startReview(input.articleId));
 
   revalidatePath("/editorial");
   revalidatePath("/author-dashboard");

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { AUTHOR_TERMS_SECTIONS, AUTHOR_TERMS_VERSION } from "@/lib/authorTerms";
 import { cn } from "@/lib/cn";
-import type { LegalReview, LegalStatus } from "@/lib/legalReviewTypes";
+import { blockingIssues, type LegalReview, type LegalStatus } from "@/lib/legalReviewTypes";
 import type { ArticleDestination } from "@prisma/client";
 
 import { runLegalReview } from "./actions";
@@ -75,7 +75,7 @@ export function LegalReviewModal({
   }, [onCancel, submitting]);
 
   // Any issue in the report blocks the submission until the author fixes the article and the check comes back clear.
-  const issues = review && review.available ? review.checks.filter((c) => c.status !== "clear") : [];
+  const issues = review && review.available ? blockingIssues(review.checks) : [];
   const blocked = issues.length > 0;
   const canSubmit = !!review && !running && !submitting && !blocked && agreeTerms;
 

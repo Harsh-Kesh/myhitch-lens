@@ -57,6 +57,17 @@ export type ReviewLegalSummary = {
 
 export const LEGAL_STATUS_RANK: Record<LegalStatus, number> = { clear: 0, review: 1, risk: 2 };
 
+/**
+ * TEMPORARY: checks that are still shown in the report but no longer stop a submission.
+ * Remove "standards" from this list to make the placeholder/off-topic check blocking again.
+ */
+export const NON_BLOCKING_CHECKS: LegalCheckId[] = ["standards"];
+
+/** The checks that must come back clear before an article can be submitted. */
+export function blockingIssues<T extends { id: LegalCheckId; status: LegalStatus }>(checks: T[]): T[] {
+  return checks.filter((c) => c.status !== "clear" && !NON_BLOCKING_CHECKS.includes(c.id));
+}
+
 export function worstStatus(checks: { status: LegalStatus }[]): LegalStatus {
   return checks.reduce<LegalStatus>((worst, c) => (LEGAL_STATUS_RANK[c.status] > LEGAL_STATUS_RANK[worst] ? c.status : worst), "clear");
 }

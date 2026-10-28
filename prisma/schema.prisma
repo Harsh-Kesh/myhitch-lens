@@ -390,6 +390,7 @@ model Article {
   tags        ArticleTag[]
   media       MediaAsset[]
   revisions   Revision[]
+  articleReviews ArticleReview[]
   comments    Comment[]
   likes       Like[]
   bookmarks   Bookmark[]
@@ -454,6 +455,39 @@ model Revision {
   note      String?
   snapshot  Json?    // content at this revision
   createdAt DateTime @default(now())
+}
+
+enum ReviewState {
+  pending   // sent to Copyleaks, waiting for the result
+  completed // scored; `passed` says whether it met the pass mark
+  error     // the check could not run or failed; the author can run it again
+}
+
+/**
+ * One automated originality review of an article (Copyleaks plagiarism scan + AI-content check).
+ * Its id is the Copyleaks scanId. Every submission creates a new row; only the newest one counts.
+ */
+model ArticleReview {
+  id          String      @id @default(cuid())
+  articleId   String
+  article     Article     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  state       ReviewState @default(pending)
+  /// Echoed back by Copyleaks in the webhook (developerPayload) so we know the call is really for this review.
+  secret      String
+  /// Share of the text matching other sources, 0-100 (Copyleaks aggregatedScore).
+  plagiarismPercent Float?
+  /// Share of the text classified as AI-generated, 0-100. Null when the detector could not run.
+  aiPercent   Float?
+  /// 0-100, higher is better: the weighted blend of the originality and human-written scores.
+  combinedScore Float?
+  /// The pass mark that was in force when the score was decided.
+  passMark    Int?
+  passed      Boolean?
+  error       String?
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?
+
+  @@index([articleId, createdAt])
 }
 
 // ---------------------------------------------------------------------------

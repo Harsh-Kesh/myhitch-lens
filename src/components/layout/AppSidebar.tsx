@@ -66,6 +66,12 @@ const NAV_LINKS: NavLink[] = [
   { href: "/categories", label: "Categories", icon: <FolderIcon className={navIcon} /> },
   {
     href: "/submit",
+    label: "Write Article",
+    icon: <PencilIcon className={navIcon} />,
+    roles: ["author"],
+  },
+  {
+    href: "/submit-article",
     label: "Submit Article",
     icon: <PencilIcon className={navIcon} />,
     roles: ["author"],

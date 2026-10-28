@@ -4,7 +4,7 @@ import { createHash } from "crypto";
 
 import type Anthropic from "@anthropic-ai/sdk";
 
-import { AI_MODEL, getAiClient } from "@/lib/aiClient";
+import { getAiClient } from "@/lib/aiClient";
 import { normaliseForMatch } from "@/lib/editorLayout";
 import {
   LEGAL_CHECKS,
@@ -22,6 +22,12 @@ import {
  * country-specific risks. It is a screening aid, not legal advice: it can miss
  * things and flag things that are fine. Editors still review every article.
  */
+
+/**
+ * The legal screening decides whether an article can be submitted, so it runs on a stronger model than the
+ * other writing helpers (which use the cheapest one). Override with LEGAL_REVIEW_MODEL.
+ */
+const LEGAL_MODEL = process.env.LEGAL_REVIEW_MODEL || "claude-opus-5-5";
 
 const MAX_BODY_CHARS = 50_000;
 const MAX_FINDINGS_PER_CHECK = 4;
@@ -153,10 +159,10 @@ export async function reviewLegal(input: LegalReviewInput): Promise<LegalReview>
     const links = (input.text.match(/https?:\/\/\S+/g) ?? []).length;
 
     const response = await client.messages.create({
-      model: AI_MODEL,
-      max_tokens: 5000,
+      model: LEGAL_MODEL,
+      max_tokens: 8000,
       system: SYSTEM_PROMPT,
-      output_config: { effort: "low", format: { type: "json_schema", schema: SCHEMA } },
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
       messages: [
         {
           role: "user",

@@ -93,7 +93,7 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
 
   const [latest, article] = await Promise.all([
     prisma.articleReview.findFirst({ where: { articleId: review.articleId }, orderBy: { createdAt: "desc" }, select: { id: true } }),
-    prisma.article.findUnique({ where: { id: review.articleId }, select: { status: true, title: true, authorId: true } }),
+    prisma.article.findUnique({ where: { id: review.articleId }, select: { status: true, title: true, authorId: true, aiScores: true } }),
   ]);
 
   const result = prisma.articleReview.update({
@@ -114,7 +114,18 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
 
   await prisma.$transaction([
     result,
-    prisma.article.update({ where: { id: review.articleId }, data: { status: passed ? "approved" : "changes_requested" } }),
+    prisma.article.update({
+      where: { id: review.articleId },
+      data: {
+        status: passed ? "approved" : "changes_requested",
+        // Replace the placeholder numbers written at submission with the real ones; the editor board reads these.
+        aiScores: {
+          ...(article.aiScores && typeof article.aiScores === "object" && !Array.isArray(article.aiScores) ? article.aiScores : {}),
+          aiScore: Math.round(combinedScore),
+          plagiarism: `${plagiarismPercent}% detected`,
+        },
+      },
+    }),
     ...(passed
       ? []
       : [

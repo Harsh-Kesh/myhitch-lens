@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { startReview } from "@/lib/articleReview";
 import { prisma } from "@/lib/prisma";
+import { isReviewStale } from "@/lib/reviewScoring";
 import { mintProvenance } from "@/lib/provenance";
 
 type ActionResult = { ok: true } | { error: string };
@@ -35,9 +36,9 @@ export async function retryReview(articleId: string): Promise<ActionResult> {
   const latest = await prisma.articleReview.findFirst({
     where: { articleId },
     orderBy: { createdAt: "desc" },
-    select: { state: true },
+    select: { state: true, createdAt: true },
   });
-  if (latest?.state === "pending") return { error: "A review is already running." };
+  if (latest?.state === "pending" && !isReviewStale(latest.createdAt)) return { error: "A review is already running." };
 
   await startReview(articleId);
   refresh();

@@ -12,7 +12,8 @@ import { articleJsonToText } from "@/lib/writingCheck";
 /** Where Copyleaks can reach this site. It cannot call localhost: use a tunnel URL when testing locally. */
 function webhookBaseUrl(): string | null {
   const base = process.env.COPYLEAKS_WEBHOOK_BASE_URL || process.env.AUTH_URL;
-  return base ? base.replace(/\/+$/, "") : null;
+  // Only the site address is wanted. If the whole webhook URL was pasted in, drop the route part so it isn't doubled.
+  return base ? base.trim().replace(/\/api\/copyleaks.*$/i, "").replace(/\/+$/, "") : null;
 }
 
 function refreshViews() {

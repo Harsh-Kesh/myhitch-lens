@@ -5,7 +5,21 @@ import { EmptyState } from "@/components/ui/DashboardKit";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { prisma } from "@/lib/prisma";
 
-import { SubmittedArticlesTable, type SubmittedArticle } from "./SubmittedArticlesTable";
+import { isReviewStale } from "@/lib/reviewScoring";
+
+import { SubmittedArticlesTable, type ArticleReviewView, type SubmittedArticle } from "./SubmittedArticlesTable";
+
+type ReviewRow = Omit<ArticleReviewView, "state"> & { state: ArticleReviewView["state"]; createdAt: Date };
+
+/** A check still waiting after too long is shown as failed, so it never sits on "In review" forever. */
+function toReviewView(row: ReviewRow | undefined): ArticleReviewView | null {
+  if (!row) return null;
+  const { createdAt, ...view } = row;
+  if (view.state === "pending" && isReviewStale(createdAt)) {
+    return { ...view, state: "error", error: "No result came back from the plagiarism checker. Run the check again." };
+  }
+  return view;
+}
 
 export default async function SubmitArticlePage() {
   const session = await auth();
@@ -25,7 +39,15 @@ export default async function SubmitArticlePage() {
       articleReviews: {
         orderBy: { createdAt: "desc" },
         take: 1,
-        select: { state: true, combinedScore: true, plagiarismPercent: true, aiPercent: true, passMark: true, error: true },
+        select: {
+          state: true,
+          combinedScore: true,
+          plagiarismPercent: true,
+          aiPercent: true,
+          passMark: true,
+          error: true,
+          createdAt: true,
+        },
       },
     },
   });
@@ -42,7 +64,7 @@ export default async function SubmitArticlePage() {
           : "approved",
     isPublished: r.status === "published",
     canEdit: r.status === "changes_requested",
-    review: r.articleReviews[0] ?? null,
+    review: toReviewView(r.articleReviews[0]),
   }));
 
   return (

@@ -36,6 +36,13 @@ export function getReviewConfig(): ReviewConfig {
   };
 }
 
+/** A check that has had no result after this long is treated as failed, so the author can run it again. */
+export const REVIEW_STALE_MINUTES = 10;
+
+export function isReviewStale(createdAt: Date, now: number = Date.now()): boolean {
+  return now - createdAt.getTime() > REVIEW_STALE_MINUTES * 60_000;
+}
+
 const clampPercent = (n: number) => Math.min(100, Math.max(0, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 

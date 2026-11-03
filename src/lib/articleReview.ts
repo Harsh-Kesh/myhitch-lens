@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 
 import { AI_DETECTOR_MIN_CHARS, copyleaksConfigured, detectAi, submitScan } from "@/lib/copyleaks";
 import { prisma } from "@/lib/prisma";
-import { getReviewConfig, scoreReview } from "@/lib/reviewScoring";
+import { getReviewConfig, judgeReview } from "@/lib/reviewScoring";
 import { articleJsonToText } from "@/lib/writingCheck";
 
 /** Where Copyleaks can reach this site. It cannot call localhost: use a tunnel URL when testing locally. */
@@ -76,8 +76,9 @@ export async function startReview(articleId: string): Promise<void> {
 }
 
 /**
- * Apply a finished plagiarism scan: score it, record the decision, and move the article on. A pass makes it
- * "approved" (the author can then publish it); a fail sends it back as "changes requested" with the score
+ * Apply a finished plagiarism scan: judge plagiarism and AI-written text each against its own limit, record
+ * the decision, and move the article on. It passes only if both are within their limit. A pass makes it
+ * "approved" (the author can then publish it); a fail sends it back as "changes requested" with the reason
  * as the note. Only acts on the article's newest review, and only while the article is still in review, so a
  * late result for an older submission can't change it.
  */
@@ -89,7 +90,7 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
   if (!review || review.state !== "pending") return; // unknown, or a redelivered webhook
 
   const config = getReviewConfig();
-  const { combinedScore, passed } = scoreReview({ plagiarismPercent, aiPercent: review.aiPercent }, config);
+  const { plagiarismPassed, aiPassed, passed } = judgeReview({ plagiarismPercent, aiPercent: review.aiPercent }, config);
 
   const [latest, article] = await Promise.all([
     prisma.articleReview.findFirst({ where: { articleId: review.articleId }, orderBy: { createdAt: "desc" }, select: { id: true } }),
@@ -98,7 +99,16 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
 
   const result = prisma.articleReview.update({
     where: { id: review.id },
-    data: { state: "completed", plagiarismPercent, combinedScore, passMark: config.passMark, passed, completedAt: new Date() },
+    data: {
+      state: "completed",
+      plagiarismPercent,
+      maxPlagiarism: config.maxPlagiarismPercent,
+      maxAi: config.maxAiPercent,
+      plagiarismPassed,
+      aiPassed,
+      passed,
+      completedAt: new Date(),
+    },
   });
 
   if (!article || latest?.id !== review.id || article.status !== "in_review") {
@@ -107,10 +117,17 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
     return;
   }
 
-  const summary =
-    `Combined score ${combinedScore}/100 (pass mark ${config.passMark}). ` +
-    `${plagiarismPercent}% of the text matches other sources` +
-    (review.aiPercent === null ? "." : `; ${review.aiPercent}% looks AI-generated.`);
+  // Say which check failed and by how much, so the author knows what to fix.
+  const verdict = (label: string, value: number, limit: number, ok: boolean) =>
+    `${label}: ${value}% (limit ${limit}%) — ${ok ? "within the limit" : "over the limit"}.`;
+  const summary = [
+    verdict("Plagiarism", plagiarismPercent, config.maxPlagiarismPercent, plagiarismPassed),
+    review.aiPercent === null
+      ? "AI-written text: not checked."
+      : verdict("AI-written text", review.aiPercent, config.maxAiPercent, aiPassed !== false),
+  ].join(" ");
+  // The editor board's "AI Score" is higher-is-better: 100 minus the worse of the two percentages.
+  const worst = Math.max(plagiarismPercent, review.aiPercent ?? 0);
 
   await prisma.$transaction([
     result,
@@ -121,7 +138,7 @@ export async function finishReview(reviewId: string, plagiarismPercent: number):
         // Replace the placeholder numbers written at submission with the real ones; the editor board reads these.
         aiScores: {
           ...(article.aiScores && typeof article.aiScores === "object" && !Array.isArray(article.aiScores) ? article.aiScores : {}),
-          aiScore: Math.round(combinedScore),
+          aiScore: Math.round(100 - worst),
           plagiarism: `${plagiarismPercent}% detected`,
         },
       },

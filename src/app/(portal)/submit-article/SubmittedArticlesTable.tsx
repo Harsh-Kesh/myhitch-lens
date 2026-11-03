@@ -9,13 +9,19 @@ import { cn } from "@/lib/cn";
 
 import { publishArticle, retryReview, unpublishArticle } from "./actions";
 
-/** Latest automated (Copyleaks) review of an article. Scores are 0-100; the combined score is higher-is-better. */
+/**
+ * Latest automated (Copyleaks) review of an article. Plagiarism and AI-written text are percentages, each
+ * judged on its own against its own limit; the article is approved only if both are within their limit.
+ */
 export interface ArticleReviewView {
   state: "pending" | "completed" | "error";
-  combinedScore: number | null;
   plagiarismPercent: number | null;
   aiPercent: number | null;
-  passMark: number | null;
+  maxPlagiarism: number | null;
+  maxAi: number | null;
+  plagiarismPassed: boolean | null;
+  /** Null when the AI check couldn't run. */
+  aiPassed: boolean | null;
   error: string | null;
 }
 
@@ -82,15 +88,22 @@ function RowAction({ article }: { article: SubmittedArticle }) {
   );
 }
 
-/** What the automated review says about an article, in a line under its approval badge. */
-function reviewLine(review: ArticleReviewView | null): string | null {
-  if (!review) return null;
-  if (review.state === "pending") return "Checking for plagiarism and AI-written text...";
-  if (review.state === "error") return review.error ?? "The check couldn't run.";
-  const parts = [`Score ${review.combinedScore} / ${review.passMark} needed`];
-  if (review.plagiarismPercent !== null) parts.push(`${review.plagiarismPercent}% matched`);
-  if (review.aiPercent !== null) parts.push(`${review.aiPercent}% AI`);
-  return parts.join(" · ");
+/** One result under the approval badge: its percentage, its limit, and whether it is within it. */
+function resultLine(label: string, percent: number | null, limit: number | null, passed: boolean | null): string {
+  if (percent === null) return `${label}: not checked`;
+  const outcome = passed === null ? "" : passed ? " · within the limit" : " · over the limit";
+  return `${label}: ${percent}%${limit === null ? "" : ` (limit ${limit}%)`}${outcome}`;
+}
+
+/** What the automated review says about an article, a line per check, under its approval badge. */
+function reviewLines(review: ArticleReviewView | null): string[] {
+  if (!review) return [];
+  if (review.state === "pending") return ["Checking for plagiarism and AI-written text..."];
+  if (review.state === "error") return [review.error ?? "The check couldn't run."];
+  return [
+    resultLine("Plagiarism", review.plagiarismPercent, review.maxPlagiarism, review.plagiarismPassed),
+    resultLine("AI-written text", review.aiPercent, review.maxAi, review.aiPassed),
+  ];
 }
 
 export function SubmittedArticlesTable({ articles }: { articles: SubmittedArticle[] }) {
@@ -117,7 +130,7 @@ export function SubmittedArticlesTable({ articles }: { articles: SubmittedArticl
         <tbody>
           {articles.map((article) => {
             const badge = APPROVAL_BADGE[article.approval];
-            const line = reviewLine(article.review);
+            const lines = reviewLines(article.review);
             return (
               <tr key={article.id} className="border-b border-line last:border-b-0">
                 <td className="px-5 py-3.5">
@@ -130,7 +143,13 @@ export function SubmittedArticlesTable({ articles }: { articles: SubmittedArticl
                   <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", badge.className)}>
                     {badge.label}
                   </span>
-                  {line && <p className="mt-1.5 max-w-[280px] text-[11px] text-text-muted">{line}</p>}
+                  {lines.length > 0 && (
+                    <div className="mt-1.5 max-w-[300px] space-y-0.5 text-[11px] text-text-muted">
+                      {lines.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                  )}
                 </td>
                 <td className="px-5 py-3.5">
                   <RowAction article={article} />

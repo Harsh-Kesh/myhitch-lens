@@ -478,11 +478,17 @@ model ArticleReview {
   plagiarismPercent Float?
   /// Share of the text classified as AI-generated, 0-100. Null when the detector could not run.
   aiPercent   Float?
-  /// 0-100, higher is better: the weighted blend of the originality and human-written scores.
-  combinedScore Float?
-  /// The pass mark that was in force when the score was decided.
-  passMark    Int?
+  /// The limit each result was judged against, as in force when the review finished.
+  maxPlagiarism Float?
+  maxAi       Float?
+  /// Each result judged on its own. aiPassed is null when the AI check couldn't run.
+  plagiarismPassed Boolean?
+  aiPassed    Boolean?
+  /// Overall decision: plagiarismPassed and aiPassed must both hold.
   passed      Boolean?
+  /// Legacy, no longer written: reviews used to be decided on a weighted combined score.
+  combinedScore Float?
+  passMark    Int?
   error       String?
   createdAt   DateTime    @default(now())
   completedAt DateTime?

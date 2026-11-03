@@ -1,38 +1,34 @@
 /**
  * How an article's automated review turns into a pass or a fail. Plain functions, no server imports.
  *
- * Both inputs are "how bad" percentages from Copyleaks, so each is flipped into a "how good" score first
- * and the combined score is a weighted average of the two: higher is better, 0-100. An article passes when
- * the combined score reaches the pass mark.
+ * The two Copyleaks results are judged separately, each against its own limit, and the article passes only
+ * when BOTH are within their limit. There is no combined score: a very low AI percentage can't make up for
+ * heavy plagiarism, or the other way round.
  *
- * Copyleaks has no separate copyright score; the plagiarism scan is what flags copied text. To add another
- * signal, give it a weight in `ReviewConfig` and a term in `scoreReview`.
+ * Copyleaks has no separate copyright score; the plagiarism scan is what flags copied text.
  */
 
 export interface ReviewConfig {
-  /** Combined score an article needs to pass, 0-100. */
-  passMark: number;
-  /** Weight of the plagiarism (originality) score. */
-  plagiarismWeight: number;
-  /** Weight of the human-written score (the inverse of the AI-generated share). */
-  aiWeight: number;
+  /** The most matched (plagiarised) text an article may have, as a percentage. Above this it fails. */
+  maxPlagiarismPercent: number;
+  /** The most AI-generated text an article may have, as a percentage. Above this it fails. */
+  maxAiPercent: number;
 }
 
-export const DEFAULT_REVIEW_CONFIG: ReviewConfig = { passMark: 70, plagiarismWeight: 0.7, aiWeight: 0.3 };
+export const DEFAULT_REVIEW_CONFIG: ReviewConfig = { maxPlagiarismPercent: 20, maxAiPercent: 30 };
 
-function envNumber(name: string, fallback: number, min: number, max: number): number {
+function envPercent(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
-  return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+  return Number.isFinite(value) && value >= 0 && value <= 100 ? value : fallback;
 }
 
-/** The pass mark and weights, from REVIEW_PASS_SCORE / REVIEW_WEIGHT_PLAGIARISM / REVIEW_WEIGHT_AI. */
+/** The limits, from REVIEW_MAX_PLAGIARISM and REVIEW_MAX_AI (percentages, 0-100). */
 export function getReviewConfig(): ReviewConfig {
   return {
-    passMark: envNumber("REVIEW_PASS_SCORE", DEFAULT_REVIEW_CONFIG.passMark, 0, 100),
-    plagiarismWeight: envNumber("REVIEW_WEIGHT_PLAGIARISM", DEFAULT_REVIEW_CONFIG.plagiarismWeight, 0, 1),
-    aiWeight: envNumber("REVIEW_WEIGHT_AI", DEFAULT_REVIEW_CONFIG.aiWeight, 0, 1),
+    maxPlagiarismPercent: envPercent("REVIEW_MAX_PLAGIARISM", DEFAULT_REVIEW_CONFIG.maxPlagiarismPercent),
+    maxAiPercent: envPercent("REVIEW_MAX_AI", DEFAULT_REVIEW_CONFIG.maxAiPercent),
   };
 }
 
@@ -43,33 +39,25 @@ export function isReviewStale(createdAt: Date, now: number = Date.now()): boolea
   return now - createdAt.getTime() > REVIEW_STALE_MINUTES * 60_000;
 }
 
-const clampPercent = (n: number) => Math.min(100, Math.max(0, n));
-const round1 = (n: number) => Math.round(n * 10) / 10;
-
-export interface ReviewScore {
-  /** 0-100, higher is better. */
-  combinedScore: number;
+export interface ReviewVerdict {
+  plagiarismPassed: boolean;
+  /** Null when the AI-content check couldn't run, so there was nothing to judge. */
+  aiPassed: boolean | null;
+  /** True only when plagiarism is within its limit and AI is not over its limit. */
   passed: boolean;
 }
 
 /**
- * `aiPercent` is null when the AI-content check could not run; the plagiarism score then carries the whole
- * decision rather than the article being marked down for something we could not measure.
+ * Each percentage may equal its limit and still pass; only going above it fails.
+ * `aiPercent` is null when the AI-content check could not run (for instance the text is too short for it).
+ * That is not held against the article: plagiarism alone decides, rather than blocking it for something we
+ * could not measure.
  */
-export function scoreReview(
+export function judgeReview(
   input: { plagiarismPercent: number; aiPercent: number | null },
   config: ReviewConfig = getReviewConfig(),
-): ReviewScore {
-  const originality = 100 - clampPercent(input.plagiarismPercent);
-  const humanWritten = input.aiPercent === null ? null : 100 - clampPercent(input.aiPercent);
-
-  const useAi = humanWritten !== null && config.aiWeight > 0;
-  const totalWeight = config.plagiarismWeight + (useAi ? config.aiWeight : 0);
-  const combined =
-    totalWeight === 0
-      ? originality
-      : (originality * config.plagiarismWeight + (useAi ? humanWritten * config.aiWeight : 0)) / totalWeight;
-
-  const combinedScore = round1(combined);
-  return { combinedScore, passed: combinedScore >= config.passMark };
+): ReviewVerdict {
+  const plagiarismPassed = input.plagiarismPercent <= config.maxPlagiarismPercent;
+  const aiPassed = input.aiPercent === null ? null : input.aiPercent <= config.maxAiPercent;
+  return { plagiarismPassed, aiPassed, passed: plagiarismPassed && aiPassed !== false };
 }

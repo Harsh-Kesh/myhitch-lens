@@ -169,7 +169,9 @@ export async function applyDecision(articleId: string, status: "approved" | "rej
               text:
                 status === "rejected"
                   ? `“${article.title}” wasn't approved by MYHitch, so readers and the MYHitch app can't see it.${why} Edit it in Submit Article, resubmit and publish it again.`
-                  : `“${article.title}” is approved by MYHitch and visible again on Lens and in the MYHitch app.`,
+                  : article.status === "published"
+                    ? `“${article.title}” is approved by MYHitch and visible again on Lens and in the MYHitch app.`
+                    : `“${article.title}” is approved by MYHitch. Publish it again from Submit Article to make it visible.`,
             },
           }),
         ]

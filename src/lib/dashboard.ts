@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 
 import { getEntitlements } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 import type { PlanEntitlements } from "@/lib/plans";
 
 export interface SavedArticle {
@@ -34,7 +35,7 @@ export interface ReaderSpace {
 export async function getReaderSpace(userId: string): Promise<ReaderSpace> {
   const [bookmarks, follows, notifications] = await Promise.all([
     prisma.bookmark.findMany({
-      where: { userId },
+      where: { userId, article: NOT_REJECTED },
       orderBy: { createdAt: "desc" },
       include: {
         article: {

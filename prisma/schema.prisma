@@ -402,6 +402,7 @@ model Article {
   embeds      EmbedInstance[]
   analytics   AnalyticsEvent[]
   exchangeOpportunities ExchangeOpportunity[]
+  nexboardReview NexboardReview?
 
   @@index([status, lane])
   @@index([categoryId])
@@ -896,4 +897,17 @@ model EmbedInstance {
   embedType String   // mart | jetnrest | pass | nexus | consulting | donations
   config    Json?
   createdAt DateTime @default(now())
+}
+
+/// MYHitch NexBoard's decision on a published article (NexBoard plan 13zj). NexBoard checks every published, public article
+/// (writer standing, rights, completeness, length, Lens's own originality scan and legal check, banned content). A rejected
+/// article goes back to changes_requested with the reasons, and is hidden from every reader list and the app while rejected.
+model NexboardReview {
+  articleId      String    @id
+  article        Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  status         String    // approved | rejected
+  reasons        Json      @default("[]") // plain sentences for the writer
+  reviewedAt     DateTime  @default(now())
+  notifiedStatus String?   // the last decision the writer was told about
+  notifiedAt     DateTime?
 }

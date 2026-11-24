@@ -4,6 +4,7 @@ import { getPlanCode } from "@/lib/entitlements";
 import { MAGAZINE_SECTIONS, sectionOfPage, type PageRange } from "@/lib/magazineLayout";
 import { PLANS, type PlanCode } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 
 /**
  * There is ONE MYHitch Lens magazine a month: 128 pages, with a block of pages
@@ -111,7 +112,7 @@ function allocate(rows: PlacementRow[]): Map<string, PagePlacement | null> {
 
 async function articlesInIssue(issue: MagazineIssue): Promise<PlacementRow[]> {
   const rows = await prisma.article.findMany({
-    where: { status: "published", publishedAt: { gte: issue.start, lte: issue.end } },
+    where: { status: "published", publishedAt: { gte: issue.start, lte: issue.end }, ...NOT_REJECTED },
     select: {
       id: true,
       title: true,

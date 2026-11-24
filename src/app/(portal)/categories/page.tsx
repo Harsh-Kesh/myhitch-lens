@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/icons";
 import { ViewHeader } from "@/components/ui/ViewHeader";
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 import { CATEGORIES } from "@/data/categories";
 
 const categoryIcon = "size-6 text-primary";
@@ -38,7 +39,7 @@ const CATEGORY_ICONS: Record<string, ReactNode> = {
 
 export default async function CategoriesPage() {
   const rows = await prisma.article.findMany({
-    where: { status: "published" },
+    where: { status: "published", ...NOT_REJECTED },
     select: { category: { select: { name: true } } },
   });
   const counts: Record<string, number> = {};

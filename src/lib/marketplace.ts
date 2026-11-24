@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 import { MARKETPLACE_DEFAULTS, PLATFORM_FEES, type PlatformFeeType } from "@/lib/platformConfig";
 
 // ---------------------------------------------------------------------------
@@ -271,7 +272,7 @@ export async function listOwnedArticles(ownerId: string): Promise<OwnedArticle[]
 /** Published articles the author still fully owns and can list for sale. */
 export async function listListableArticles(authorId: string) {
   const articles = await prisma.article.findMany({
-    where: { authorId, status: "published", ownerId: null, listings: { none: {} } },
+    where: { authorId, status: "published", ownerId: null, listings: { none: {} }, ...NOT_REJECTED },
     orderBy: { publishedAt: "desc" },
     select: { id: true, title: true, category: { select: { name: true } } },
   });

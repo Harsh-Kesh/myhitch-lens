@@ -2,6 +2,7 @@ import "server-only";
 
 import { priorityAuthorIds } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 import type { LegalAcceptance, LegalReview, ReviewLegalSummary } from "@/lib/legalReviewTypes";
 import { cleanSeo, type SeoMetadata } from "@/lib/seoMetadata";
 import type { FeedArticle } from "@/lib/types";
@@ -21,7 +22,7 @@ function readTimeOf(aiScores: unknown): string {
  */
 export async function listPublishedArticles(): Promise<FeedArticle[]> {
   const rows = await prisma.article.findMany({
-    where: { status: "published", lane: { in: ["public", "hybrid"] } },
+    where: { status: "published", lane: { in: ["public", "hybrid"] }, ...NOT_REJECTED },
     orderBy: { publishedAt: "desc" },
     select: {
       id: true,
@@ -206,9 +207,12 @@ export async function getArticle(
       },
       likes: userId ? { where: { userId }, select: { userId: true } } : false,
       bookmarks: userId ? { where: { userId }, select: { userId: true } } : false,
+      nexboardReview: { select: { status: true } },
     },
   });
   if (!row) return null;
+  // rejected by MYHitch (NexBoard plan 13zj): only its writer can still open it, to fix it
+  if (row.nexboardReview?.status === "rejected" && row.author.id !== userId) return null;
 
   const [followingAuthor, followerCount] = await Promise.all([
     userId && userId !== row.author.id

@@ -1,11 +1,12 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { NOT_REJECTED } from "@/lib/nexboardFilter";
 import { blocksOf, coverOf } from "@/lib/hubCompany";
 
 /** Published, public articles for the MYHitch app (through the hub). */
 
-const PUBLIC = { status: "published" as const, lane: { in: ["public" as const, "hybrid" as const] } };
+const PUBLIC = { status: "published" as const, lane: { in: ["public" as const, "hybrid" as const] }, ...NOT_REJECTED };
 
 function readTimeOf(aiScores: unknown): number {
   const min =

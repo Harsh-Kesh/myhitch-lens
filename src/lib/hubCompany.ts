@@ -450,6 +450,7 @@ export async function listArticles(ctx: HubCompany) {
       viewsCount: true,
       author: { select: { id: true, displayName: true } },
       revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { note: true } },
+      nexboardReview: { select: { status: true } },
     },
   });
   return rows.map((r) => {
@@ -469,6 +470,8 @@ export async function listArticles(ctx: HubCompany) {
       likes: r.likesCount,
       views: r.viewsCount,
       lastNote: r.status === "rejected" || r.status === "changes_requested" ? r.revisions[0]?.note ?? null : null,
+      // MYHitch NexBoard's decision (plan 13zj); the app's isSitePublic hides a "rejected" item
+      reviewStatus: r.nexboardReview?.status ?? null,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       publishedAt: r.publishedAt?.toISOString() ?? null,

@@ -64,6 +64,8 @@ const NAV_LINKS: NavLink[] = [
   },
   { href: "/explore", label: "Search Articles", icon: <BookIcon className={navIcon} /> },
   { href: "/categories", label: "Categories", icon: <FolderIcon className={navIcon} /> },
+  // the designed monthly issues, laid out in NexBoard's Magazine studio
+  { href: "/issues", label: "Magazine", icon: <BookIcon className={navIcon} /> },
   {
     href: "/submit",
     label: "Write Article",

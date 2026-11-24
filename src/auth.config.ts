@@ -20,6 +20,7 @@ const PORTAL_PREFIXES = [
   "/editorial",
   "/trust-safety",
   "/magazine",
+  "/issues",
   "/panel",
   "/exchange",
   "/article",

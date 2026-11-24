@@ -5,6 +5,7 @@ import { MAGAZINE_SECTIONS, sectionOfPage, type PageRange } from "@/lib/magazine
 import { PLANS, type PlanCode } from "@/lib/plans";
 import { prisma } from "@/lib/prisma";
 import { NOT_REJECTED } from "@/lib/nexboardFilter";
+import { releasedPlacement } from "@/lib/magazineIssues";
 
 /**
  * There is ONE MYHitch Lens magazine a month: 128 pages, with a block of pages
@@ -153,6 +154,8 @@ export interface MagazinePlacement {
   totalArticlesThisIssue: number;
   /** True when the article isn't published yet — this is a live projection, not a locked-in page. */
   isEstimate: boolean;
+  /** Set once the article is printed in a released, designed issue (NexBoard's Magazine studio): its real pages. */
+  released?: { number: number; title: string };
 }
 
 /** Compute (or, for an unpublished article, project) its monthly-issue page placement. */
@@ -197,6 +200,21 @@ export async function getMagazinePlacement(articleId: string): Promise<MagazineP
 
   const block = allocate(all).get(articleId) ?? null;
   const { magazineRange, maxPagesPerArticle } = PLANS[plan].entitlements;
+  // once a designed issue holding the article is released, its real pages replace the projection
+  const printed = isPublished ? await releasedPlacement(articleId) : null;
+  if (printed)
+    return {
+      issue,
+      page: printed.firstPage,
+      pageEnd: printed.lastPage,
+      pagesAllotted: printed.lastPage - printed.firstPage + 1,
+      planRange: magazineRange,
+      sectionLabel: printed.issue.title,
+      isFeatured: article.magazineFeatured,
+      totalArticlesThisIssue: all.length,
+      isEstimate: false,
+      released: { number: printed.issue.number, title: printed.issue.title },
+    };
   return {
     issue,
     page: block?.pageStart ?? null,
